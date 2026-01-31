@@ -3,7 +3,7 @@ import Image from 'next/image'
 import { Calendar, Clock, MapPin, Info } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { CHURCH_INFO, SCHEDULE } from '@/lib/constants'
+import { CHURCH_INFO, LIVESTREAM, SCHEDULE } from '@/lib/constants'
 
 export const metadata: Metadata = {
   title: 'Service Schedule',
@@ -105,8 +105,47 @@ export default function SchedulePage() {
         </div>
       </section>
 
-      {/* Calendar Embed */}
+      {/* Livestream Embed */}
       <section className="section-padding bg-gray-50">
+        <div className="container-custom">
+          <SectionHeader
+            title="Watch Live"
+            subtitle="Join us online for Divine Liturgy and special services"
+            withAccent
+          />
+
+          <div className="max-w-5xl mx-auto">
+            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
+              <div className="aspect-video">
+                <iframe
+                  src={LIVESTREAM.youtubeLiveEmbedUrl}
+                  className="w-full h-full"
+                  title="St. Kyrillos the Sixth Livestream"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+            <div className="mt-6 text-center text-gray-600">
+              <p className="text-body">
+                {LIVESTREAM.schedule}. When we are offline, YouTube will display
+                an offline message or the latest stream.
+              </p>
+              <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
+                <Button href={LIVESTREAM.youtubeChannelUrl} variant="primary">
+                  Visit Our YouTube Channel
+                </Button>
+                <Button href={LIVESTREAM.youtubeStreamsUrl} variant="secondary">
+                  See Past Streams
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Calendar Embed */}
+      <section className="section-padding">
         <div className="container-custom">
           <SectionHeader
             title="Church Calendar"
@@ -116,27 +155,11 @@ export default function SchedulePage() {
 
           <div className="max-w-5xl mx-auto">
             <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              {/* Placeholder for Google Calendar embed */}
-              <div className="aspect-[16/10] bg-gray-100 flex items-center justify-center">
-                <div className="text-center p-8">
-                  <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg mb-2">
-                    Google Calendar will be embedded here
-                  </p>
-                  <p className="text-gray-400 text-sm max-w-md mx-auto">
-                    Replace this placeholder with your Google Calendar embed code.
-                    Update the calendarEmbedUrl in lib/constants.ts
-                  </p>
-                </div>
-              </div>
-              {/*
-                Uncomment this iframe when you have a Google Calendar:
-                <iframe
-                  src={SCHEDULE.calendarEmbedUrl}
-                  className="w-full h-[600px] border-0"
-                  title="Church Calendar"
-                />
-              */}
+              <iframe
+                src={SCHEDULE.calendarEmbedUrl}
+                className="w-full h-[600px] border-0"
+                title="Church Calendar"
+              />
             </div>
           </div>
         </div>

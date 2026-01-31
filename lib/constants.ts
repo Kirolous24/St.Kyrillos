@@ -81,7 +81,7 @@ export const SCHEDULE = {
     },
   ],
   // Google Calendar embed URL (UPDATE THIS)
-  calendarEmbedUrl: "https://calendar.google.com/calendar/embed?src=[YOUR_CALENDAR_ID]&ctz=America/Chicago",
+  calendarEmbedUrl: "https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=America%2FChicago&showPrint=0&src=a2lyb2xvdXNrYW1lbDI0QGdtYWlsLmNvbQ&src=NmUyYWFhZmU0ZWIzODc0ZDFiNWU3NmZlNzRhNDk1MGM2MGJjMWNjMjk4OWVhNzJlNDg5ZDAzOGI3OTNiNGNmNUBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=NjI1NzUwMWE3ZTg3Y2RmNzgyNzVlNDk3MDA4YzczMzM1NTdiNDc5M2I4OTg3MjI4NGIwYWI3NDI0OWViZjg4Y0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=Y2xhc3Nyb29tMTAwMDM3NzcxNzk5MDY1OTg2MDA5QGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20&color=%238e24aa&color=%234285f4&color=%234285f4&color=%23202124",
   calendarNote: "Schedule may change during fasting seasons and feast days.",
 } as const;
 
@@ -119,6 +119,9 @@ export const LIVESTREAM = {
   youtubeChannelHandle: "@SaintKyrillosTN",
   youtubeChannelUrl: "https://www.youtube.com/@SaintKyrillosTN",
   youtubeStreamsUrl: "https://www.youtube.com/@SaintKyrillosTN/streams",
+  youtubeChannelId: "https://www.youtube.com/embed/live_stream?channel=UC99uTRwGS6gunBt6jPXlozA",
+  youtubeLiveEmbedUrl:
+    "https://www.youtube.com/embed/live_stream?channel=[YOUTUBE_CHANNEL_ID]&modestbranding=1&rel=0",
   facebookPageUrl: "[FACEBOOK_PAGE_URL]",
   schedule: "Divine Liturgy is livestreamed every Sunday",
 } as const;
