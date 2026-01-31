@@ -1,0 +1,143 @@
+import type { Metadata } from 'next'
+import Link from 'next/link'
+import { Clock, Users, Target, ArrowLeft } from 'lucide-react'
+import { CHURCH_INFO } from '@/lib/constants'
+
+export const metadata: Metadata = {
+  title: "Women's Meeting",
+  description: `Women's fellowship and spiritual nurturing at ${CHURCH_INFO.fullName}.`,
+}
+
+export default function WomensMeetingPage() {
+  return (
+    <>
+      {/* Hero Section */}
+      <section className="relative py-16 md:py-24 bg-gradient-to-br from-primary-900 via-primary-950 to-gray-900">
+        <div className="container-custom relative z-10">
+          <div className="max-w-3xl mx-auto text-center text-white">
+            <h1 className="font-serif text-display-2 md:text-display-1 mb-4">
+              Women's Meeting
+            </h1>
+            <p className="text-xl text-white/80">
+              Sisters in Faith & Service
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Content Section */}
+      <section className="section-padding bg-white">
+        <div className="container-custom max-w-4xl">
+          <div className="mb-12">
+            <h2 className="font-serif text-3xl font-semibold text-gray-900 mb-6">
+              About Women's Meeting
+            </h2>
+            <p className="text-gray-700 text-lg leading-relaxed mb-6">
+              Our Women's Meeting is a nurturing community where women come together to deepen their faith, support one another, and serve the Church and community. Through prayer, Bible study, spiritual formation, and fellowship, we encourage each other in our journeys as daughters of God, wives, mothers, and witnesses to Christ's love.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8 mb-12">
+            {/* Who It's For */}
+            <div className="bg-primary-50 rounded-xl p-6 border border-primary-100">
+              <div className="flex items-center gap-3 mb-4">
+                <Users className="w-5 h-5 text-primary-900" />
+                <h3 className="font-serif text-xl font-semibold text-gray-900">Who It's For</h3>
+              </div>
+              <p className="text-gray-700">
+                All women of the parish and community seeking spiritual growth, friendship, and meaningful engagement in our faith community.
+              </p>
+            </div>
+
+            {/* What You'll Get Out of It */}
+            <div className="bg-blue-50 rounded-xl p-6 border border-blue-100">
+              <div className="flex items-center gap-3 mb-4">
+                <Target className="w-5 h-5 text-blue-900" />
+                <h3 className="font-serif text-xl font-semibold text-gray-900">Benefits</h3>
+              </div>
+              <ul className="text-gray-700 space-y-2 text-sm">
+                <li>• Spiritual growth & prayer</li>
+                <li>• Meaningful friendships</li>
+                <li>• Support & encouragement</li>
+                <li>• Service & mission opportunities</li>
+              </ul>
+            </div>
+
+            {/* When & Where */}
+            <div className="bg-green-50 rounded-xl p-6 border border-green-100">
+              <div className="flex items-center gap-3 mb-4">
+                <Clock className="w-5 h-5 text-green-900" />
+                <h3 className="font-serif text-xl font-semibold text-gray-900">Schedule</h3>
+              </div>
+              <p className="text-gray-700 mb-2">
+                <span className="font-semibold">Day:</span> [DAY]
+              </p>
+              <p className="text-gray-700 mb-2">
+                <span className="font-semibold">Time:</span> [TIME]
+              </p>
+              <p className="text-gray-700 text-sm">
+                Location: Fellowship Hall
+              </p>
+            </div>
+          </div>
+
+          {/* Images Placeholder */}
+          <div className="mb-12">
+            <h3 className="font-serif text-2xl font-semibold text-gray-900 mb-6">
+              Women's Ministry in Action
+            </h3>
+            <div className="grid md:grid-cols-3 gap-6">
+              <div className="rounded-xl overflow-hidden bg-gray-200 aspect-video flex items-center justify-center">
+                <div className="text-center">
+                  <p className="text-gray-600 font-medium">[Image 1]</p>
+                  <p className="text-gray-500 text-sm">Women's fellowship</p>
+                </div>
+              </div>
+              <div className="rounded-xl overflow-hidden bg-gray-200 aspect-video flex items-center justify-center">
+                <div className="text-center">
+                  <p className="text-gray-600 font-medium">[Image 2]</p>
+                  <p className="text-gray-500 text-sm">Prayer & study</p>
+                </div>
+              </div>
+              <div className="rounded-xl overflow-hidden bg-gray-200 aspect-video flex items-center justify-center">
+                <div className="text-center">
+                  <p className="text-gray-600 font-medium">[Image 3]</p>
+                  <p className="text-gray-500 text-sm">Community outreach</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <div className="bg-gradient-to-r from-primary-900 to-primary-950 rounded-xl p-8 text-white text-center">
+            <h3 className="font-serif text-2xl font-semibold mb-4">
+              Become Part of Our Sisterhood
+            </h3>
+            <p className="text-white/80 mb-6 max-w-2xl mx-auto">
+              Join a community of women committed to growing in faith together, supporting one another, and serving Christ in love. All are welcome!
+            </p>
+            <Link
+              href="/contact"
+              className="inline-block bg-white text-primary-900 px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+            >
+              Get More Information
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Back Link */}
+      <section className="section-padding bg-gray-50 border-t border-gray-200">
+        <div className="container-custom">
+          <Link
+            href="/services"
+            className="inline-flex items-center gap-2 text-primary-900 hover:text-primary-950 font-medium group"
+          >
+            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            Back to Services
+          </Link>
+        </div>
+      </section>
+    </>
+  )
+}
