@@ -2,7 +2,6 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Facebook, Youtube, Mail, Phone, MapPin, ArrowRight, Heart } from 'lucide-react'
 import { CHURCH_INFO, SOCIAL_LINKS, FOOTER_LINKS } from '@/lib/constants'
-import { SubscribeForm } from '@/components/forms/SubscribeForm'
 
 export function Footer() {
   const currentYear = new Date().getFullYear()
@@ -15,7 +14,7 @@ export function Footer() {
 
       {/* Main Footer */}
       <div className="container-custom py-20 relative">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-9 gap-12">
           {/* Church Info - Wider column */}
           <div className="lg:col-span-4">
             <div className="flex items-center gap-4 mb-6">
@@ -142,17 +141,6 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Newsletter */}
-          <div className="lg:col-span-3">
-            <h3 className="font-serif font-semibold text-lg mb-6 flex items-center gap-2">
-              <span className="w-8 h-px bg-gold" />
-              Stay Connected
-            </h3>
-            <p className="text-white/70 text-sm mb-6 leading-relaxed">
-              Receive updates about services, events, and spiritual resources directly in your inbox.
-            </p>
-            <SubscribeForm variant="dark" />
-          </div>
         </div>
       </div>
 

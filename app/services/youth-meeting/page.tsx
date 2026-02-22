@@ -116,12 +116,6 @@ export default function YouthMeetingPage() {
             <p className="text-white/80 mb-6 max-w-2xl mx-auto">
               Join a community of young adults who are serious about their faith and having fun together. All are welcome!
             </p>
-            <Link
-              href="/contact"
-              className="inline-block bg-white text-primary-900 px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-            >
-              Get More Information
-            </Link>
           </div>
         </div>
       </section>

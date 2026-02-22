@@ -150,9 +150,6 @@ export default function LivestreamPage() {
               <Button href="/im-new" variant="primary" size="lg">
                 Plan Your Visit
               </Button>
-              <Button href="/contact" variant="secondary" size="lg">
-                Get Directions
-              </Button>
             </div>
           </div>
         </div>

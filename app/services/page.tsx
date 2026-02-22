@@ -121,12 +121,6 @@ export default function ServicesPage() {
           <p className="text-lg text-white/80 mb-8 max-w-2xl mx-auto">
             Whether you're looking to deepen your faith, serve the community, or connect with others, there's a place for you here.
           </p>
-          <Link
-            href="/contact"
-            className="inline-block bg-white text-primary-900 px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-          >
-            Contact Us to Learn More
-          </Link>
         </div>
       </section>
     </>

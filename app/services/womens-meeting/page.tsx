@@ -116,12 +116,6 @@ export default function WomensMeetingPage() {
             <p className="text-white/80 mb-6 max-w-2xl mx-auto">
               Join a community of women committed to growing in faith together, supporting one another, and serving Christ in love. All are welcome!
             </p>
-            <Link
-              href="/contact"
-              className="inline-block bg-white text-primary-900 px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-            >
-              Get More Information
-            </Link>
           </div>
         </div>
       </section>

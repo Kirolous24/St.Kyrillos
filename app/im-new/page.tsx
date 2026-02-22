@@ -83,9 +83,6 @@ export default function ImNewPage() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8 pt-8 border-t border-gray-200">
-                <Button href="/contact" variant="primary">
-                  Get Directions
-                </Button>
                 <Button href="/schedule" variant="secondary">
                   See Full Schedule
                 </Button>
@@ -209,14 +206,6 @@ export default function ImNewPage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button href="/schedule" variant="gold" size="lg">
                 See Schedule
-              </Button>
-              <Button
-                href="/contact"
-                variant="secondary"
-                size="lg"
-                className="bg-transparent border-white text-white hover:bg-white/10"
-              >
-                Contact Us
               </Button>
             </div>
           </div>

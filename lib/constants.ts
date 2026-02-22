@@ -172,7 +172,6 @@ export const FOOTER_LINKS = {
     { label: "I'm New", href: "/im-new" },
     { label: "Give", href: "/give" },
     { label: "Resources", href: "/resources" },
-    { label: "Contact", href: "/contact" },
   ],
   memberLinks: [
     { label: "Join Our Church", href: "/members/join" },

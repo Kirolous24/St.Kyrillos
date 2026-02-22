@@ -264,14 +264,6 @@ export default function CopticOrthodoxyPage() {
               <Button href="/im-new" variant="gold" size="lg">
                 Plan Your Visit
               </Button>
-              <Button
-                href="/contact"
-                variant="secondary"
-                size="lg"
-                className="bg-transparent border-white text-white hover:bg-white/10"
-              >
-                Ask Questions
-              </Button>
             </div>
           </div>
         </div>

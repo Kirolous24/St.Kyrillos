@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Calendar, Users, MapPin, PlayCircle, ArrowRight } from 'lucide-react'
+import { Calendar, Users, BookOpen, PlayCircle, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const actions = [
@@ -20,10 +20,10 @@ const actions = [
     iconBg: 'bg-gold',
   },
   {
-    icon: MapPin,
-    title: 'Find Us',
-    description: 'Get directions, parking info, and contact details.',
-    href: '/contact',
+    icon: BookOpen,
+    title: 'Confession',
+    description: 'Book a confession appointment with Fr. Pachom.',
+    href: '/confession',
     gradient: 'from-primary-100 to-primary-50',
     iconBg: 'bg-primary-900',
   },

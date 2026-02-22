@@ -135,8 +135,8 @@ export default function ClergyPage() {
               spiritual guidance, please contact Fr. Pachom to schedule
               an appointment.
             </p>
-            <Button href="/contact" variant="primary" size="lg">
-              Contact Us
+            <Button href="/confession" variant="primary" size="lg">
+              Book Confession
             </Button>
           </div>
         </div>

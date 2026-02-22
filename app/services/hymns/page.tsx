@@ -113,12 +113,6 @@ export default function HymnsPage() {
             <p className="text-white/80 mb-6 max-w-2xl mx-auto">
               Join our hymn ministry and become part of a tradition that has blessed worshippers for centuries. Whether you have musical training or not, there's a place for your voice in our choir.
             </p>
-            <Link
-              href="/contact"
-              className="inline-block bg-white text-primary-900 px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-            >
-              Get More Information
-            </Link>
           </div>
         </div>
       </section>
