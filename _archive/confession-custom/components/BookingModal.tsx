@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MapPin, Calendar, Clock, AlertCircle } from 'lucide-react'
-import { Modal } from '@/components/ui/Modal'
+import { MapPin, Calendar, Clock, AlertCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 import type { TimeSlot } from '@/lib/confession/types'
@@ -21,9 +20,8 @@ interface BookingFormData {
 }
 
 interface BookingModalProps {
-  isOpen: boolean
   onClose: () => void
-  selectedSlot: TimeSlot | null
+  selectedSlot: TimeSlot
   onSubmit: (data: BookingFormData) => Promise<void>
   isLoading: boolean
   error: string | null
@@ -37,7 +35,6 @@ const initialFormData: BookingFormData = {
 }
 
 export function BookingModal({
-  isOpen,
   onClose,
   selectedSlot,
   onSubmit,
@@ -50,7 +47,6 @@ export function BookingModal({
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
-    // Clear error when user types
     if (formErrors[name as keyof BookingFormData]) {
       setFormErrors(prev => ({ ...prev, [name]: undefined }))
     }
@@ -88,9 +84,7 @@ export function BookingModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!validateForm()) return
-
     await onSubmit(formData)
   }
 
@@ -100,19 +94,30 @@ export function BookingModal({
     onClose()
   }
 
-  if (!selectedSlot) return null
-
   const displayDate = formatFullDate(selectedSlot.date)
   const displayTime = getTimeRangeDisplay(selectedSlot.time, CONFESSION_CONFIG.appointmentDuration)
   const timezone = getTimezoneDisplay()
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={handleClose}
-      title="Confession/Appointments"
-      size="md"
-    >
+    <div className="bg-white rounded-2xl shadow-soft-xl border border-gray-100 p-6 md:p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="font-serif text-heading-3 text-gray-900">
+          Confession/Appointments
+        </h2>
+        <button
+          onClick={handleClose}
+          className={cn(
+            'p-2 rounded-full text-gray-400 hover:text-gray-600',
+            'hover:bg-gray-100 transition-colors',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-900'
+          )}
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
       <form onSubmit={handleSubmit}>
         {/* Appointment details */}
         <div className="space-y-3 mb-6 pb-6 border-b border-gray-200">
@@ -253,6 +258,6 @@ export function BookingModal({
           </Button>
         </div>
       </form>
-    </Modal>
+    </div>
   )
 }

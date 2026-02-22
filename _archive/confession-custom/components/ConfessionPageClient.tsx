@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ClergyHeader } from './ClergyHeader'
 import { MetaInfo } from './MetaInfo'
 import { AppointmentScheduler } from './AppointmentScheduler'
@@ -21,10 +21,10 @@ export function ConfessionPageClient() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Modal state
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  // Booking form state
   const [bookingLoading, setBookingLoading] = useState(false)
   const [bookingError, setBookingError] = useState<string | null>(null)
+  const bookingFormRef = useRef<HTMLDivElement>(null)
 
   // Confirmation state
   const [bookingConfirmation, setBookingConfirmation] = useState<BookingConfirmation | null>(null)
@@ -57,6 +57,13 @@ export function ConfessionPageClient() {
     fetchAvailability()
   }, [fetchAvailability])
 
+  // Scroll booking form to center when a slot is selected
+  useEffect(() => {
+    if (selectedSlot && bookingFormRef.current) {
+      bookingFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [selectedSlot])
+
   // Handle month change
   const handleMonthChange = (date: Date) => {
     setCurrentMonth(date)
@@ -71,7 +78,6 @@ export function ConfessionPageClient() {
   // Handle slot selection
   const handleSlotSelect = (slot: TimeSlot) => {
     setSelectedSlot(slot)
-    setIsModalOpen(true)
     setBookingError(null)
   }
 
@@ -109,7 +115,7 @@ export function ConfessionPageClient() {
 
       // Success - show confirmation
       setBookingConfirmation(data as BookingConfirmation)
-      setIsModalOpen(false)
+      setSelectedSlot(null)
 
       // Refresh availability to reflect the booked slot
       fetchAvailability()
@@ -120,9 +126,8 @@ export function ConfessionPageClient() {
     }
   }
 
-  // Handle modal close
-  const handleModalClose = () => {
-    setIsModalOpen(false)
+  // Handle form close
+  const handleFormClose = () => {
     setSelectedSlot(null)
     setBookingError(null)
   }
@@ -191,15 +196,18 @@ export function ConfessionPageClient() {
           isLoading={isLoading}
         />
 
-        {/* Booking Modal */}
-        <BookingModal
-          isOpen={isModalOpen}
-          onClose={handleModalClose}
-          selectedSlot={selectedSlot}
-          onSubmit={handleBookingSubmit}
-          isLoading={bookingLoading}
-          error={bookingError}
-        />
+        {/* Inline booking form — appears below scheduler when a slot is selected */}
+        {selectedSlot && (
+          <div ref={bookingFormRef} className="mt-8">
+            <BookingModal
+              onClose={handleFormClose}
+              selectedSlot={selectedSlot}
+              onSubmit={handleBookingSubmit}
+              isLoading={bookingLoading}
+              error={bookingError}
+            />
+          </div>
+        )}
 
         {/* Screen reader status announcements */}
         <div role="status" aria-live="polite" className="sr-only">

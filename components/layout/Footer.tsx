@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { Facebook, Youtube, Instagram, Mail, Phone, MapPin, ArrowRight, Heart } from 'lucide-react'
+import { Facebook, Youtube, Mail, Phone, MapPin, ArrowRight, Heart } from 'lucide-react'
 import { CHURCH_INFO, SOCIAL_LINKS, FOOTER_LINKS } from '@/lib/constants'
 import { SubscribeForm } from '@/components/forms/SubscribeForm'
 
@@ -56,7 +56,6 @@ export function Footer() {
                 {[
                   { href: SOCIAL_LINKS.facebook, icon: Facebook, label: 'Facebook' },
                   { href: SOCIAL_LINKS.youtube, icon: Youtube, label: 'YouTube' },
-                  { href: SOCIAL_LINKS.instagram, icon: Instagram, label: 'Instagram' },
                 ].map((social) => (
                   <a
                     key={social.label}

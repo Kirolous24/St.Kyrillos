@@ -3,7 +3,7 @@ import Image from 'next/image'
 import { Calendar, Clock, MapPin, Info } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { SectionHeader } from '@/components/ui/SectionHeader'
-import { CHURCH_INFO, LIVESTREAM, SCHEDULE } from '@/lib/constants'
+import { CHURCH_INFO, SCHEDULE } from '@/lib/constants'
 
 export const metadata: Metadata = {
   title: 'Service Schedule',
@@ -99,45 +99,6 @@ export default function SchedulePage() {
                   {SCHEDULE.calendarNote} For the most up-to-date information,
                   please check our calendar below or contact the church office.
                 </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Livestream Embed */}
-      <section className="section-padding bg-gray-50">
-        <div className="container-custom">
-          <SectionHeader
-            title="Watch Live"
-            subtitle="Join us online for Divine Liturgy and special services"
-            withAccent
-          />
-
-          <div className="max-w-5xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <div className="aspect-video">
-                <iframe
-                  src={LIVESTREAM.youtubeLiveEmbedUrl}
-                  className="w-full h-full"
-                  title="St. Kyrillos the Sixth Livestream"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                />
-              </div>
-            </div>
-            <div className="mt-6 text-center text-gray-600">
-              <p className="text-body">
-                {LIVESTREAM.schedule}. When we are offline, YouTube will display
-                an offline message or the latest stream.
-              </p>
-              <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
-                <Button href={LIVESTREAM.youtubeChannelUrl} variant="primary">
-                  Visit Our YouTube Channel
-                </Button>
-                <Button href={LIVESTREAM.youtubeStreamsUrl} variant="secondary">
-                  See Past Streams
-                </Button>
               </div>
             </div>
           </div>
