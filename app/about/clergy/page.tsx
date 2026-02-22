@@ -54,7 +54,7 @@ export default function ClergyPage() {
               >
                 <div className="md:flex">
                   {/* Photo */}
-                  <div className="md:w-1/3">
+                  <div className="md:w-1/3 flex-shrink-0">
                     <div className="aspect-[2/3] md:h-full bg-gray-100 relative">
                       <Image
                         src="/images/clergy/fr-pachom.png"
@@ -66,7 +66,7 @@ export default function ClergyPage() {
                   </div>
 
                   {/* Info */}
-                  <div className="md:w-2/3 p-8 md:p-10">
+                  <div className="md:w-2/3 min-w-0 p-8 md:p-10 md:pl-16">
                     <div className="mb-6">
                       <p className="text-gold font-semibold text-sm uppercase tracking-wide mb-2">
                         {member.title}
@@ -78,11 +78,6 @@ export default function ClergyPage() {
 
                     <div className="prose-custom mb-8">
                       <p>{member.bio}</p>
-                      <p className="text-gray-500 italic">
-                        [Additional biographical information about Fr. Pachom can
-                        be added here — his background, ordination, education,
-                        family, and ministry focus.]
-                      </p>
                     </div>
 
                     {/* Contact */}
@@ -111,14 +106,6 @@ export default function ClergyPage() {
                 </div>
               </div>
             ))}
-
-            {/* Placeholder for additional clergy/deacons */}
-            <div className="bg-gray-50 rounded-2xl p-8 text-center">
-              <p className="text-gray-500 mb-4">
-                [Additional clergy members, deacons, and church servants can be
-                added here as needed.]
-              </p>
-            </div>
           </div>
         </div>
       </section>

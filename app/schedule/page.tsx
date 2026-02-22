@@ -44,7 +44,8 @@ export default function SchedulePage() {
         </div>
       </section>
 
-      {/* Weekly Schedule */}
+      {/* Weekly Schedule - Commented out for now, using Google Calendar instead */}
+      {/*
       <section className="section-padding">
         <div className="container-custom">
           <SectionHeader
@@ -90,7 +91,6 @@ export default function SchedulePage() {
               ))}
             </div>
 
-            {/* Schedule Note */}
             <div className="mt-10 bg-gold/10 border border-gold/20 rounded-xl p-6 flex items-start gap-4">
               <Info className="w-6 h-6 text-gold flex-shrink-0 mt-0.5" />
               <div>
@@ -104,6 +104,7 @@ export default function SchedulePage() {
           </div>
         </div>
       </section>
+      */}
 
       {/* Calendar Embed */}
       <section className="section-padding">

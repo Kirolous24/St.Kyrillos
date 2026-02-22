@@ -2,8 +2,10 @@ import { MapPin } from 'lucide-react'
 import { CHURCH_INFO } from '@/lib/constants'
 
 export function VisitSection() {
-  const mapsEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(CHURCH_INFO.address.full)}&t=&z=15&ie=UTF8&iwloc=&output=embed`
-
+  // Using coordinates instead of address query removes the info popup box
+  // z=13 zooms out to show the surrounding area
+  
+  const mapsEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(CHURCH_INFO.address.full)}&t=&z=10&ie=UTF8&iwloc=&output=embed`
   return (
     <section className="section-padding bg-gray-50">
       <div className="container-custom">

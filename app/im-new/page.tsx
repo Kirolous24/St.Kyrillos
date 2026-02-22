@@ -13,7 +13,13 @@ export default function ImNewPage() {
   return (
     <>
       {/* Hero Section */}
-      <section className="relative py-32 md:py-48 bg-gradient-to-br from-primary-900 via-primary-950 to-gray-900 bg-cover bg-center bg-fixed" style={{ backgroundImage: 'url(/images/church1.jpeg)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      <section
+          className="relative py-32 md:py-48 bg-gradient-to-br from-primary-900 via-primary-950 to-gray-900 bg-fixed"        style={{
+          backgroundImage: 'url(/images/church1.jpeg)',
+          backgroundSize: '100% auto',
+          backgroundPosition: 'center',
+        }}
+      >
         <div className="absolute inset-0 bg-black/50 z-0"></div>
         <div className="container-custom relative z-10">
           <div className="max-w-3xl mx-auto text-center text-white">
