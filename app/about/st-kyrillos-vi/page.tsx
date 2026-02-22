@@ -178,7 +178,7 @@ export default function StKyrillosPage() {
             </h2>
             <p className="text-gray-600 text-lg mb-8">
               The feast day of Pope Kyrillos VI is celebrated on{' '}
-              <strong>21 Paoni</strong> (Coptic calendar) / <strong>June 28</strong>{' '}
+              <strong>Amshir 30</strong> (Coptic calendar) / <strong>March 9th</strong>{' '}
               (Gregorian calendar), commemorating his departure.
             </p>
             <Button href="/schedule" variant="primary">

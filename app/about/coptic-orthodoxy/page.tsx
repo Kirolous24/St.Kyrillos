@@ -55,7 +55,7 @@ export default function CopticOrthodoxyPage() {
           className="object-cover"
           priority
         />
-        <div className="absolute inset-0 bg-black/50" />
+        <div className="absolute inset-0 bg-black/35" />
         <div className="container-custom relative z-10">
           <div className="max-w-3xl mx-auto text-center text-white">
             <h1 className="font-serif text-display-2 md:text-display-1 mb-4">
