@@ -4,6 +4,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Force Calendly inline widget iframe to fill its container */
+.calendly-inline-widget iframe {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 @layer base {
   html {
     scroll-behavior: smooth;

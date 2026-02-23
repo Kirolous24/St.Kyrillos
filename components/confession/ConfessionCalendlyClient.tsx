@@ -34,7 +34,8 @@ export function ConfessionCalendlyClient() {
         <div
           className="calendly-inline-widget w-full rounded-2xl overflow-hidden border border-gray-100 shadow-soft"
           data-url={CALENDLY_URL}
-          style={{ minWidth: '500px', height: '700px' }}
+          data-height="900"
+          style={{ minWidth: '320px', height: '900px' }}
         />
       </div>
     </div>
