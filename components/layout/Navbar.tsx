@@ -76,12 +76,12 @@ export function Navbar() {
               />
               <div className="absolute inset-0 rounded-full bg-gold/20 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <div className="hidden sm:block">
+            <div>
               <span className={cn(
                 "font-serif font-semibold transition-all duration-300",
                 scrolled
-                  ? "text-base text-gray-900 group-hover:text-primary-900"
-                  : "text-lg text-gray-900 group-hover:text-primary-900"
+                  ? "text-sm sm:text-base text-gray-900 group-hover:text-primary-900"
+                  : "text-sm sm:text-lg text-gray-900 group-hover:text-primary-900"
               )}>
                 {CHURCH_INFO.name}
               </span>
