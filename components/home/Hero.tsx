@@ -10,14 +10,22 @@ export function Hero() {
   const [scrollY, setScrollY] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
-    const handleScroll = () => {
-      setScrollY(window.scrollY)
-    }
+    const mq = window.matchMedia('(max-width: 768px)')
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  useEffect(() => {
+    if (isMobile) return
+    const handleScroll = () => setScrollY(window.scrollY)
     window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+  }, [isMobile])
 
   // Trigger entrance animation
   useEffect(() => {
@@ -29,7 +37,7 @@ export function Hero() {
       {/* Background Image with Parallax */}
       <div
         className="absolute inset-0 will-change-transform"
-        style={{ transform: `translateY(${scrollY * 0.3}px)` }}
+        style={{ transform: isMobile ? undefined : `translateY(${scrollY * 0.3}px)` }}
       >
         <Image
           src="/images/outside_church.png"
