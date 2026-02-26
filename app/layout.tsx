@@ -36,6 +36,17 @@ export const metadata: Metadata = {
     title: CHURCH_INFO.fullName,
     description: `A Coptic Orthodox Christian community in ${CHURCH_INFO.location}. An ancient faith. A welcoming home.`,
   },
+  icons: {
+    icon: [
+      { url: '/images/Logo.jpg' },
+    ],
+    apple: [
+      { url: '/images/Logo.jpg' },
+    ],
+    shortcut: [
+      { url: '/images/Logo.jpg' },
+    ],
+  },
   robots: {
     index: true,
     follow: true,
