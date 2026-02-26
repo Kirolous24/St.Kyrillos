@@ -38,13 +38,13 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/images/Logo.jpg' },
+      { url: '/images/Logo.png', type: 'image/png' },
     ],
     apple: [
-      { url: '/images/Logo.jpg' },
+      { url: '/images/Logo.png', type: 'image/png' },
     ],
     shortcut: [
-      { url: '/images/Logo.jpg' },
+      { url: '/images/Logo.png', type: 'image/png' },
     ],
   },
   robots: {
