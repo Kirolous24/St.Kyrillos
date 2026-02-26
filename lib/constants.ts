@@ -43,7 +43,7 @@ export const CLERGY = [
     name: "Fr. Pachom Ibrahim",
     title: "Parish Priest",
     image: "/images/clergy/headshot.png", // Placeholder
-    bio: `Fr. Pachom Ibrahim is the priest for St. Kyrillos the Sixth Coptic Orthodox Church located in Nashville, TN. H.H. Pope Tawadros, with the presence of H.G. Bishop Youssef and other bishops, ordained him priest on October 10, 2015. He began his service in St. Mark Coptic Orthodox Church in Nashville, Tennessee. Then in 2016, H.G. Bishop Youssef asked him to serve in St. Kyrillos the Sixth Coptic Orthodox Church. Fr. Pachom has been serving within the Diocese of the Southern United States since October 10, 2015. We pray that the Lord will continue blessing his service.`,
+    bio: `Fr. Pachom Ibrahim is the priest for St. Kyrillos the Sixth Coptic Orthodox Church located in Nashville, TN. H.H. Pope Tawadros, with the presence of his Eminence Metropolitan Youssef and other bishops, ordained him priest on October 10, 2015. He began his service in St. Mark Coptic Orthodox Church in Nashville, Tennessee. Then in 2016, his Eminence Metropolitan Youssef asked him to serve in St. Kyrillos the Sixth Coptic Orthodox Church. Fr. Pachom has been serving within the Diocese of the Southern United States since October 10, 2015. We pray that the Lord will continue blessing his service.`,
     contact: {
       email: "[FR. PACHOM EMAIL]",
       phone: "[FR. PACHOM PHONE]",
@@ -80,7 +80,7 @@ export const SCHEDULE = {
     },
   ],
   // Google Calendar embed URL (UPDATE THIS)
-  calendarEmbedUrl: "https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=America%2FChicago&showTitle=0&showPrint=0&showCalendars=0&src=a2lyb2xvdXNrYW1lbDI0QGdtYWlsLmNvbQ&src=NmUyYWFhZmU0ZWIzODc0ZDFiNWU3NmZlNzRhNDk1MGM2MGJjMWNjMjk4OWVhNzJlNDg5ZDAzOGI3OTNiNGNmNUBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=NjI1NzUwMWE3ZTg3Y2RmNzgyNzVlNDk3MDA4YzczMzM1NTdiNDc5M2I4OTg3MjI4NGIwYWI3NDI0OWViZjg4Y0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=Y2xhc3Nyb29tMTAwMDM3NzcxNzk5MDY1OTg2MDA5QGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20&color=%238e24aa&color=%234285f4&color=%234285f4&color=%23202124",
+  calendarEmbedUrl: "https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=America%2FChicago&showPrint=0&showTitle=0&src=YjhlMmIxMjhlYWM0NGJiMDNhNDBkZDdhZDY1OTYzMjAxMGM3YWFmNGNiYjY2NzU4ZGU1NjJjZDY4ZWIyZWQ0MUBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=aHA4YXFlbDhzdGo3bGdnYXNkODF0NnQybzhAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%23ad1457&color=%233f51b5",
   calendarNote: "Schedule may change during fasting seasons and feast days.",
 } as const;
 

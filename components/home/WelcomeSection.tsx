@@ -1,9 +1,14 @@
+'use client'
+
 import { Button } from '@/components/ui/Button'
 import { Cross, Heart, BookOpen } from 'lucide-react'
+import { useScrollAnimation } from '@/hooks/useScrollAnimation'
 
 export function WelcomeSection() {
+  const { ref, isVisible } = useScrollAnimation()
+
   return (
-    <section className="py-24 relative overflow-hidden">
+    <section ref={ref} className={`py-24 relative overflow-hidden ${isVisible ? 'animate-slide-in-left' : 'opacity-0'}`}>
       {/* Decorative background elements */}
       <div className="absolute top-0 left-0 w-96 h-96 bg-primary-50 rounded-full -translate-x-1/2 -translate-y-1/2 blur-3xl opacity-50" />
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-gold/10 rounded-full translate-x-1/2 translate-y-1/2 blur-3xl opacity-50" />

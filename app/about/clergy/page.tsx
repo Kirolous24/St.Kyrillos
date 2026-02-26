@@ -52,21 +52,21 @@ export default function ClergyPage() {
                 key={member.id}
                 className="bg-white rounded-2xl shadow-soft overflow-hidden mb-8 last:mb-0"
               >
-                <div className="md:flex">
+                <div className="flex flex-col md:flex-row">
                   {/* Photo */}
-                  <div className="md:w-1/3 flex-shrink-0">
-                    <div className="aspect-[2/3] md:h-full bg-gray-100 relative">
+                  <div className="w-full md:w-80 flex-shrink-0">
+                    <div className="relative h-80 md:h-full min-h-[400px] bg-gray-100">
                       <Image
                         src="/images/clergy/fr-pachom.png"
                         alt={member.name}
                         fill
-                        className="object-cover"
+                        className="object-cover object-top"
                       />
                     </div>
                   </div>
 
                   {/* Info */}
-                  <div className="md:w-2/3 min-w-0 p-8 md:p-10 md:pl-16">
+                  <div className="flex-1 p-8 md:p-10">
                     <div className="mb-6">
                       <p className="text-gold font-semibold text-sm uppercase tracking-wide mb-2">
                         {member.title}

@@ -1,6 +1,9 @@
+'use client'
+
 import Link from 'next/link'
 import { Calendar, Users, BookOpen, PlayCircle, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useScrollAnimation } from '@/hooks/useScrollAnimation'
 
 const actions = [
   {
@@ -38,10 +41,18 @@ const actions = [
 ]
 
 export function QuickActions() {
+  const { ref, isVisible } = useScrollAnimation()
+
   return (
     <section className="relative -mt-24 z-20 pb-16">
       <div className="container-custom">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+        <div
+          ref={ref}
+          className={cn(
+            "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6",
+            isVisible ? 'animate-fade-in-up' : 'opacity-0'
+          )}
+        >
           {actions.map((action, index) => (
             <Link
               key={action.href}

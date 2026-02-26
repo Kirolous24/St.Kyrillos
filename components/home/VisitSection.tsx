@@ -1,13 +1,18 @@
+'use client'
+
 import { MapPin } from 'lucide-react'
 import { CHURCH_INFO } from '@/lib/constants'
+import { useScrollAnimation } from '@/hooks/useScrollAnimation'
 
 export function VisitSection() {
+  const { ref, isVisible } = useScrollAnimation()
+
   // Using coordinates instead of address query removes the info popup box
   // z=13 zooms out to show the surrounding area
-  
+
   const mapsEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(CHURCH_INFO.address.full)}&t=&z=10&ie=UTF8&iwloc=&output=embed`
   return (
-    <section className="section-padding bg-gray-50">
+    <section ref={ref} className={`section-padding bg-gray-50 ${isVisible ? 'animate-slide-in-right' : 'opacity-0'}`}>
       <div className="container-custom">
         <div className="text-center mb-10">
           <h2 className="font-serif text-4xl md:text-5xl text-gray-900">
