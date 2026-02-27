@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Image from 'next/image'
 import { Youtube, Facebook, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { LivestreamPlayer } from '@/components/LivestreamPlayer'
 import { CHURCH_INFO, SOCIAL_LINKS, LIVESTREAM } from '@/lib/constants'
 
 export const metadata: Metadata = {
@@ -47,32 +48,8 @@ export default function LivestreamPage() {
       <section className="section-padding">
         <div className="container-custom">
           <div className="max-w-4xl mx-auto">
-            {/* Watch Live Button */}
-            <a
-              href={LIVESTREAM.youtubeLiveUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-3 w-full p-4 mb-6 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold text-lg transition-colors"
-            >
-              <Youtube className="w-6 h-6" />
-              Watch Live on YouTube
-            </a>
-
-            {/* Live Video Player */}
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden mb-8">
-              <div className="aspect-video">
-                <iframe
-                  src={LIVESTREAM.youtubeLiveEmbedUrl}
-                  className="w-full h-full"
-                  title="St. Kyrillos the Sixth Livestream"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                />
-              </div>
-              <p className="text-center text-sm text-gray-500 py-3">
-                If the video doesn't appear above, click "Watch Live on YouTube"
-              </p>
-            </div>
+            {/* Dynamic Livestream Player */}
+            <LivestreamPlayer />
 
             {/* Schedule Info */}
             <div className="bg-gold/10 border border-gold/20 rounded-xl p-6 mb-8">

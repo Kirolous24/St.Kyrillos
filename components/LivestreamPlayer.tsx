@@ -76,11 +76,6 @@ export function LivestreamPlayer() {
     }
 
     checkLiveStatus()
-
-    // Refresh every 2 minutes to check if stream has started
-    const interval = setInterval(checkLiveStatus, 2 * 60 * 1000)
-
-    return () => clearInterval(interval)
   }, [])
 
   if (isLoading) {
