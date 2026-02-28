@@ -40,7 +40,7 @@ export function Hero() {
         style={{ transform: isMobile ? undefined : `translateY(${scrollY * 0.3}px)` }}
       >
         <Image
-          src="/images/outside_church.png"
+          src="/images/New_church.jpg"
           alt="St. Kyrillos the Sixth Coptic Orthodox Church"
           fill
           className="object-cover scale-110"
