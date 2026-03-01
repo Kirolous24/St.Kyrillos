@@ -91,7 +91,7 @@ export function Hero() {
                   isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
                 }`}
               >
-                Ϯⲉⲕⲕⲗⲏⲥⲓⲁ ⲛⲧⲉ Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ ⲋ
+                Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
               </span>
             </span>
           </h1>

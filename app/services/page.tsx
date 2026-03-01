@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Users, BookOpen, Music, Heart, Baby } from 'lucide-react'
+import { Users, BookOpen, Music, Heart, ShoppingBag, UtensilsCrossed } from 'lucide-react'
 import { CHURCH_INFO } from '@/lib/constants'
 
 export const metadata: Metadata = {
@@ -44,6 +44,27 @@ const services = [
     icon: Heart,
     shortDescription: 'Community and spiritual nurturing',
     href: '/services/womens-meeting',
+  },
+  {
+    id: 'choir',
+    title: 'Choir',
+    icon: Music,
+    shortDescription: 'Praising God through sacred music — Kg through adult',
+    href: '/services/choir',
+  },
+  {
+    id: 'bookstore',
+    title: 'Bookstore',
+    icon: ShoppingBag,
+    shortDescription: 'Coptic Orthodox books, icons, and faith resources',
+    href: '/services/bookstore',
+  },
+  {
+    id: 'kitchen-cleaning',
+    title: 'Kitchen & Cleaning',
+    icon: UtensilsCrossed,
+    shortDescription: 'Serving the community through hospitality and care',
+    href: '/services/kitchen-cleaning',
   },
 ]
 

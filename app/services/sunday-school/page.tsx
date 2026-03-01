@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import Image from 'next/image'
 import { Clock, Users, Target, ArrowLeft } from 'lucide-react'
 import { CHURCH_INFO } from '@/lib/constants'
 
@@ -36,6 +35,27 @@ export default function SundaySchoolPage() {
             <p className="text-gray-700 text-lg leading-relaxed mb-6">
               Sunday School is the heart of our faith formation ministry. We provide structured, age-appropriate religious education for children and young people, helping them understand the teachings of the Gospel and develop a deeper connection with Christ and the Church.
             </p>
+          </div>
+
+          {/* Sub-groups */}
+          <div className="mb-12">
+            <h2 className="font-serif text-2xl font-semibold text-gray-900 mb-6">
+              Sunday School Programs
+            </h2>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-primary-50 rounded-xl p-6 border border-primary-100">
+                <h3 className="font-serif text-xl font-semibold text-gray-900 mb-2">Marhagan</h3>
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  A joyful celebration of faith through Coptic hymns, liturgy, and praise — bringing children together in the spirit of worship and festivity.
+                </p>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-6 border border-blue-100">
+                <h3 className="font-serif text-xl font-semibold text-gray-900 mb-2">Nady</h3>
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  A community gathering for youth focused on fellowship, spiritual activities, and building lasting friendships within the church family.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 mb-12">

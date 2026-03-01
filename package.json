@@ -6,17 +6,24 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.400.0",
     "next": "^14.2.0",
+    "next-auth": "^5.0.0-beta.30",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "lucide-react": "^0.400.0",
-    "clsx": "^2.1.0",
     "tailwind-merge": "^2.2.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
@@ -24,6 +31,7 @@
     "eslint": "^8.56.0",
     "eslint-config-next": "^14.2.0",
     "postcss": "^8.4.33",
+    "prisma": "^5.22.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.0"
   }
