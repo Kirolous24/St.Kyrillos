@@ -143,8 +143,8 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
                     isSelected
                       ? 'bg-primary-900 shadow-soft-xl -translate-y-1 scale-105'
                       : isToday
-                        ? 'bg-white border-2 border-gold shadow-soft hover:-translate-y-1 hover:shadow-soft-xl hover:scale-[1.03]'
-                        : 'bg-white border border-gray-100 shadow-soft hover:-translate-y-1 hover:shadow-soft-xl hover:border-gold/40 hover:scale-[1.03]'
+                        ? 'bg-white border-2 border-gold shadow-soft md:hover:-translate-y-1 md:hover:shadow-soft-xl md:hover:scale-[1.03]'
+                        : 'bg-white border border-gray-100 shadow-soft md:hover:-translate-y-1 md:hover:shadow-soft-xl md:hover:border-gold/40 md:hover:scale-[1.03]'
                   )}
                 >
                   {/* Event count badge */}
@@ -153,7 +153,7 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
                       'absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center shadow-sm',
                       isSelected
                         ? 'bg-gold text-primary-950'
-                        : 'bg-gold text-primary-950 group-hover:scale-110 transition-transform duration-200'
+                        : 'bg-gold text-primary-950 md:group-hover:scale-110 transition-transform duration-200'
                     )}>
                       {eventCount}
                     </span>
@@ -169,7 +169,7 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
                   {/* Day abbreviation */}
                   <span className={cn(
                     'text-[10px] font-semibold uppercase tracking-widest mb-0.5 transition-colors duration-300',
-                    isSelected ? 'text-white/60' : isToday ? 'text-gold' : 'text-gray-400 group-hover:text-gold'
+                    isSelected ? 'text-white/60' : isToday ? 'text-gold' : 'text-gray-400 md:group-hover:text-gold'
                   )}>
                     {day.short}
                   </span>
@@ -177,7 +177,7 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
                   {/* Date number */}
                   <span className={cn(
                     'font-serif font-bold text-xl leading-tight transition-colors duration-300',
-                    isSelected ? 'text-white' : isToday ? 'text-primary-900' : 'text-gray-800 group-hover:text-primary-900'
+                    isSelected ? 'text-white' : isToday ? 'text-primary-900' : 'text-gray-800 md:group-hover:text-primary-900'
                   )}>
                     {date.getDate()}
                   </span>
@@ -202,7 +202,7 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
 
                   {/* Hover shimmer effect */}
                   {!isSelected && (
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/0 to-primary-50/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/0 to-primary-50/30 opacity-0 md:group-hover:opacity-100 transition-opacity duration-300" />
                   )}
                 </button>
               )
