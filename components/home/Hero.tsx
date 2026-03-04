@@ -77,6 +77,7 @@ export function Hero() {
             }`}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
+            onClick={() => isMobile && setIsHovered(!isHovered)}
           >
             <span className="relative inline-block">
               <span
@@ -87,17 +88,19 @@ export function Hero() {
                 {CHURCH_INFO.name}
               </span>
               <span
-                className={`hidden sm:block sm:absolute top-0 left-1/2 -translate-x-1/2 transition-all duration-500 whitespace-nowrap text-gold ${
+                className={`absolute top-0 left-1/2 -translate-x-1/2 transition-all duration-500 text-gold ${
                   isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
                 }`}
               >
-                Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
+                {/* Desktop: single line */}
+                <span className="hidden sm:block whitespace-nowrap">
+                  Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
+                </span>
+                {/* Mobile: split across two lines */}
+                <span className="block sm:hidden leading-snug">
+                  Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ<br />Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
+                </span>
               </span>
-            </span>
-
-            {/* Mobile: Coptic text always shown, split across two lines */}
-            <span className="block sm:hidden text-gold mt-1 leading-snug">
-              Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ<br />Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
             </span>
           </h1>
 
