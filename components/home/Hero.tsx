@@ -75,9 +75,8 @@ export function Hero() {
             className={`font-serif text-4xl sm:text-5xl md:text-6xl lg:text-7xl text-white mb-4 text-balance transition-all duration-1000 cursor-pointer ${
               isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
             }`}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
-            onClick={() => isMobile && setIsHovered(!isHovered)}
+            onMouseEnter={() => !isMobile && setIsHovered(true)}
+            onMouseLeave={() => !isMobile && setIsHovered(false)}
           >
             <span className="relative inline-block">
               <span
@@ -87,19 +86,13 @@ export function Hero() {
               >
                 {CHURCH_INFO.name}
               </span>
+              {/* Desktop only: Coptic text on hover */}
               <span
-                className={`absolute top-0 left-1/2 -translate-x-1/2 transition-all duration-500 text-gold ${
+                className={`hidden sm:block absolute top-0 left-1/2 -translate-x-1/2 transition-all duration-500 whitespace-nowrap text-gold ${
                   isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
                 }`}
               >
-                {/* Desktop: single line */}
-                <span className="hidden sm:block whitespace-nowrap">
-                  Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
-                </span>
-                {/* Mobile: split across two lines */}
-                <span className="block sm:hidden leading-snug">
-                  Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ<br />Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
-                </span>
+                Ⲧⲉⲕⲕⲗⲉⲥⲓϣ Ⲁⲃⲃⲁ Ⲕⲩⲣⲓⲗⲗⲟⲥ ⲡⲓⲙⲁϩ Ⲋ
               </span>
             </span>
           </h1>
