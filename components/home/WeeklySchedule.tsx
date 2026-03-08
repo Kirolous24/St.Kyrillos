@@ -19,7 +19,7 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 
 interface ScheduleEvent {
   id: string
-  dayOfWeek: number
+  date: string // ISO date string e.g. "2026-03-08T12:00:00.000Z"
   time: string
   sortOrder: number
   durationMinutes: number
@@ -63,6 +63,13 @@ function getWeekDates(): Date[] {
   })
 }
 
+// Get the day-of-week (0-6) from an ISO date string, timezone-safe
+function getDayOfWeek(isoDate: string): number {
+  const dateStr = isoDate.slice(0, 10) // "YYYY-MM-DD"
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).getDay()
+}
+
 export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
   const today = new Date().getDay()
   const [selectedDay, setSelectedDay] = useState(today)
@@ -71,10 +78,12 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
   const { ref, isVisible } = useScrollAnimation()
 
   const weekDates = useMemo(() => getWeekDates(), [])
-  const daysWithEvents = new Set(events.map((e) => e.dayOfWeek))
+  const daysWithEvents = new Set(events.map((e) => getDayOfWeek(e.date)))
 
   function getEventsForDay(day: number) {
-    return events.filter((e) => e.dayOfWeek === day).sort((a, b) => a.sortOrder - b.sortOrder)
+    return events
+      .filter((e) => getDayOfWeek(e.date) === day)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
   }
 
   useEffect(() => {
@@ -100,7 +109,7 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
       <div
         className="absolute inset-0 opacity-[0.025]"
         style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23722f37' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/G%3E%3C/svg%3E")`,
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23722f37' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/G%3E%3C/svg%3E")`,
         }}
       />
       {/* Decorative blurred circles */}

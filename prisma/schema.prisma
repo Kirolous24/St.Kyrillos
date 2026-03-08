@@ -9,16 +9,16 @@ datasource db {
 }
 
 model ScheduleEvent {
-  id          String   @id @default(cuid())
-  dayOfWeek   Int      // 0=Sunday, 1=Monday ... 6=Saturday
-  time        String   // Display format: "8:00 AM"
-  sortOrder   Int      // Minutes from midnight for chronological ordering
+  id              String   @id @default(cuid())
+  date            DateTime // The specific date of this event (stored at noon UTC)
+  time            String   // Display format: "8:00 AM"
+  sortOrder       Int      // Minutes from midnight for chronological ordering
   durationMinutes Int      @default(60)
   title           String
   description     String?
   location        String?
   createdAt       DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt       DateTime @updatedAt
 
-  @@index([dayOfWeek])
+  @@index([date])
 }

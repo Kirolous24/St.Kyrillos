@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
-import { Calendar, Clock, MapPin, Info } from 'lucide-react'
+import { MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { SectionHeader } from '@/components/ui/SectionHeader'
-import { CHURCH_INFO, SCHEDULE } from '@/lib/constants'
+import { WeeklyScheduleSection } from '@/components/home/WeeklyScheduleSection'
+import { CHURCH_INFO } from '@/lib/constants'
 
 export const metadata: Metadata = {
   title: 'Service Schedule',
@@ -44,88 +44,8 @@ export default function SchedulePage() {
         </div>
       </section>
 
-      {/* Weekly Schedule - Commented out for now, using Google Calendar instead */}
-      {/*
-      <section className="section-padding">
-        <div className="container-custom">
-          <SectionHeader
-            title="Weekly Services"
-            subtitle="Our regular schedule of worship services"
-            withAccent
-          />
-
-          <div className="max-w-4xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {SCHEDULE.regular.map((day) => (
-                <div
-                  key={day.day}
-                  className="bg-white rounded-2xl p-8 shadow-soft border border-gray-100"
-                >
-                  <div className="flex items-center gap-4 mb-6 pb-4 border-b border-gray-100">
-                    <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center">
-                      <Calendar className="w-7 h-7 text-primary-900" />
-                    </div>
-                    <h3 className="font-serif text-heading-3 text-gray-900">
-                      {day.day}
-                    </h3>
-                  </div>
-                  <ul className="space-y-4">
-                    {day.services.map((service, idx) => (
-                      <li
-                        key={idx}
-                        className="flex items-start gap-3"
-                      >
-                        <Clock className="w-5 h-5 text-gold mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {service.name}
-                          </p>
-                          <p className="text-primary-900 font-semibold">
-                            {service.time}
-                          </p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-10 bg-gold/10 border border-gold/20 rounded-xl p-6 flex items-start gap-4">
-              <Info className="w-6 h-6 text-gold flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-gray-700 font-medium mb-1">Please Note</p>
-                <p className="text-gray-600">
-                  {SCHEDULE.calendarNote} For the most up-to-date information,
-                  please check our calendar below or contact the church office.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      */}
-
-      {/* Calendar Embed */}
-      <section className="section-padding">
-        <div className="container-custom">
-          <SectionHeader
-            title="Church Calendar"
-            subtitle="Special events, feast days, and schedule changes"
-            withAccent
-          />
-
-          <div className="max-w-5xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <iframe
-                src={SCHEDULE.calendarEmbedUrl}
-                className="w-full h-[600px] border-0"
-                title="Church Calendar"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Weekly Schedule */}
+      <WeeklyScheduleSection />
 
       {/* Location CTA */}
       <section className="section-padding">

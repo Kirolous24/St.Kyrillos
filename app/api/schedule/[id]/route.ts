@@ -15,26 +15,24 @@ export async function PUT(
 
     const { id } = params
     const body = await request.json()
-    const { dayOfWeek, time, sortOrder, title, description, durationMinutes, location } = body
+    const { date, time, sortOrder, title, description, durationMinutes, location } = body
 
-    if (
-      typeof dayOfWeek !== 'number' ||
-      dayOfWeek < 0 ||
-      dayOfWeek > 6 ||
-      !time ||
-      typeof sortOrder !== 'number' ||
-      !title
-    ) {
+    if (!date || !time || typeof sortOrder !== 'number' || !title) {
       return NextResponse.json(
-        { error: 'Invalid input. Required: dayOfWeek (0-6), time, sortOrder, title' },
+        { error: 'Invalid input. Required: date (YYYY-MM-DD), time, sortOrder, title' },
         { status: 400 }
       )
+    }
+
+    const eventDate = new Date(`${date}T12:00:00.000Z`)
+    if (isNaN(eventDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid date format' }, { status: 400 })
     }
 
     const event = await prisma.scheduleEvent.update({
       where: { id },
       data: {
-        dayOfWeek,
+        date: eventDate,
         time: String(time).slice(0, 20),
         sortOrder,
         durationMinutes: typeof durationMinutes === 'number' ? durationMinutes : 60,
@@ -45,6 +43,7 @@ export async function PUT(
     })
 
     revalidatePath('/')
+    revalidatePath('/schedule')
     return NextResponse.json(event)
   } catch (error) {
     console.error('Error updating event:', error)
@@ -72,6 +71,7 @@ export async function DELETE(
     })
 
     revalidatePath('/')
+    revalidatePath('/schedule')
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting event:', error)

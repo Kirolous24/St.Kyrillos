@@ -79,8 +79,6 @@ export const SCHEDULE = {
       ],
     },
   ],
-  // Google Calendar embed URL (UPDATE THIS)
-  calendarEmbedUrl: "https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=America%2FChicago&showPrint=0&showTitle=0&src=YjhlMmIxMjhlYWM0NGJiMDNhNDBkZDdhZDY1OTYzMjAxMGM3YWFmNGNiYjY2NzU4ZGU1NjJjZDY4ZWIyZWQ0MUBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=aHA4YXFlbDhzdGo3bGdnYXNkODF0NnQybzhAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%23ad1457&color=%233f51b5",
   calendarNote: "Schedule may change during fasting seasons and feast days.",
 } as const;
 
