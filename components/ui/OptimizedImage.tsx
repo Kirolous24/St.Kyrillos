@@ -16,12 +16,14 @@ export function OptimizedImage({
 }: OptimizedImageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
+  const fillContainerClass = props.fill ? 'w-full h-full' : undefined
 
   if (hasError) {
     return (
       <div
         className={cn(
           'flex items-center justify-center',
+          fillContainerClass,
           fallbackColor,
           className
         )}
@@ -32,7 +34,7 @@ export function OptimizedImage({
   }
 
   return (
-    <div className={cn('relative overflow-hidden', className)}>
+    <div className={cn('relative overflow-hidden', fillContainerClass, className)}>
       {/* Skeleton placeholder while loading */}
       {isLoading && (
         <div
@@ -50,6 +52,7 @@ export function OptimizedImage({
           isLoading ? 'opacity-0 scale-105' : 'opacity-100 scale-100',
           className
         )}
+        onLoadingComplete={() => setIsLoading(false)}
         onLoad={() => setIsLoading(false)}
         onError={() => setHasError(true)}
       />
