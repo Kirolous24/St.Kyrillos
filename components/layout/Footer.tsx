@@ -2,8 +2,12 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Facebook, Youtube, Mail, Phone, MapPin, ArrowRight, Heart } from 'lucide-react'
 import { CHURCH_INFO, SOCIAL_LINKS, FOOTER_LINKS } from '@/lib/constants'
+import { auth } from '@/lib/auth'
 
-export function Footer() {
+export async function Footer() {
+  const session = await auth()
+  const adminHref = session ? '/admin/dashboard' : '/admin/login'
+  const adminLabel = session ? 'Dashboard' : 'Log In'
   const currentYear = new Date().getFullYear()
 
   return (
@@ -155,7 +159,13 @@ export function Footer() {
                 Made with <Heart className="w-3 h-3 text-gold fill-gold" /> for His glory
               </span>
             </p>
-            <div className="flex gap-6 text-sm">
+            <div className="flex items-center gap-3 text-sm">
+              <Link
+                href={adminHref}
+                className="px-3 py-1.5 rounded-md border border-gold/40 text-gold hover:bg-gold hover:text-primary-950 transition-colors font-medium"
+              >
+                {adminLabel}
+              </Link>
               <Link
                 href="/privacy"
                 className="text-white/50 hover:text-white transition-colors"

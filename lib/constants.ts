@@ -216,23 +216,23 @@ export const FAQS = [
     questions: [
       {
         question: "Can I visit if I'm not Orthodox?",
-        answer: "Absolutely! We welcome visitors of all backgrounds — whether you're exploring Orthodoxy, coming from another Christian tradition, or simply curious. You are not required to be Orthodox to attend our services. Come as you are.",
+        answer: "Yes, absolutely. Our community includes both cradle Orthodox Christians and those who have converted to the faith, so we are very comfortable with newcomers, inquirers, and visitors. Anyone who wishes to discover ancient Coptic Orthodox Christianity is welcome. If you have questions, our priest will be happy to answer them, so please feel free to ask what we do and why.",
       },
       {
         question: "What should I wear?",
-        answer: "We ask that visitors dress modestly out of respect for the sacred space. For women, this typically means skirts or dresses below the knee and shoulders covered (no tank tops). For men, long pants and a collared shirt are appropriate, though not required. Head coverings for women are welcome but not mandatory for visitors. If you're unsure, err on the side of modest and comfortable.",
+        answer: "The general rule for both men and women is to dress appropriately, modestly, and respectfully, as we stand before the living God. Business-casual attire is typically suitable.",
       },
       {
-        question: "How long is the Divine Liturgy?",
-        answer: "The Sunday Divine Liturgy typically lasts 2.5 to 3 hours. We know that's longer than many church services! Feel free to arrive a bit late or step out if needed — no one will judge you. Many families with young children come and go as needed. Weekday services and vespers are shorter, usually 1 to 1.5 hours.",
+        question: "How long is the service?",
+        answer: "There are several services. On Saturday evenings, the Raising of Incense service (Vespers) is generally 30 to 45 minutes, followed by Midnight Praises, which last around 60 minutes. On Sunday mornings, a similar service is celebrated before the Divine Liturgy. The Divine Liturgy is approximately 2 hours, with an sermon of about 15 minutes in between. Distribution of the Mystery of the Eucharist takes place toward the end.",
       },
       {
         question: "What should I do during the Liturgy?",
-        answer: "Don't worry about getting everything right! Stand when others stand, sit when others sit. You are welcome to follow along with the hymns and responses (we have service books available), or simply observe and pray silently. The congregation stands for most of the Liturgy — chairs are available along the walls for those who need them.",
+        answer: "In the Coptic Orthodox Church, we invite everyone to participate by singing along, standing, sitting, and making the sign of the cross as an outward expression of inner faith. Some hymns may be new to you, but feel free to join in. That is often the best way to learn. Don’t worry if you are unsure when to sit or stand; you are free to do as much or as little as you are comfortable with.",
       },
       {
         question: "Where should I sit (or stand)?",
-        answer: "In our church, men typically stand on the right side and women on the left. This is a traditional arrangement, not a strict rule — visitors may sit or stand wherever they're comfortable.",
+        answer: "Traditionally, in our church, men stand on the right side (facing the altar) and women on the left.",
       },
     ],
   },
@@ -241,11 +241,7 @@ export const FAQS = [
     questions: [
       {
         question: "Can I receive Holy Communion?",
-        answer: "Holy Communion is reserved for Orthodox Christians who have prepared through fasting, prayer, and recent confession. If you are not Orthodox, we kindly ask that you refrain from receiving Communion during the Liturgy. However, you are welcome to approach the priest at the end of the service to receive blessed bread (not the Eucharist), which is offered to all.",
-      },
-      {
-        question: "What if I'm Orthodox but from a different tradition (Greek, Russian, etc.)?",
-        answer: "If you are a baptized and chrismated Orthodox Christian from a canonical Orthodox church (Eastern or Oriental), you are welcome to receive Communion after confirming with our priest. Please speak with Fr. Pachom before the service.",
+        answer: "Orthodox priests may serve the Holy Eucharist only to baptized members in good standing of the canonical Orthodox Church who have recently confessed and fasted before partaking of the Holy Eucharist. This has been the ancient tradition of the Holy Church throughout her 2,000-year history. The Orthodox Church understands the Holy Eucharist as the true mystery of Christ's real presence, not simply a memorial or only a spiritual symbol. Rather than adapting this teaching to varying interpretations, we ask visitors to respect the ancient apostolic tradition and join us in receiving the Eulogia (blessed bread) at the end of the Divine Liturgy.",
       },
     ],
   },
@@ -254,11 +250,11 @@ export const FAQS = [
     questions: [
       {
         question: "Are children welcome?",
-        answer: "Yes! Children are an important part of our community. They are welcome in the Liturgy at all times. Young children may make noise — this is normal and expected. We have a cry room available if you need a quieter space.",
+        answer: "Yes. Children are an important part of our community and are always welcome in the Divine Liturgy. Some noise from young children is normal and expected. If a child becomes very noisy, we kindly ask families to use the cry room until they settle. We also offer many services for children, including Sunday School, hymns classes, Bible studies, and more.",
       },
       {
         question: "Is there Sunday School?",
-        answer: "Yes, we have Sunday School for children during or after the Divine Liturgy (depending on the week). Classes are organized by age group. Please ask a greeter for details or check our Schedule page.",
+        answer: "Yes, we have Sunday School for children during or after the Divine Liturgy (depending on the week). Classes are organized by age group. Please ask one of our servants for details or check our Schedule page.",
       },
     ],
   },
