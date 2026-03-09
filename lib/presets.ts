@@ -17,6 +17,32 @@ export const EVENT_PRESETS: EventPreset[] = [
   { title: 'Midnight Praises', durationMinutes: 120, location: 'Main Church', description: null },
 ]
 
+// Events to batch-create when "Fill Day" is clicked for a specific day of the week
+export interface DayPresetEvent {
+  title: string
+  time: string        // 24-hr format, e.g. '08:00'
+  durationMinutes: number
+  location: string
+  description: string | null
+}
+
+// 0=Sunday, 1=Monday, … 6=Saturday — only days with presets are listed
+export const DAY_PRESETS: Partial<Record<number, DayPresetEvent[]>> = {
+  0: [ // Sunday
+    { title: 'Divine Liturgy', time: '08:00', durationMinutes: 180, location: 'Main Church', description: null },
+    { title: 'Sunday School', time: '12:00', durationMinutes: 120, location: 'Church & Trailer Classrooms', description: null },
+    { title: 'Youth Meeting', time: '18:30', durationMinutes: 180, location: 'Main Church', description: null },
+  ],
+  5: [ // Friday
+    { title: 'Bible Study', time: '18:00', durationMinutes: 90, location: 'Fellowship Hall', description: null },
+  ],
+  6: [ // Saturday
+    { title: 'Divine Liturgy', time: '08:30', durationMinutes: 180, location: 'Main Church', description: null },
+    { title: 'Vespers', time: '17:00', durationMinutes: 45, location: 'Main Church', description: 'Evening Raising of Incense' },
+    { title: 'Midnight Praises', time: '20:00', durationMinutes: 120, location: 'Main Church', description: null },
+  ],
+}
+
 export const DURATION_OPTIONS = [
   { value: 30, label: '30 min' },
   { value: 45, label: '45 min' },

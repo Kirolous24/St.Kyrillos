@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from 'react'
 import { signOut } from 'next-auth/react'
-import { Plus, Pencil, Trash2, X, LogOut, Zap } from 'lucide-react'
-import { EVENT_PRESETS, DURATION_OPTIONS } from '@/lib/presets'
+import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Eraser, Settings } from 'lucide-react'
+import Link from 'next/link'
+import { EVENT_PRESETS, DURATION_OPTIONS, DAY_PRESETS } from '@/lib/presets'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -102,13 +103,36 @@ function formatTimeForDisplay(t24: string): string {
   return `${h}:${mStr} ${period}`
 }
 
+interface DBTemplateEvent {
+  title: string
+  time: string
+  durationMinutes: number
+  location: string
+  description: string | null
+}
+
+interface DBTemplate {
+  id: string
+  name: string
+  description: string
+  totalDays: number
+  days: { dayOffset: number; label: string; events: DBTemplateEvent[] }[]
+}
+
 function formatDuration(mins: number): string {
   if (mins < 60) return `${mins} min`
   const h = mins / 60
   return h % 1 === 0 ? `${h} hr${h > 1 ? 's' : ''}` : `${h} hrs`
 }
 
-export function ScheduleManager({ initialEvents }: { initialEvents: ScheduleEvent[] }) {
+// Check if two time ranges overlap (times in minutes from midnight)
+function timesOverlap(startA: number, durA: number, startB: number, durB: number): boolean {
+  const endA = startA + durA
+  const endB = startB + durB
+  return startA < endB && startB < endA
+}
+
+export function ScheduleManager({ initialEvents, initialTemplates }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[] }) {
   const [events, setEvents] = useState<ScheduleEvent[]>(initialEvents)
   const [selectedWeek, setSelectedWeek] = useState(0)
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => toDateStr(new Date()))
@@ -117,6 +141,15 @@ export function ScheduleManager({ initialEvents }: { initialEvents: ScheduleEven
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [fillDayConfirm, setFillDayConfirm] = useState<{ dateStr: string; dayOfWeek: number } | null>(null)
+  const [clearConfirm, setClearConfirm] = useState<{ type: 'day' | 'week'; dateStr: string; weekIdx?: number } | null>(null)
+  const [templateModal, setTemplateModal] = useState<{
+    step: 'select' | 'date' | 'preview'
+    template?: DBTemplate
+    startDate?: string
+    editableEvents?: { dayOffset: number; label: string; date: string; events: (DBTemplateEvent & { _removed?: boolean })[] }[]
+  } | null>(null)
+  const dbTemplates = initialTemplates
 
   const weekBounds = useMemo(() => getWeekBounds(), [])
   const todayStr = useMemo(() => toDateStr(new Date()), [])
@@ -252,6 +285,197 @@ export function ScheduleManager({ initialEvents }: { initialEvents: ScheduleEven
     }
   }
 
+  function time24ToMinutes(t: string): number {
+    const [h, m] = t.split(':').map(Number)
+    return h * 60 + m
+  }
+
+  async function handleFillDay() {
+    if (!fillDayConfirm) return
+    const { dateStr, dayOfWeek } = fillDayConfirm
+    const presets = DAY_PRESETS[dayOfWeek]
+    if (!presets) return
+
+    setSaving(true)
+    setError('')
+    try {
+      const batchEvents = presets.map((p) => ({
+        date: dateStr,
+        time: formatTimeForDisplay(p.time),
+        sortOrder: time24ToMinutes(p.time),
+        durationMinutes: p.durationMinutes,
+        title: p.title,
+        description: p.description,
+        location: p.location,
+      }))
+
+      const res = await fetch('/api/schedule/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: batchEvents }),
+      })
+      if (!res.ok) throw new Error('Failed to create')
+      const { created } = await res.json()
+      setEvents((prev) => [...prev, ...created])
+      setFillDayConfirm(null)
+    } catch {
+      setError('Failed to fill day. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleClear() {
+    if (!clearConfirm) return
+    setSaving(true)
+    setError('')
+    try {
+      let startDate: string
+      let endDate: string
+      if (clearConfirm.type === 'day') {
+        startDate = clearConfirm.dateStr
+        endDate = clearConfirm.dateStr
+      } else {
+        const idx = clearConfirm.weekIdx ?? selectedWeek
+        startDate = toDateStr(weekBounds[idx].start)
+        endDate = toDateStr(weekBounds[idx].end)
+      }
+      const res = await fetch('/api/schedule/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate, endDate }),
+      })
+      if (!res.ok) throw new Error('Failed to clear')
+      // Remove cleared events from local state
+      setEvents((prev) => prev.filter((e) => {
+        const d = isoToDateStr(e.date)
+        return d < startDate || d > endDate
+      }))
+      setClearConfirm(null)
+    } catch {
+      setError('Failed to clear events.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Get conflicts for a set of new events on a specific date
+  function getConflicts(dateStr: string, newEvents: { time: string; durationMinutes: number; title: string }[]) {
+    const existing = events.filter((e) => isoToDateStr(e.date) === dateStr)
+    const conflicts: { existing: ScheduleEvent; incoming: string }[] = []
+    for (const ne of newEvents) {
+      const neStart = time24ToMinutes(ne.time)
+      for (const ex of existing) {
+        const exStart = timeToMinutes(ex.time)
+        if (timesOverlap(neStart, ne.durationMinutes, exStart, ex.durationMinutes || 60)) {
+          conflicts.push({ existing: ex, incoming: ne.title })
+        }
+      }
+    }
+    return conflicts
+  }
+
+  function openTemplatePreview() {
+    if (!templateModal?.template || !templateModal.startDate) return
+    const { template, startDate } = templateModal
+    const start = dateStrToLocal(startDate)
+
+    const editableEvents = template.days.map((day) => {
+      const d = new Date(start)
+      d.setDate(start.getDate() + day.dayOffset)
+      return {
+        dayOffset: day.dayOffset,
+        label: day.label,
+        date: toDateStr(d),
+        events: day.events.map((ev) => ({ ...ev })),
+      }
+    })
+
+    setTemplateModal({ ...templateModal, step: 'preview', editableEvents })
+  }
+
+  async function handleApplyTemplate() {
+    if (!templateModal?.editableEvents) return
+    setSaving(true)
+    setError('')
+    try {
+      const batchEvents: Array<{
+        date: string; time: string; sortOrder: number;
+        durationMinutes: number; title: string;
+        description: string | null; location: string | null
+      }> = []
+
+      for (const day of templateModal.editableEvents) {
+        // Skip days outside the 4-week window
+        const d = dateStrToLocal(day.date)
+        if (d < weekBounds[0].start || d > weekBounds[3].end) continue
+
+        for (const ev of day.events) {
+          if ((ev as DBTemplateEvent & { _removed?: boolean })._removed) continue
+          batchEvents.push({
+            date: day.date,
+            time: formatTimeForDisplay(ev.time),
+            sortOrder: time24ToMinutes(ev.time),
+            durationMinutes: ev.durationMinutes,
+            title: ev.title,
+            description: ev.description,
+            location: ev.location,
+          })
+        }
+      }
+
+      if (batchEvents.length === 0) {
+        setError('No events to create. All days may be outside the schedule window.')
+        setSaving(false)
+        return
+      }
+
+      const res = await fetch('/api/schedule/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: batchEvents }),
+      })
+      if (!res.ok) throw new Error('Failed to create')
+      const { created } = await res.json()
+      setEvents((prev) => [...prev, ...created])
+      setTemplateModal(null)
+    } catch {
+      setError('Failed to apply template. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function updateTemplateEvent(dayIdx: number, evIdx: number, field: string, value: string | number) {
+    if (!templateModal?.editableEvents) return
+    const updated = templateModal.editableEvents.map((day, di) => {
+      if (di !== dayIdx) return day
+      return {
+        ...day,
+        events: day.events.map((ev, ei) => {
+          if (ei !== evIdx) return ev
+          return { ...ev, [field]: value }
+        }),
+      }
+    })
+    setTemplateModal({ ...templateModal, editableEvents: updated })
+  }
+
+  function toggleRemoveTemplateEvent(dayIdx: number, evIdx: number) {
+    if (!templateModal?.editableEvents) return
+    const updated = templateModal.editableEvents.map((day, di) => {
+      if (di !== dayIdx) return day
+      return {
+        ...day,
+        events: day.events.map((ev, ei) => {
+          if (ei !== evIdx) return ev
+          return { ...ev, _removed: !(ev as DBTemplateEvent & { _removed?: boolean })._removed }
+        }),
+      }
+    })
+    setTemplateModal({ ...templateModal, editableEvents: updated })
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
@@ -263,13 +487,28 @@ export function ScheduleManager({ initialEvents }: { initialEvents: ScheduleEven
             {MONTH_SHORT[weekBounds[3].end.getMonth()]} {weekBounds[3].end.getDate()}, {weekBounds[3].end.getFullYear()}
           </p>
         </div>
-        <button
-          onClick={() => signOut({ callbackUrl: '/' })}
-          className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          Sign Out
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setTemplateModal({ step: 'select' })}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-primary-900 hover:bg-primary-50 border border-primary-200 rounded-lg transition-colors font-medium"
+          >
+            <Calendar className="w-4 h-4" />
+            Apply Template
+          </button>
+          <Link
+            href="/admin/templates"
+            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+            Templates
+          </Link>
+          <button
+            onClick={() => signOut({ callbackUrl: '/' })}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Quick Add Presets */}
@@ -325,6 +564,22 @@ export function ScheduleManager({ initialEvents }: { initialEvents: ScheduleEven
             </button>
           )
         })}
+        {/* Clear Week Button */}
+        {(() => {
+          const weekEventCount = events.filter((e) => {
+            const d = dateStrToLocal(isoToDateStr(e.date))
+            return d >= weekBounds[selectedWeek].start && d <= weekBounds[selectedWeek].end
+          }).length
+          return weekEventCount > 0 ? (
+            <button
+              onClick={() => setClearConfirm({ type: 'week', dateStr: toDateStr(weekBounds[selectedWeek].start), weekIdx: selectedWeek })}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 whitespace-nowrap flex-shrink-0"
+            >
+              <Eraser className="w-3.5 h-3.5" />
+              Clear Week ({weekEventCount})
+            </button>
+          ) : null
+        })()}
       </div>
 
       {/* Days in selected week */}
@@ -385,13 +640,33 @@ export function ScheduleManager({ initialEvents }: { initialEvents: ScheduleEven
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); openAddForm(dateStr) }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-900 hover:bg-primary-50 rounded-lg transition-colors border border-primary-100"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {DAY_PRESETS[date.getDay()] && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setFillDayConfirm({ dateStr, dayOfWeek: date.getDay() }) }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gold hover:bg-gold/10 rounded-lg transition-colors border border-gold/40"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      Fill
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openAddForm(dateStr) }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-900 hover:bg-primary-50 rounded-lg transition-colors border border-primary-100"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                  {dayEvents.length > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setClearConfirm({ type: 'day', dateStr }) }}
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Clear day"
+                    >
+                      <Eraser className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Events */}
@@ -460,6 +735,307 @@ export function ScheduleManager({ initialEvents }: { initialEvents: ScheduleEven
       </button>
 
       {error && !showForm && <p className="mt-4 text-red-600 text-sm">{error}</p>}
+
+      {/* Clear Confirmation Modal */}
+      {clearConfirm && (() => {
+        const d = dateStrToLocal(clearConfirm.dateStr)
+        let clearCount: number
+        let label: string
+        if (clearConfirm.type === 'day') {
+          clearCount = events.filter((e) => isoToDateStr(e.date) === clearConfirm.dateStr).length
+          label = `${DAY_NAMES[d.getDay()]}, ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`
+        } else {
+          const idx = clearConfirm.weekIdx ?? selectedWeek
+          clearCount = events.filter((e) => {
+            const ed = dateStrToLocal(isoToDateStr(e.date))
+            return ed >= weekBounds[idx].start && ed <= weekBounds[idx].end
+          }).length
+          const wLabel = idx === 0 ? 'This Week' : idx === 1 ? 'Next Week' : `Week ${idx + 1}`
+          label = `${wLabel} (${MONTH_SHORT[weekBounds[idx].start.getMonth()]} ${weekBounds[idx].start.getDate()} – ${MONTH_SHORT[weekBounds[idx].end.getMonth()]} ${weekBounds[idx].end.getDate()})`
+        }
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">Clear {clearConfirm.type === 'day' ? 'Day' : 'Week'}?</h2>
+                <button onClick={() => setClearConfirm(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  This will permanently delete <strong>{clearCount} event{clearCount !== 1 ? 's' : ''}</strong> from <strong>{label}</strong>.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleClear}
+                    disabled={saving}
+                    className="flex-1 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+                  >
+                    {saving ? 'Clearing...' : `Delete ${clearCount} Event${clearCount !== 1 ? 's' : ''}`}
+                  </button>
+                  <button
+                    onClick={() => setClearConfirm(null)}
+                    className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Fill Day Confirmation Modal */}
+      {fillDayConfirm && (() => {
+        const presets = DAY_PRESETS[fillDayConfirm.dayOfWeek] || []
+        const existingCount = events.filter((e) => isoToDateStr(e.date) === fillDayConfirm.dateStr).length
+        const conflicts = getConflicts(fillDayConfirm.dateStr, presets)
+        const d = dateStrToLocal(fillDayConfirm.dateStr)
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Fill {DAY_NAMES[d.getDay()]}, {MONTH_SHORT[d.getMonth()]} {d.getDate()}?
+                </h2>
+                <button onClick={() => setFillDayConfirm(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-4">
+                <p className="text-sm text-gray-600 mb-3">The following events will be added:</p>
+                <div className="space-y-2 mb-4">
+                  {presets.map((p, i) => (
+                    <div key={i} className="flex items-center gap-3 text-sm">
+                      <span className="font-medium text-primary-900 tabular-nums w-20">{formatTimeForDisplay(p.time)}</span>
+                      <span className="text-gray-900">{p.title}</span>
+                      <span className="text-xs text-gray-400">({formatDuration(p.durationMinutes)})</span>
+                    </div>
+                  ))}
+                </div>
+                {conflicts.length > 0 && (
+                  <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4">
+                    <p className="font-medium mb-1">Time conflicts detected:</p>
+                    {conflicts.map((c, i) => (
+                      <p key={i}>&quot;{c.incoming}&quot; overlaps with &quot;{c.existing.title}&quot; ({c.existing.time})</p>
+                    ))}
+                    <p className="mt-1 text-red-500">Events will still be added. You can edit or remove conflicts after.</p>
+                  </div>
+                )}
+                {existingCount > 0 && conflicts.length === 0 && (
+                  <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mb-4">
+                    {existingCount} event{existingCount > 1 ? 's' : ''} already exist on this day. New events will be added alongside them.
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleFillDay}
+                    disabled={saving}
+                    className="flex-1 py-2.5 bg-gold text-primary-950 rounded-lg font-medium hover:bg-gold/90 transition-colors disabled:opacity-50"
+                  >
+                    {saving ? 'Adding...' : `Add ${presets.length} Event${presets.length > 1 ? 's' : ''}`}
+                  </button>
+                  <button
+                    onClick={() => setFillDayConfirm(null)}
+                    className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Template Modal */}
+      {templateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {templateModal.step === 'select' && 'Apply Season Template'}
+                {templateModal.step === 'date' && templateModal.template?.name}
+                {templateModal.step === 'preview' && 'Preview & Edit'}
+              </h2>
+              <button onClick={() => setTemplateModal(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {/* Step 1: Select Template */}
+              {templateModal.step === 'select' && (
+                <div className="space-y-2">
+                  {dbTemplates.length === 0 && (
+                    <div className="text-center py-8">
+                      <p className="text-gray-400 mb-3">No templates yet.</p>
+                      <Link href="/admin/templates" className="text-sm text-primary-900 hover:underline">Create your first template</Link>
+                    </div>
+                  )}
+                  {dbTemplates.map((tmpl) => (
+                    <button
+                      key={tmpl.id}
+                      onClick={() => setTemplateModal({ step: 'date', template: tmpl, startDate: todayStr })}
+                      className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50/50 transition-colors group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-medium text-gray-900 group-hover:text-primary-900">{tmpl.name}</span>
+                          <p className="text-xs text-gray-500 mt-0.5">{tmpl.description}</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-primary-900" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Step 2: Pick Start Date */}
+              {templateModal.step === 'date' && templateModal.template && (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">
+                    Pick the start date for <strong>{templateModal.template.name}</strong> ({templateModal.template.totalDays} day{templateModal.template.totalDays > 1 ? 's' : ''}).
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={templateModal.startDate || todayStr}
+                      min={minDate}
+                      max={maxDate}
+                      onChange={(e) => setTemplateModal({ ...templateModal, startDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-900 text-gray-900"
+                    />
+                  </div>
+                  {templateModal.template.totalDays > 1 && templateModal.startDate && (
+                    <p className="text-xs text-gray-500">
+                      Events will span {MONTH_SHORT[dateStrToLocal(templateModal.startDate).getMonth()]} {dateStrToLocal(templateModal.startDate).getDate()} – {(() => {
+                        const end = new Date(dateStrToLocal(templateModal.startDate))
+                        end.setDate(end.getDate() + templateModal.template!.totalDays - 1)
+                        return `${MONTH_SHORT[end.getMonth()]} ${end.getDate()}`
+                      })()}
+                    </p>
+                  )}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={openTemplatePreview}
+                      className="flex-1 py-2.5 bg-primary-900 text-white rounded-lg font-medium hover:bg-primary-800 transition-colors"
+                    >
+                      Preview Events
+                    </button>
+                    <button
+                      onClick={() => setTemplateModal({ step: 'select' })}
+                      className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Editable Preview */}
+              {templateModal.step === 'preview' && templateModal.editableEvents && (
+                <div className="space-y-4">
+                  {templateModal.editableEvents.map((day, dayIdx) => {
+                    const d = dateStrToLocal(day.date)
+                    const isOutside = d < weekBounds[0].start || d > weekBounds[3].end
+                    const existingCount = events.filter((e) => isoToDateStr(e.date) === day.date).length
+                    const dayConflicts = !isOutside ? getConflicts(day.date, day.events.filter((ev) => !(ev as DBTemplateEvent & { _removed?: boolean })._removed)) : []
+                    return (
+                      <div key={dayIdx} className={`rounded-lg border ${isOutside ? 'border-red-200 bg-red-50/50' : dayConflicts.length > 0 ? 'border-amber-300' : 'border-gray-200'}`}>
+                        <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+                          <div>
+                            <span className="text-sm font-semibold text-gray-900">{day.label}</span>
+                            <span className="text-xs text-gray-500 ml-2">
+                              {DAY_NAMES[d.getDay()]}, {MONTH_SHORT[d.getMonth()]} {d.getDate()}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isOutside && <span className="text-xs text-red-600 font-medium">Outside window — will be skipped</span>}
+                            {dayConflicts.length > 0 && <span className="text-xs text-amber-600">{dayConflicts.length} conflict{dayConflicts.length > 1 ? 's' : ''}</span>}
+                            {existingCount > 0 && !isOutside && dayConflicts.length === 0 && (
+                              <span className="text-xs text-gray-400">{existingCount} existing</span>
+                            )}
+                          </div>
+                        </div>
+                        {!isOutside && (
+                          <div className="p-3 space-y-2">
+                            {day.events.map((ev, evIdx) => {
+                              const removed = (ev as DBTemplateEvent & { _removed?: boolean })._removed
+                              return (
+                                <div key={evIdx} className={`flex items-center gap-2 ${removed ? 'opacity-40' : ''}`}>
+                                  <input
+                                    type="time"
+                                    value={ev.time}
+                                    onChange={(e) => updateTemplateEvent(dayIdx, evIdx, 'time', e.target.value)}
+                                    disabled={removed}
+                                    className="w-24 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-900 text-gray-900"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={ev.title}
+                                    onChange={(e) => updateTemplateEvent(dayIdx, evIdx, 'title', e.target.value)}
+                                    disabled={removed}
+                                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-900 text-gray-900"
+                                  />
+                                  <select
+                                    value={ev.durationMinutes}
+                                    onChange={(e) => updateTemplateEvent(dayIdx, evIdx, 'durationMinutes', parseInt(e.target.value))}
+                                    disabled={removed}
+                                    className="w-20 px-1 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-900 text-gray-900"
+                                  >
+                                    {DURATION_OPTIONS.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => toggleRemoveTemplateEvent(dayIdx, evIdx)}
+                                    className={`p-1 rounded ${removed ? 'text-green-600 hover:bg-green-50' : 'text-red-400 hover:bg-red-50 hover:text-red-600'}`}
+                                    title={removed ? 'Restore' : 'Remove'}
+                                  >
+                                    {removed ? <Plus className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {error && <p className="text-red-600 text-sm">{error}</p>}
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={handleApplyTemplate}
+                      disabled={saving}
+                      className="flex-1 py-2.5 bg-primary-900 text-white rounded-lg font-medium hover:bg-primary-800 transition-colors disabled:opacity-50"
+                    >
+                      {saving ? 'Applying...' : `Apply Template (${
+                        templateModal.editableEvents.reduce((sum, day) => {
+                          const d = dateStrToLocal(day.date)
+                          if (d < weekBounds[0].start || d > weekBounds[3].end) return sum
+                          return sum + day.events.filter((ev) => !(ev as DBTemplateEvent & { _removed?: boolean })._removed).length
+                        }, 0)
+                      } events)`}
+                    </button>
+                    <button
+                      onClick={() => setTemplateModal({ ...templateModal, step: 'date' })}
+                      className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {showForm && (

@@ -22,3 +22,37 @@ model ScheduleEvent {
 
   @@index([date])
 }
+
+model SeasonTemplate {
+  id          String        @id @default(cuid())
+  name        String
+  description String
+  totalDays   Int
+  days        TemplateDay[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model TemplateDay {
+  id         String             @id @default(cuid())
+  templateId String
+  template   SeasonTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  dayOffset  Int
+  label      String
+  events     TemplateDayEvent[]
+
+  @@index([templateId])
+}
+
+model TemplateDayEvent {
+  id              String      @id @default(cuid())
+  dayId           String
+  day             TemplateDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  title           String
+  time            String      // 24-hr format "08:00"
+  durationMinutes Int         @default(60)
+  location        String
+  description     String?
+
+  @@index([dayId])
+}

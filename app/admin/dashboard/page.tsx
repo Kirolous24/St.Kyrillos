@@ -34,5 +34,34 @@ export default async function AdminDashboardPage() {
     location: e.location,
   }))
 
-  return <ScheduleManager initialEvents={events} />
+  // Load templates from DB
+  const rawTemplates = await prisma.seasonTemplate.findMany({
+    include: {
+      days: {
+        orderBy: { dayOffset: 'asc' },
+        include: { events: { orderBy: { time: 'asc' } } },
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
+
+  const templates = rawTemplates.map((t) => ({
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    totalDays: t.totalDays,
+    days: t.days.map((d) => ({
+      dayOffset: d.dayOffset,
+      label: d.label,
+      events: d.events.map((ev) => ({
+        title: ev.title,
+        time: ev.time,
+        durationMinutes: ev.durationMinutes,
+        location: ev.location,
+        description: ev.description,
+      })),
+    })),
+  }))
+
+  return <ScheduleManager initialEvents={events} initialTemplates={templates} />
 }
