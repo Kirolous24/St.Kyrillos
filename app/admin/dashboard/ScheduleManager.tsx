@@ -66,18 +66,6 @@ function getWeekBounds() {
   })
 }
 
-// Find the next upcoming occurrence of a given weekday within the 4-week window
-function nextOccurrence(weekday: number, bounds: ReturnType<typeof getWeekBounds>): string {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  for (let i = 0; i < 28; i++) {
-    const d = new Date(bounds[0].start)
-    d.setDate(bounds[0].start.getDate() + i)
-    if (d >= today && d.getDay() === weekday) return toDateStr(d)
-  }
-  return toDateStr(bounds[0].start)
-}
-
 function timeToMinutes(t: string): number {
   const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
   if (!m) return 0
