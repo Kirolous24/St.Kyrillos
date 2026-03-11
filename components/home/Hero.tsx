@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { CHURCH_INFO } from '@/lib/constants'
-import { Calendar, Play } from 'lucide-react'
 
 export function Hero() {
   const [scrollY, setScrollY] = useState(0)
@@ -116,15 +114,18 @@ export function Hero() {
             {CHURCH_INFO.tagline}
           </p>
 
-          {/* Location badge */}
+          {/* Location badge (commented out per request) */}
+          {/*
           <div className={`mt-6 transition-all duration-1000 delay-400 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
             <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 text-sm">
               <span className="w-2 h-2 rounded-full bg-gold animate-pulse" />
               {CHURCH_INFO.location}
             </span>
           </div>
+          */}
 
-          {/* CTA Buttons */}
+          {/* CTA Buttons (commented out per request) */}
+          {/*
           <div className={`flex flex-col sm:flex-row gap-4 justify-center mt-12 transition-all duration-1000 delay-500 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
             <Link
               href="/im-new"
@@ -141,6 +142,7 @@ export function Hero() {
               <span>Watch Live</span>
             </Link>
           </div>
+          */}
         </div>
       </div>
 

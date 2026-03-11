@@ -5,7 +5,6 @@ import { Cross, Book, Heart, Users, Church, Globe } from 'lucide-react'
 import { ParallaxHero } from '@/components/ui/ParallaxHero'
 import { ImageTextSection } from '@/components/ui/ImageTextSection'
 import { WorshipGrid } from '@/components/about/WorshipGrid'
-import { Button } from '@/components/ui/Button'
 import { useScrollAnimation } from '@/hooks/useScrollAnimation'
 
 const beliefs = [
@@ -261,48 +260,6 @@ function ComparisonSection() {
   )
 }
 
-function WelcomeCTA() {
-  const { ref, isVisible } = useScrollAnimation()
-
-  return (
-    <section className="relative py-24 md:py-32 overflow-hidden">
-      <Image
-        src="/images/outside_church.png"
-        alt="St. Kyrillos Coptic Orthodox Church"
-        fill
-        className="object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-primary-950/80 via-primary-950/70 to-primary-950/90" />
-
-      <div
-        ref={ref}
-        className={`container-custom relative z-10 ${isVisible ? 'animate-fade-in-up' : 'opacity-0'}`}
-      >
-        <div className="max-w-2xl mx-auto">
-          <div className="glass-dark rounded-2xl p-10 md:p-14 text-center">
-            <h2 className="font-serif text-heading-1 text-white mb-6">
-              You Are Welcome Here
-            </h2>
-            <p className="text-lg text-white/80 mb-8">
-              We warmly invite you to visit, ask questions, and experience the
-              beauty of the ancient Christian faith. You don&apos;t need to understand
-              everything — just come as you are.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button href="/im-new" variant="gold" size="lg">
-                Plan Your Visit
-              </Button>
-              <Button href="/about/st-kyrillos-vi" variant="secondary" size="lg" className="border-white/30 text-white hover:bg-white/10 hover:text-white">
-                Our Patron Saint
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
 export function CopticOrthodoxyContent() {
   return (
     <>
@@ -318,7 +275,6 @@ export function CopticOrthodoxyContent() {
       <BeliefsSection />
       <WorshipGrid />
       <ComparisonSection />
-      <WelcomeCTA />
     </>
   )
 }

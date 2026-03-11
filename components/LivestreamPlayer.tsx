@@ -62,20 +62,53 @@ export function LivestreamPlayer() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    async function checkLiveStatus() {
+    let pollInterval: ReturnType<typeof setInterval> | null = null
+    let inactivityTimeout: ReturnType<typeof setTimeout> | null = null
+
+    function stopPolling() {
+      if (pollInterval) clearInterval(pollInterval)
+      if (inactivityTimeout) clearTimeout(inactivityTimeout)
+      pollInterval = null
+      inactivityTimeout = null
+      window.removeEventListener('mousemove', resetInactivity)
+      window.removeEventListener('click', resetInactivity)
+      window.removeEventListener('keypress', resetInactivity)
+    }
+
+    function resetInactivity() {
+      if (!pollInterval) return
+      if (inactivityTimeout) clearTimeout(inactivityTimeout)
+      inactivityTimeout = setTimeout(stopPolling, 30 * 60 * 1000) // stop after 30 min idle
+    }
+
+    async function checkStatus(): Promise<boolean> {
       try {
         const response = await fetch('/api/youtube-live')
         const data = await response.json()
         setLiveStatus(data)
-      } catch (err) {
-        console.error('Failed to check live status:', err)
-        setLiveStatus({ isLive: false, hasUpcoming: false, error: 'Failed to load livestream status' })
-      } finally {
         setIsLoading(false)
+        if (data.isLive) stopPolling() // live = server cache holds it, no need to poll
+        return data.isLive
+      } catch {
+        setLiveStatus({ isLive: false, hasUpcoming: false, error: 'Failed to load livestream status' })
+        setIsLoading(false)
+        return false
       }
     }
 
-    checkLiveStatus()
+    async function init() {
+      const isLive = await checkStatus()
+      if (!isLive) {
+        pollInterval = setInterval(checkStatus, 15 * 60 * 1000) // poll every 15 min when not live
+        resetInactivity()
+        window.addEventListener('mousemove', resetInactivity)
+        window.addEventListener('click', resetInactivity)
+        window.addEventListener('keypress', resetInactivity)
+      }
+    }
+
+    init()
+    return () => stopPolling()
   }, [])
 
   if (isLoading) {

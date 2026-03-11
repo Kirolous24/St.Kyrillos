@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { LIVESTREAM } from '@/lib/constants'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
 
@@ -85,12 +83,16 @@ export async function GET() {
         embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1`,
         watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
         viewers: video?.liveStreamingDetails?.concurrentViewers
+      }, {
+        headers: { 'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=60' }
       })
     }
 
     return NextResponse.json({
       isLive: false,
       message: 'No live stream currently'
+    }, {
+      headers: { 'Cache-Control': 'public, s-maxage=900, stale-while-revalidate=60' }
     })
   } catch (error) {
     console.error('Error checking YouTube live status:', error)
