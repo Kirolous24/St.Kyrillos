@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Clock, Calendar, ChevronRight, MapPin } from 'lucide-react'
+import { Clock, Calendar, ChevronRight, MapPin, BookOpen, Cross, ChevronDown, ChevronUp } from 'lucide-react'
 import { useScrollAnimation } from '@/hooks/useScrollAnimation'
 import { cn } from '@/lib/utils'
+import type { CopticDayData } from '@/lib/coptic-api'
 
 const DAYS = [
   { short: 'Sun', full: 'Sunday' },
@@ -70,11 +71,21 @@ function getDayOfWeek(isoDate: string): number {
   return new Date(y, m - 1, d).getDay()
 }
 
-export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
+// Helper to get "YYYY-MM-DD" from a Date (local time)
+function toDateKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+export function WeeklySchedule({ events, copticData }: { events: ScheduleEvent[]; copticData?: Record<string, CopticDayData> }) {
   const today = new Date().getDay()
   const [selectedDay, setSelectedDay] = useState(today)
   const [animating, setAnimating] = useState(false)
   const [displayedEvents, setDisplayedEvents] = useState<ScheduleEvent[]>([])
+  const [showReadings, setShowReadings] = useState(false)
+  const [showSaints, setShowSaints] = useState(false)
   const { ref, isVisible } = useScrollAnimation()
 
   const weekDates = useMemo(() => getWeekDates(), [])
@@ -90,9 +101,18 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
     setDisplayedEvents(getEventsForDay(selectedDay))
   }, [selectedDay, events])
 
+  // Get coptic data for the selected day
+  const selectedDayData = useMemo(() => {
+    if (!copticData) return null
+    const dateKey = toDateKey(weekDates[selectedDay])
+    return copticData[dateKey] || null
+  }, [copticData, weekDates, selectedDay])
+
   function handleDayChange(i: number) {
     if (i === selectedDay) return
     setAnimating(true)
+    setShowReadings(false)
+    setShowSaints(false)
     setTimeout(() => {
       setSelectedDay(i)
       setAnimating(false)
@@ -305,6 +325,117 @@ export function WeeklySchedule({ events }: { events: ScheduleEvent[] }) {
               </div>
             )}
           </div>
+
+          {/* Coptic Calendar Info */}
+          {selectedDayData && (
+            <div
+              className={cn(
+                'mt-6 transition-all duration-200',
+                animating ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'
+              )}
+            >
+              {/* Feast banner */}
+              {selectedDayData.feasts.length > 0 && (
+                <div className="bg-gold/10 border border-gold/30 rounded-2xl px-5 py-3 mb-4 flex items-center gap-3">
+                  <Cross className="w-5 h-5 text-gold shrink-0" />
+                  <div>
+                    {selectedDayData.feasts.map((f) => (
+                      <span key={f.id} className="font-serif font-semibold text-primary-900">
+                        {f.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Coptic date & season metadata */}
+              <div className="flex items-center justify-center gap-3 flex-wrap text-sm text-gray-500 mb-4">
+                {selectedDayData.copticDate && (
+                  <span className="bg-primary-50 text-primary-700 px-2.5 py-1 rounded-lg text-xs font-medium">
+                    {selectedDayData.copticDate}
+                  </span>
+                )}
+                {selectedDayData.season && (
+                  <span className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-lg text-xs font-medium">
+                    {selectedDayData.season}
+                  </span>
+                )}
+                {selectedDayData.isFasting && (
+                  <span className="bg-orange-50 text-orange-700 px-2.5 py-1 rounded-lg text-xs font-medium">
+                    Fasting Day
+                  </span>
+                )}
+              </div>
+
+              {/* Readings & Saints collapsible sections */}
+              <div className="space-y-3">
+                {selectedDayData.readings.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
+                    <button
+                      onClick={() => setShowReadings(!showReadings)}
+                      className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <BookOpen className="w-4 h-4 text-primary-700" />
+                        <span className="font-serif font-semibold text-gray-900">Today&apos;s Readings</span>
+                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                          {selectedDayData.readings.length}
+                        </span>
+                      </div>
+                      {showReadings ? (
+                        <ChevronUp className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                    {showReadings && (
+                      <div className="px-5 pb-4 space-y-2 border-t border-gray-100 pt-3">
+                        {selectedDayData.readings.map((r, i) => (
+                          <div key={i} className="flex items-start gap-3">
+                            <span className="text-xs font-medium text-primary-700 bg-primary-50 px-2 py-0.5 rounded shrink-0 min-w-[6rem] text-center">
+                              {r.section}
+                            </span>
+                            <span className="text-sm text-gray-700">{r.reference}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedDayData.synaxarium.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
+                    <button
+                      onClick={() => setShowSaints(!showSaints)}
+                      className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Cross className="w-4 h-4 text-purple-700" />
+                        <span className="font-serif font-semibold text-gray-900">Saints Commemorated</span>
+                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                          {selectedDayData.synaxarium.length}
+                        </span>
+                      </div>
+                      {showSaints ? (
+                        <ChevronUp className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
+                    {showSaints && (
+                      <div className="px-5 pb-4 space-y-2 border-t border-gray-100 pt-3">
+                        {selectedDayData.synaxarium.map((s, i) => (
+                          <div key={i} className="text-sm text-gray-700">
+                            {s.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Footer note */}
           <p className="text-center text-gray-400 text-sm mt-8 flex items-center justify-center gap-2">

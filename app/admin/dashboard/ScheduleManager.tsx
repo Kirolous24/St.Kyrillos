@@ -2,9 +2,11 @@
 
 import { useState, useMemo } from 'react'
 import { signOut } from 'next-auth/react'
-import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Eraser, Settings } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Eraser, Settings, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { EVENT_PRESETS, DURATION_OPTIONS, DAY_PRESETS } from '@/lib/presets'
+import { CopticDayMeta, CopticDayPanel } from './CopticDayInfo'
+import type { CopticDayData, TemplateSuggestion } from '@/lib/coptic-api'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -120,7 +122,7 @@ function timesOverlap(startA: number, durA: number, startB: number, durB: number
   return startA < endB && startB < endA
 }
 
-export function ScheduleManager({ initialEvents, initialTemplates }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[] }) {
+export function ScheduleManager({ initialEvents, initialTemplates, copticData, suggestedTemplates }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[]; copticData?: Record<string, CopticDayData>; suggestedTemplates?: TemplateSuggestion[] }) {
   const [events, setEvents] = useState<ScheduleEvent[]>(initialEvents)
   const [selectedWeek, setSelectedWeek] = useState(0)
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => toDateStr(new Date()))
@@ -499,6 +501,38 @@ export function ScheduleManager({ initialEvents, initialTemplates }: { initialEv
         </div>
       </div>
 
+      {/* Template Suggestions from Coptic Calendar */}
+      {suggestedTemplates && suggestedTemplates.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {suggestedTemplates.map((s) => (
+            <div
+              key={s.templateId}
+              className="flex items-center justify-between px-4 py-3 bg-gold/10 border border-gold/30 rounded-xl"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-gold" />
+                <span className="text-sm font-medium text-gray-900">
+                  <strong>{s.feastName}</strong> detected on{' '}
+                  {new Date(s.suggestedStartDate + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const tmpl = dbTemplates.find((t) => t.id === s.templateId)
+                  if (tmpl) {
+                    setTemplateModal({ step: 'date', template: tmpl, startDate: s.suggestedStartDate })
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-gold text-primary-950 rounded-lg hover:bg-gold/80 transition-colors"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Apply &quot;{s.templateName}&quot;
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Quick Add Presets */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-3">
@@ -626,6 +660,7 @@ export function ScheduleManager({ initialEvents, initialTemplates }: { initialEv
                     <p className="text-xs text-gray-400">
                       {dayEvents.length === 0 ? 'No events' : `${dayEvents.length} event${dayEvents.length > 1 ? 's' : ''}`}
                     </p>
+                    {copticData?.[dateStr] && <CopticDayMeta data={copticData[dateStr]} />}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -708,6 +743,9 @@ export function ScheduleManager({ initialEvents, initialTemplates }: { initialEv
                   ))
                 )}
               </div>
+
+              {/* Coptic Readings & Saints */}
+              {copticData?.[dateStr] && <CopticDayPanel data={copticData[dateStr]} />}
             </div>
           )
         })}

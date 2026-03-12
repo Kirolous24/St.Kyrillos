@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { WeeklySchedule } from './WeeklySchedule'
+import { getCopticDayDataBatch } from '@/lib/coptic-api'
 
 export async function WeeklyScheduleSection() {
   try {
@@ -12,10 +13,17 @@ export async function WeeklyScheduleSection() {
     weekEnd.setUTCDate(weekStart.getUTCDate() + 6)
     weekEnd.setUTCHours(23, 59, 59, 999)
 
-    const raw = await prisma.scheduleEvent.findMany({
-      where: { date: { gte: weekStart, lte: weekEnd } },
-      orderBy: [{ date: "asc" }, { sortOrder: "asc" }],
-    })
+    const startStr = weekStart.toISOString().slice(0, 10)
+    const endStr = weekEnd.toISOString().slice(0, 10)
+
+    // Fetch events and coptic data in parallel
+    const [raw, copticData] = await Promise.all([
+      prisma.scheduleEvent.findMany({
+        where: { date: { gte: weekStart, lte: weekEnd } },
+        orderBy: [{ date: "asc" }, { sortOrder: "asc" }],
+      }),
+      getCopticDayDataBatch(startStr, endStr).catch(() => ({} as Record<string, never>)),
+    ])
 
     // Serialize Date objects for client component
     const events = raw.map((e) => ({
@@ -29,7 +37,7 @@ export async function WeeklyScheduleSection() {
       location: e.location,
     }))
 
-    return <WeeklySchedule events={events} />
+    return <WeeklySchedule events={events} copticData={copticData} />
   } catch (error) {
     console.error("Failed to load schedule:", error)
     return <WeeklySchedule events={[]} />

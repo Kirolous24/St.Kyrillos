@@ -56,3 +56,31 @@ model TemplateDayEvent {
 
   @@index([dayId])
 }
+
+model CopticDayCache {
+  id         String   @id // format: "YYYY-MM-DD"
+  date       DateTime @unique
+  copticDate String? // e.g., "Baramhat 2, 1742"
+  season     String? // e.g., "Great Lent"
+  seasonDay  String? // e.g., "Wednesday of the fourth week of Great Lent"
+  isFasting  Boolean  @default(false)
+  readings   Json? // Reading sections (Prophecies, Pauline, Catholic, Acts, Gospels, Psalms)
+  synaxarium Json? // Array of { name, url }
+  feasts     Json? // Array of { name, type } from celebrations endpoint
+  fetchedAt  DateTime @default(now())
+
+  @@index([date])
+}
+
+model LiturgicalEvent {
+  id          String   @id @default(cuid())
+  date        DateTime
+  title       String
+  description String?
+  eventType   String // "feast", "fast", "majorFeast", "minorFeast", "lordlyFeast"
+  source      String   @default("coptic.io")
+  createdAt   DateTime @default(now())
+
+  @@unique([date, title])
+  @@index([date])
+}
