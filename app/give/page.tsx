@@ -51,7 +51,7 @@ export default function GivePage() {
               "{GIVING.scripture.text}"
             </blockquote>
             <cite className="block mt-4 text-gold font-semibold not-italic">
-              — {GIVING.scripture.reference}
+              {GIVING.scripture.reference}
             </cite>
           </div>
         </div>

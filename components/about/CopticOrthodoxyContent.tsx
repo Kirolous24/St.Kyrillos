@@ -1,7 +1,5 @@
 'use client'
 
-import Image from 'next/image'
-import { Cross, Book, Heart, Users, Church, Globe } from 'lucide-react'
 import { ParallaxHero } from '@/components/ui/ParallaxHero'
 import { ImageTextSection } from '@/components/ui/ImageTextSection'
 import { WorshipGrid } from '@/components/about/WorshipGrid'
@@ -9,32 +7,26 @@ import { useScrollAnimation } from '@/hooks/useScrollAnimation'
 
 const beliefs = [
   {
-    icon: Cross,
     title: 'The Holy Trinity',
-    description: 'One God in three persons — Father, Son, and Holy Spirit.',
+    description: 'One God in three persons: Father, Son, and Holy Spirit.',
   },
   {
-    icon: Heart,
     title: 'The Incarnation',
     description: 'Jesus Christ is fully God and fully man, united in one nature.',
   },
   {
-    icon: Book,
     title: 'Sacred Scripture & Tradition',
     description: 'The Bible and the teachings of the Church Fathers guide our faith.',
   },
   {
-    icon: Church,
     title: 'The Seven Sacraments',
     description: 'Baptism, Chrismation, Eucharist, Confession, Unction, Matrimony, and Priesthood.',
   },
   {
-    icon: Users,
     title: 'The Communion of Saints',
     description: 'We honor those who lived faithfully and ask for their prayers.',
   },
   {
-    icon: Globe,
     title: 'Apostolic Succession',
     description: 'An unbroken line of bishops going back to the Apostles.',
   },
@@ -60,7 +52,7 @@ const comparisons = [
     content: (
       <p className="text-gray-600">
         The Coptic Orthodox Church understands the Christian faith
-        as Holy Scripture lived within Holy Tradition — the apostolic teaching,
+        as Holy Scripture lived within Holy Tradition, specifically the apostolic teaching,
         worship, and life of the Church that preserves and interprets the Bible,
         rather than treating &ldquo;Bible alone&rdquo; as the sole authority.
         We also keep an unbroken sacramental (mysteries) life in the Church,
@@ -167,52 +159,46 @@ function BeliefsSection() {
   const { ref, isVisible } = useScrollAnimation()
 
   return (
-    <section className="section-padding bg-gray-50 relative overflow-hidden">
-      {/* Decorative background elements */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-primary-50 rounded-full blur-3xl opacity-40 -translate-y-1/2 translate-x-1/2" />
-      <div className="absolute bottom-0 left-0 w-64 h-64 bg-gold/5 rounded-full blur-3xl opacity-60 translate-y-1/2 -translate-x-1/2" />
+    <section className="py-24 bg-stone-50">
+      <div className="container-custom">
+        <div className="max-w-5xl mx-auto">
 
-      {/* Decorative cross watermark */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.03] pointer-events-none">
-        <Image src="/images/CC3.png" alt="" width={400} height={400} className="w-96 h-96" />
-      </div>
-
-      <div className="container-custom relative z-10">
-        <div className="text-center mb-12">
-          <div className="flex justify-center mb-4">
-            <span className="inline-block w-12 h-1 bg-gold rounded-full" />
+          {/* Header */}
+          <div className="flex items-center gap-6 mb-16">
+            <div className="h-px flex-1 bg-gold/30" />
+            <div className="text-center">
+              <p className="text-xs tracking-[0.3em] uppercase text-gold font-medium mb-2">The Ancient Faith</p>
+              <h2 className="font-serif text-4xl md:text-5xl text-gray-900">What We Believe</h2>
+            </div>
+            <div className="h-px flex-1 bg-gold/30" />
           </div>
-          <h2 className="font-serif text-heading-1 md:text-display-2 text-gray-900 text-balance">
-            What We Believe
-          </h2>
-          <p className="mt-4 text-body-lg text-gray-600 max-w-2xl mx-auto">
-            The core tenets of the Orthodox Christian faith
-          </p>
-        </div>
 
-        <div
-          ref={ref}
-          className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto ${isVisible ? 'stagger-children' : ''}`}
-        >
-          {beliefs.map((belief) => {
-            const Icon = belief.icon
-            return (
+          {/* Beliefs — two-column editorial list */}
+          <div
+            ref={ref}
+            className={`grid grid-cols-1 md:grid-cols-2 gap-0 transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+          >
+            {beliefs.map((belief, i) => (
               <div
                 key={belief.title}
-                className="bg-white rounded-xl p-6 shadow-soft border-t-2 border-gold hover-lift"
+                className="group flex gap-5 p-8 border-b border-gray-200 last:border-b-0 md:[&:nth-child(odd)]:border-r md:[&:nth-child(even)]:border-r-0"
+                style={{ transitionDelay: `${i * 80}ms` }}
               >
-                <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center mb-4">
-                  <Icon className="w-6 h-6 text-primary-900" />
+                <span className="font-serif text-2xl text-gold/40 leading-none mt-1 select-none">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div>
+                  <h3 className="font-serif text-xl text-gray-900 mb-2 group-hover:text-gold transition-colors duration-300">
+                    {belief.title}
+                  </h3>
+                  <p className="text-gray-600 leading-relaxed text-sm">
+                    {belief.description}
+                  </p>
                 </div>
-                <h3 className="font-serif text-lg font-semibold text-gray-900 mb-2">
-                  {belief.title}
-                </h3>
-                <p className="text-gray-600 text-body-sm">
-                  {belief.description}
-                </p>
               </div>
-            )
-          })}
+            ))}
+          </div>
+
         </div>
       </div>
     </section>
@@ -223,37 +209,44 @@ function ComparisonSection() {
   const { ref, isVisible } = useScrollAnimation()
 
   return (
-    <section className="section-padding bg-gray-50">
+    <section className="py-24 bg-white">
       <div className="container-custom">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-12">
-            <div className="flex justify-center mb-4">
-              <span className="inline-block w-12 h-1 bg-gold rounded-full" />
-            </div>
-            <h2 className="font-serif text-heading-1 md:text-display-2 text-gray-900 text-balance">
-              How Are We Different?
-            </h2>
+        <div className="max-w-4xl mx-auto">
+
+          {/* Header */}
+          <div className="text-center mb-16">
+            <p className="text-xs tracking-[0.3em] uppercase text-gold font-medium mb-3">Distinctions</p>
+            <h2 className="font-serif text-4xl md:text-5xl text-gray-900">How Are We Different?</h2>
           </div>
 
           <div
             ref={ref}
-            className={`space-y-6 ${isVisible ? 'stagger-children' : ''}`}
+            className={`space-y-0 transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
           >
-            {comparisons.map((comparison) => (
+            {comparisons.map((comparison, i) => (
               <div
                 key={comparison.title}
-                className="bg-white rounded-xl p-8 shadow-soft border-l-4 border-l-primary-900 hover-lift"
+                className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-0 border-t border-gray-200 last:border-b py-10 md:py-12"
+                style={{ transitionDelay: `${i * 100}ms` }}
               >
-                <div className="flex items-center gap-3 mb-4">
-                  <Image src="/images/CC5.png" alt="" width={20} height={20} className="w-5 h-5 opacity-40" />
-                  <h3 className="font-serif text-heading-4 text-primary-900">
-                    {comparison.title}
+                {/* Left label */}
+                <div className="mb-4 md:mb-0 md:pr-8">
+                  <span className="inline-block text-xs tracking-[0.2em] uppercase text-gold font-semibold mb-1">
+                    vs.
+                  </span>
+                  <h3 className="font-serif text-lg text-gray-900 leading-snug">
+                    {comparison.title.replace('From ', '')}
                   </h3>
                 </div>
-                {comparison.content}
+
+                {/* Right content */}
+                <div className="text-gray-600 leading-relaxed text-[0.95rem] md:border-l md:border-gray-200 md:pl-8">
+                  {comparison.content}
+                </div>
               </div>
             ))}
           </div>
+
         </div>
       </div>
     </section>

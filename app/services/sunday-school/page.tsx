@@ -46,7 +46,7 @@ export default function SundaySchoolPage() {
               <div className="bg-primary-50 rounded-xl p-6 border border-primary-100">
                 <h3 className="font-serif text-xl font-semibold text-gray-900 mb-2">Marhagan</h3>
                 <p className="text-gray-700 text-sm leading-relaxed">
-                  A joyful celebration of faith through Coptic hymns, liturgy, and praise — bringing children together in the spirit of worship and festivity.
+                  A joyful celebration of faith through Coptic hymns, liturgy, and praise, bringing children together in the spirit of worship and festivity.
                 </p>
               </div>
               <div className="bg-blue-50 rounded-xl p-6 border border-blue-100">
@@ -135,7 +135,7 @@ export default function SundaySchoolPage() {
               Join Us This Sunday
             </h3>
             <p className="text-white/80 mb-6 max-w-2xl mx-auto">
-              Sunday School is open to all children and young adults in our community. No prior knowledge needed—just a desire to grow in faith!
+              Sunday School is open to all children and young adults in our community. No prior knowledge needed, just a desire to grow in faith!
             </p>
           </div>
         </div>

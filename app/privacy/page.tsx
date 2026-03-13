@@ -47,20 +47,20 @@ export default function PrivacyPolicyPage() {
               </p>
               <ul className="list-disc list-inside space-y-2 text-gray-700 pl-4">
                 <li>
-                  <strong>Confession appointment bookings</strong> — When you schedule a confession or
+                  <strong>Confession appointment bookings.</strong> When you schedule a confession or
                   pastoral appointment through our Calendly booking widget, Calendly collects your name
                   and email address to confirm and manage your appointment. This information is handled
                   by Calendly in accordance with their own privacy policy.
                 </li>
                 <li>
-                  <strong>Usage data</strong> — Like most websites, our hosting provider may
+                  <strong>Usage data.</strong> Like most websites, our hosting provider may
                   automatically collect basic technical information such as your browser type, device,
                   and pages visited. This data is anonymous and used only for maintaining the site.
                 </li>
               </ul>
               <p className="text-gray-700 mt-4">
                 We do not operate a newsletter, membership portal, or any account-based system.
-                We do not collect payment information directly — any giving is handled through
+                We do not collect payment information directly. Any giving is handled through
                 third-party platforms with their own privacy practices.
               </p>
             </div>
@@ -72,7 +72,7 @@ export default function PrivacyPolicyPage() {
               </h2>
               <p className="text-gray-700 mb-4">
                 Any information you provide is used solely to fulfill the purpose for which it was
-                given — for example, confirming a confession appointment. We do not sell, rent, or
+                given, for example confirming a confession appointment. We do not sell, rent, or
                 share your personal information with third parties for marketing purposes.
               </p>
             </div>
@@ -88,7 +88,7 @@ export default function PrivacyPolicyPage() {
               </p>
               <ul className="list-disc list-inside space-y-2 text-gray-700 pl-4">
                 <li>
-                  <strong>Calendly</strong> — Used for scheduling confession and pastoral
+                  <strong>Calendly.</strong> Used for scheduling confession and pastoral
                   appointments. See{' '}
                   <a
                     href="https://calendly.com/privacy"
@@ -101,7 +101,7 @@ export default function PrivacyPolicyPage() {
                   .
                 </li>
                 <li>
-                  <strong>YouTube</strong> — We embed YouTube videos for livestreamed services.
+                  <strong>YouTube.</strong> We embed YouTube videos for livestreamed services.
                   YouTube may set cookies when you interact with embedded content. See{' '}
                   <a
                     href="https://policies.google.com/privacy"
@@ -114,7 +114,7 @@ export default function PrivacyPolicyPage() {
                   .
                 </li>
                 <li>
-                  <strong>Google Maps</strong> — We embed a Google Maps iframe on our site to help
+                  <strong>Google Maps.</strong> We embed a Google Maps iframe on our site to help
                   visitors find our location. Google may collect data through this embed. See{' '}
                   <a
                     href="https://policies.google.com/privacy"
@@ -127,11 +127,11 @@ export default function PrivacyPolicyPage() {
                   .
                 </li>
                 <li>
-                  <strong>Google Calendar</strong> — We embed a public Google Calendar to display
+                  <strong>Google Calendar.</strong> We embed a public Google Calendar to display
                   our church schedule.
                 </li>
                 <li>
-                  <strong>Facebook</strong> — Our website links to our Facebook page. Clicking those
+                  <strong>Facebook.</strong> Our website links to our Facebook page. Clicking those
                   links will take you to Facebook's platform, which operates under their own privacy
                   policy.
                 </li>

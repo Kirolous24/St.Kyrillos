@@ -30,7 +30,7 @@ export default function ZelleCard() {
         Give via Zelle
       </h2>
       <p className="text-gray-600 mb-6">
-        Send your donation directly via Zelle — no fees, instant transfer.
+        Send your donation directly via Zelle. No fees, instant transfer.
       </p>
       <div className="bg-gray-50 rounded-lg p-4 space-y-3">
         {/* Email */}

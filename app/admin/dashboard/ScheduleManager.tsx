@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { signOut } from 'next-auth/react'
-import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Eraser, Settings, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Settings, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { EVENT_PRESETS, DURATION_OPTIONS, DAY_PRESETS } from '@/lib/presets'
 import { CopticDayMeta, CopticDayPanel } from './CopticDayInfo'
@@ -132,7 +132,6 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [fillDayConfirm, setFillDayConfirm] = useState<{ dateStr: string; dayOfWeek: number } | null>(null)
-  const [clearConfirm, setClearConfirm] = useState<{ type: 'day' | 'week'; dateStr: string; weekIdx?: number } | null>(null)
   const [templateModal, setTemplateModal] = useState<{
     step: 'select' | 'date' | 'preview'
     template?: DBTemplate
@@ -275,6 +274,48 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
     }
   }
 
+  async function deleteDay(dateStr: string) {
+    const dayEvents = events.filter((e) => isoToDateStr(e.date) === dateStr)
+    if (dayEvents.length === 0) return
+    const d = dateStrToLocal(dateStr)
+    const label = `${DAY_NAMES[d.getDay()]}, ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`
+    if (!window.confirm(`Delete all ${dayEvents.length} event${dayEvents.length !== 1 ? 's' : ''} on ${label}? This cannot be undone.`)) return
+    setSaving(true)
+    setError('')
+    try {
+      await Promise.all(dayEvents.map((ev) => fetch(`/api/schedule/${ev.id}`, { method: 'DELETE' })))
+      setEvents((prev) => prev.filter((e) => isoToDateStr(e.date) !== dateStr))
+    } catch {
+      setError('Failed to delete day events.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteWeek(weekIdx: number) {
+    const { start, end } = weekBounds[weekIdx]
+    const weekEvents = events.filter((e) => {
+      const d = dateStrToLocal(isoToDateStr(e.date))
+      return d >= start && d <= end
+    })
+    if (weekEvents.length === 0) return
+    const wLabel = weekIdx === 0 ? 'this week' : weekIdx === 1 ? 'next week' : `week ${weekIdx + 1}`
+    if (!window.confirm(`Delete all ${weekEvents.length} event${weekEvents.length !== 1 ? 's' : ''} for ${wLabel}? This cannot be undone.`)) return
+    setSaving(true)
+    setError('')
+    try {
+      await Promise.all(weekEvents.map((ev) => fetch(`/api/schedule/${ev.id}`, { method: 'DELETE' })))
+      setEvents((prev) => prev.filter((e) => {
+        const d = dateStrToLocal(isoToDateStr(e.date))
+        return d < start || d > end
+      }))
+    } catch {
+      setError('Failed to delete week events.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function time24ToMinutes(t: string): number {
     const [h, m] = t.split(':').map(Number)
     return h * 60 + m
@@ -315,39 +356,6 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
     }
   }
 
-  async function handleClear() {
-    if (!clearConfirm) return
-    setSaving(true)
-    setError('')
-    try {
-      let startDate: string
-      let endDate: string
-      if (clearConfirm.type === 'day') {
-        startDate = clearConfirm.dateStr
-        endDate = clearConfirm.dateStr
-      } else {
-        const idx = clearConfirm.weekIdx ?? selectedWeek
-        startDate = toDateStr(weekBounds[idx].start)
-        endDate = toDateStr(weekBounds[idx].end)
-      }
-      const res = await fetch('/api/schedule/clear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startDate, endDate }),
-      })
-      if (!res.ok) throw new Error('Failed to clear')
-      // Remove cleared events from local state
-      setEvents((prev) => prev.filter((e) => {
-        const d = isoToDateStr(e.date)
-        return d < startDate || d > endDate
-      }))
-      setClearConfirm(null)
-    } catch {
-      setError('Failed to clear events.')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   // Get conflicts for a set of new events on a specific date
   function getConflicts(dateStr: string, newEvents: { time: string; durationMinutes: number; title: string }[]) {
@@ -586,23 +594,27 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
             </button>
           )
         })}
-        {/* Clear Week Button */}
-        {(() => {
-          const weekEventCount = events.filter((e) => {
-            const d = dateStrToLocal(isoToDateStr(e.date))
-            return d >= weekBounds[selectedWeek].start && d <= weekBounds[selectedWeek].end
-          }).length
-          return weekEventCount > 0 ? (
-            <button
-              onClick={() => setClearConfirm({ type: 'week', dateStr: toDateStr(weekBounds[selectedWeek].start), weekIdx: selectedWeek })}
-              className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 whitespace-nowrap flex-shrink-0"
-            >
-              <Eraser className="w-3.5 h-3.5" />
-              Clear Week ({weekEventCount})
-            </button>
-          ) : null
-        })()}
       </div>
+
+      {/* Delete Week */}
+      {(() => {
+        const weekEventCount = events.filter((e) => {
+          const d = dateStrToLocal(isoToDateStr(e.date))
+          return d >= weekBounds[selectedWeek].start && d <= weekBounds[selectedWeek].end
+        }).length
+        return weekEventCount > 0 ? (
+          <div className="flex justify-end mb-3">
+            <button
+              onClick={() => deleteWeek(selectedWeek)}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete Week ({weekEventCount} events)
+            </button>
+          </div>
+        ) : null
+      })()}
 
       {/* Days in selected week */}
       <div className="space-y-3">
@@ -682,11 +694,12 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
                   </button>
                   {dayEvents.length > 0 && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setClearConfirm({ type: 'day', dateStr }) }}
-                      className="flex items-center gap-1 px-2 py-1.5 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Clear day"
+                      onClick={(e) => { e.stopPropagation(); deleteDay(dateStr) }}
+                      disabled={saving}
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                      title="Delete all events for this day"
                     >
-                      <Eraser className="w-3 h-3" />
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   )}
                 </div>
@@ -762,56 +775,6 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
 
       {error && !showForm && <p className="mt-4 text-red-600 text-sm">{error}</p>}
 
-      {/* Clear Confirmation Modal */}
-      {clearConfirm && (() => {
-        const d = dateStrToLocal(clearConfirm.dateStr)
-        let clearCount: number
-        let label: string
-        if (clearConfirm.type === 'day') {
-          clearCount = events.filter((e) => isoToDateStr(e.date) === clearConfirm.dateStr).length
-          label = `${DAY_NAMES[d.getDay()]}, ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`
-        } else {
-          const idx = clearConfirm.weekIdx ?? selectedWeek
-          clearCount = events.filter((e) => {
-            const ed = dateStrToLocal(isoToDateStr(e.date))
-            return ed >= weekBounds[idx].start && ed <= weekBounds[idx].end
-          }).length
-          const wLabel = idx === 0 ? 'This Week' : idx === 1 ? 'Next Week' : `Week ${idx + 1}`
-          label = `${wLabel} (${MONTH_SHORT[weekBounds[idx].start.getMonth()]} ${weekBounds[idx].start.getDate()} – ${MONTH_SHORT[weekBounds[idx].end.getMonth()]} ${weekBounds[idx].end.getDate()})`
-        }
-        return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
-              <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                <h2 className="text-lg font-semibold text-gray-900">Clear {clearConfirm.type === 'day' ? 'Day' : 'Week'}?</h2>
-                <button onClick={() => setClearConfirm(null)} className="p-1 text-gray-400 hover:text-gray-600">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="p-4">
-                <p className="text-sm text-gray-600 mb-4">
-                  This will permanently delete <strong>{clearCount} event{clearCount !== 1 ? 's' : ''}</strong> from <strong>{label}</strong>.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleClear}
-                    disabled={saving}
-                    className="flex-1 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
-                  >
-                    {saving ? 'Clearing...' : `Delete ${clearCount} Event${clearCount !== 1 ? 's' : ''}`}
-                  </button>
-                  <button
-                    onClick={() => setClearConfirm(null)}
-                    className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
 
       {/* Fill Day Confirmation Modal */}
       {fillDayConfirm && (() => {

@@ -78,7 +78,7 @@ export default function ChoirPage() {
                 <h3 className="font-serif text-xl font-semibold text-gray-900">Who It's For</h3>
               </div>
               <p className="text-gray-700">
-                Open to all age groups — from Kindergarten through adults. Every voice is welcome and valued.
+                Open to all age groups, from Kindergarten through adults. Every voice is welcome and valued.
               </p>
             </div>
 

@@ -45,7 +45,7 @@ export default function HymnsPage() {
                 <h3 className="font-serif text-xl font-semibold text-gray-900">Who It's For</h3>
               </div>
               <p className="text-gray-700">
-                Anyone interested in learning the sacred hymns of the Church—young and old, with or without musical experience. No prior knowledge required.
+                Anyone interested in learning the sacred hymns of the Church, young and old, with or without musical experience. No prior knowledge required.
               </p>
             </div>
 

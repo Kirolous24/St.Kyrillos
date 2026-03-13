@@ -33,10 +33,10 @@ export default function KitchenCleaningPage() {
               About This Ministry
             </h2>
             <p className="text-gray-700 text-lg leading-relaxed mb-6">
-              The Kitchen and Cleaning ministry is one of the most humble and essential forms of service in our church. These dedicated volunteers ensure our church home is clean, welcoming, and ready to receive the congregation — reflecting the care and love we have for one another.
+              The Kitchen and Cleaning ministry is one of the most humble and essential forms of service in our church. These dedicated volunteers ensure our church home is clean, welcoming, and ready to receive the congregation, reflecting the care and love we have for one another.
             </p>
             <p className="text-gray-700 text-lg leading-relaxed">
-              "Whoever wants to become great among you must be your servant." — Matthew 20:26
+              "Whoever wants to become great among you must be your servant." (Matthew 20:26)
             </p>
           </div>
 
@@ -77,7 +77,7 @@ export default function KitchenCleaningPage() {
               Serve With Us
             </h3>
             <p className="text-white/80 max-w-2xl mx-auto">
-              This ministry is open to all who have a heart to serve. No special skills needed — just a willing spirit and love for the church community.
+              This ministry is open to all who have a heart to serve. No special skills needed, just a willing spirit and love for the church community.
             </p>
           </div>
         </div>

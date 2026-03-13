@@ -4,19 +4,7 @@ import { useState } from 'react'
 import { signOut } from 'next-auth/react'
 import { Plus, Trash2, X, LogOut, ChevronDown, ChevronUp, ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
-
-const DURATION_OPTIONS = [
-  { value: 30, label: '30 min' },
-  { value: 45, label: '45 min' },
-  { value: 60, label: '1 hr' },
-  { value: 90, label: '1.5 hrs' },
-  { value: 120, label: '2 hrs' },
-  { value: 150, label: '2.5 hrs' },
-  { value: 180, label: '3 hrs' },
-  { value: 210, label: '3.5 hrs' },
-  { value: 240, label: '4 hrs' },
-  { value: 300, label: '5 hrs' },
-]
+import { DURATION_OPTIONS } from '@/lib/presets'
 
 interface TemplateEvent {
   id?: string

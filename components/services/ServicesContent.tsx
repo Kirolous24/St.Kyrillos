@@ -51,7 +51,7 @@ const services = [
     id: 'choir',
     title: 'Choir',
     icon: Music,
-    shortDescription: 'Praising God through sacred music — Kg through adult',
+    shortDescription: 'Praising God through sacred music, Kg through adult',
     href: '/services/choir',
     imageSrc: '/images/choir-singing.jpg',
   },

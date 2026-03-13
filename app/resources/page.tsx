@@ -27,7 +27,7 @@ const CATEGORIES = [
       {
         title: 'Diocese Resource Hub',
         description:
-          'Browse all resources published by our diocese — literature, audio, and more.',
+          'Browse all resources published by our diocese: literature, audio, and more.',
         url: 'https://suscopts.org/resources',
         source: 'suscopts.org',
       },
@@ -47,7 +47,7 @@ const CATEGORIES = [
     icon: Play,
     resources: [
       {
-        title: 'YouTube Channel — Metropolitan Youssef',
+        title: 'YouTube Channel: Metropolitan Youssef',
         description:
           'YouTube channel for sermons and teachings from His Eminence Metropolitan Youssef, head of our diocese.',
         url: 'https://www.youtube.com/@MetropolitanYoussef_SUSCopts/videos',
@@ -70,7 +70,7 @@ const CATEGORIES = [
     icon: BookMarked,
     resources: [
       {
-        title: 'The Agpeya — Book of Hours',
+        title: 'The Agpeya: Book of Hours',
         description:
           'The complete Coptic prayer book with all seven canonical hours of daily prayer.',
         url: 'https://www.copticchurch.net/liturgy/agpeya/index.html',
@@ -93,7 +93,7 @@ const CATEGORIES = [
       {
         title: 'Prayers Collection',
         description:
-          'Hundreds of Coptic prayers — personal, liturgical, and sacramental.',
+          'Hundreds of Coptic prayers: personal, liturgical, and sacramental.',
         url: 'https://st-takla.org/Prayers-Slawat/Online-Coptic-Prayer-Book-01-Index.html',
         source: 'st-takla.org',
       },
@@ -173,7 +173,7 @@ const CATEGORIES = [
         source: 'copticchurch.net',
       },
       {
-        title: 'Patrology — Church Fathers',
+        title: 'Patrology: Church Fathers',
         description:
           'Writings and teachings of the early Church Fathers and Coptic theologians.',
         url: 'https://www.copticchurch.net/patrology',
@@ -203,14 +203,14 @@ const CATEGORIES = [
     icon: CalendarDays,
     resources: [
       {
-        title: 'Synaxarium — Daily Saints',
+        title: 'Synaxarium: Daily Saints',
         description:
           'A daily commemoration of the lives of Coptic saints throughout the year.',
         url: 'https://www.copticchurch.net/synaxarium',
         source: 'copticchurch.net',
       },
       {
-        title: 'Coptic Calendar — Fasts & Feasts',
+        title: 'Coptic Calendar: Fasts & Feasts',
         description:
           'The liturgical calendar of the Coptic Orthodox Church with feasts and fasts.',
         url: 'https://suscopts.org/coptic-orthodox/fasts-and-feasts',
@@ -231,7 +231,7 @@ export default function ResourcesPage() {
               Resources
             </h1>
             <p className="text-xl text-white/80">
-              Curated links to grow in faith — hymns, liturgy, prayer,
+              Curated links to grow in faith: hymns, liturgy, prayer,
               scripture, and more from trusted Coptic Orthodox sources.
             </p>
           </div>
