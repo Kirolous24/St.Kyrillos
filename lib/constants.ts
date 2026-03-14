@@ -3,6 +3,8 @@
 // Update these values with actual church data
 // ============================================
 
+export const SITE_URL = 'https://stkyrillostn.org'
+
 export const CHURCH_INFO = {
   name: "St. Kyrillos the Sixth",
   fullName: "St. Kyrillos the Sixth Coptic Orthodox Church",
@@ -136,13 +138,10 @@ export const NAV_ITEMS = [
     href: "/about",
     children: [
       { label: "What is Coptic Orthodoxy?", href: "/about/coptic-orthodoxy" },
+      { label: "FAQs", href: "/about/faqs" },
       { label: "Clergy", href: "/about/clergy" },
       { label: "St. Kyrillos VI", href: "/about/st-kyrillos-vi" },
     ],
-  },
-  {
-    label: "I'm New",
-    href: "/im-new",
   },
   {
     label: "Services",
@@ -166,7 +165,7 @@ export const FOOTER_LINKS = {
   quickLinks: [
     { label: "Schedule", href: "/schedule" },
     { label: "Services", href: "/services" },
-    { label: "I'm New", href: "/im-new" },
+    { label: "FAQs", href: "/about/faqs" },
     { label: "Give", href: "/give" },
     { label: "Resources", href: "/resources" },
   ],
