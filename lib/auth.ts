@@ -8,13 +8,19 @@ const adminUsers = [
     id: '1',
     username: process.env.ADMIN_USER_1_USERNAME,
     passwordHash: process.env.ADMIN_USER_1_PASSWORD_HASH,
-    name: 'Admin 1',
+    name: 'Kirolous',
   },
   {
     id: '2',
     username: process.env.ADMIN_USER_2_USERNAME,
     passwordHash: process.env.ADMIN_USER_2_PASSWORD_HASH,
-    name: 'Admin 2',
+    name: 'Fr. Pachom',
+  },
+  {
+    id: '3',
+    username: process.env.ADMIN_USER_3_USERNAME,
+    passwordHash: process.env.ADMIN_USER_3_PASSWORD_HASH,
+    name: 'T. Marcelle',
   },
 ]
 
