@@ -154,8 +154,8 @@ export default function OurStoryPage() {
 
             {/* CTA */}
             <div className="mt-12 text-center">
-              <Button href="/im-new" variant="primary" size="lg">
-                Plan Your Visit
+              <Button href="/about/faqs" variant="primary" size="lg">
+                Visitor FAQs
               </Button>
             </div>
           </div>

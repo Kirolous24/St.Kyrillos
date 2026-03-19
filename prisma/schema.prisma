@@ -84,3 +84,18 @@ model LiturgicalEvent {
   @@unique([date, title])
   @@index([date])
 }
+
+// Singleton row (id = "current") tracking YouTube live status via PubSubHubbub webhook
+model LivestreamStatus {
+  id        String   @id @default("current")
+  isLive    Boolean  @default(false)
+  videoId   String?
+  title     String?
+  thumbnail String?
+  viewers   String?
+  updatedAt DateTime @updatedAt
+
+  // PubSubHubbub subscription tracking
+  subscribedAt    DateTime?
+  leaseExpiresAt  DateTime?
+}

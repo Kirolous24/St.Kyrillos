@@ -10,7 +10,7 @@ const actions = [
     icon: Users,
     title: 'Plan Your Visit',
     description: 'New to Orthodoxy? Learn what to expect when you join us.',
-    href: '/im-new',
+    href: '/about/faqs',
     gradient: 'from-primary-100 to-primary-50',
     iconBg: 'bg-primary-900',
   },

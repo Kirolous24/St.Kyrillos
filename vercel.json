@@ -3,6 +3,10 @@
     {
       "path": "/api/coptic/cron",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/youtube-webhook/cron",
+      "schedule": "0 0 */7 * *"
     }
   ]
 }

@@ -68,8 +68,9 @@ export const FEAST_TEMPLATE_MAP: Record<string, string> = {
   "Palm Sunday": "Pascha (Holy) Week",
   "Nativity Feast": "Nativity (Christmas)",
   "Nativity Paramoun": "Nativity (Christmas)",
-  "Theophany Feast": "Epiphany (Theophany)",
-  "Theophany Paramoun": "Epiphany (Theophany)",
+  "Fast of Nineveh": "Jonah's Fast",
+  "Feast of the Cross": "Feast of the Cross",
+  "Coptic New Year (Nayrouz)": "Nayrouz (Coptic New Year)",
 };
 
 export interface TemplateSuggestion {

@@ -99,7 +99,7 @@ export function LivestreamPlayer() {
     async function init() {
       const isLive = await checkStatus()
       if (!isLive) {
-        pollInterval = setInterval(checkStatus, 15 * 60 * 1000) // poll every 15 min when not live
+        pollInterval = setInterval(checkStatus, 60 * 1000) // poll every 1 min when not live
         resetInactivity()
         window.addEventListener('mousemove', resetInactivity)
         window.addEventListener('click', resetInactivity)

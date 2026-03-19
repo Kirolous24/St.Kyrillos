@@ -26,8 +26,8 @@ export function PageTransition({ children }: PageTransitionProps) {
   return (
     <div
       className={cn(
-        'transition-all duration-300 ease-out',
-        isTransitioning ? 'opacity-0 translate-y-2' : 'opacity-100 translate-y-0'
+        'transition-opacity duration-300 ease-out',
+        isTransitioning ? 'opacity-0' : 'opacity-100'
       )}
     >
       {displayChildren}

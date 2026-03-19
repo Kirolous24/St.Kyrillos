@@ -21,7 +21,7 @@ const services = [
     icon: Music,
     shortDescription: 'Learning the sacred songs of the Church',
     href: '/services/hymns',
-    imageSrc: '/images/ICON_1.jpg',
+    imageSrc: '/images/cymbals-triangle.jpg',
   },
   {
     id: 'youth-meeting',
@@ -29,7 +29,7 @@ const services = [
     icon: Users,
     shortDescription: 'Fellowship and spiritual growth for young adults',
     href: '/services/youth-meeting',
-    imageSrc: '/images/youth-group.jpg',
+    imageSrc: '/images/youth2.jpeg',
   },
   {
     id: 'mens-meeting',
@@ -115,6 +115,7 @@ function ServicesGrid() {
                     alt={service.title}
                     fill
                     className="object-cover transition-transform duration-500 group-hover:scale-110"
+                    style={service.id === 'hymns' ? { objectPosition: '50% 55%' } : undefined}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
                   {/* Icon badge */}

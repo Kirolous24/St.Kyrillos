@@ -128,7 +128,7 @@ export function Hero() {
           {/*
           <div className={`flex flex-col sm:flex-row gap-4 justify-center mt-12 transition-all duration-1000 delay-500 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
             <Link
-              href="/im-new"
+              href="/about/faqs"
               className="group inline-flex items-center justify-center gap-2 px-8 py-4 bg-gold hover:bg-gold-light text-primary-950 font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-[0_0_30px_rgba(201,162,39,0.4)]"
             >
               <span>Plan Your Visit</span>

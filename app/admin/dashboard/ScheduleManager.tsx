@@ -437,6 +437,18 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
       const { created } = await res.json()
       setEvents((prev) => [...prev, ...created])
       setTemplateModal(null)
+
+      // Switch to the week containing the first applied event
+      const earliestDate = batchEvents.reduce((min, ev) => (ev.date < min ? ev.date : min), batchEvents[0].date)
+      const d = dateStrToLocal(earliestDate)
+      for (let i = 0; i < 4; i++) {
+        if (d >= weekBounds[i].start && d <= weekBounds[i].end) {
+          setSelectedWeek(i)
+          break
+        }
+      }
+      // Scroll to top of page so the schedule is visible
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch {
       setError('Failed to apply template. Please try again.')
     } finally {
@@ -469,6 +481,18 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
           if (ei !== evIdx) return ev
           return { ...ev, _removed: !(ev as DBTemplateEvent & { _removed?: boolean })._removed }
         }),
+      }
+    })
+    setTemplateModal({ ...templateModal, editableEvents: updated })
+  }
+
+  function addTemplateEvent(dayIdx: number) {
+    if (!templateModal?.editableEvents) return
+    const updated = templateModal.editableEvents.map((day, di) => {
+      if (di !== dayIdx) return day
+      return {
+        ...day,
+        events: [...day.events, { title: '', time: '09:00', durationMinutes: 60, location: 'Main Church', description: null }],
       }
     })
     setTemplateModal({ ...templateModal, editableEvents: updated })
@@ -990,6 +1014,13 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
                                 </div>
                               )
                             })}
+                            <button
+                              onClick={() => addTemplateEvent(dayIdx)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-primary-900 hover:bg-primary-50 rounded-lg border border-dashed border-primary-200 transition-colors w-full justify-center mt-1"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Add Event to {day.label}
+                            </button>
                           </div>
                         )}
                       </div>

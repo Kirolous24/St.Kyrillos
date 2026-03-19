@@ -65,8 +65,8 @@ export default function SchedulePage() {
                 {CHURCH_INFO.phone}
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button href="/im-new" variant="secondary">
-                  Planning Your First Visit?
+                <Button href="/about/faqs" variant="secondary">
+                  First-Time Visitor FAQs
                 </Button>
               </div>
             </div>
