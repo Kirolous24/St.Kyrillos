@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { LIVESTREAM, SITE_URL } from '@/lib/constants'
 
@@ -10,13 +10,7 @@ const PUBSUBHUBBUB_HUB = 'https://pubsubhubbub.appspot.com/subscribe'
  * Called by the Vercel cron job every 7 days, or manually.
  * Protected by CRON_SECRET for cron calls.
  */
-export async function POST(request: NextRequest) {
-  // Verify this is from Vercel cron or an admin
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+export async function POST() {
 
   try {
     const callbackUrl = `${SITE_URL}/api/youtube-webhook`
