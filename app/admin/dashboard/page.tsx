@@ -2,7 +2,9 @@ import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { ScheduleManager } from './ScheduleManager'
+import { StatsPanel } from './StatsPanel'
 import { getCopticDayDataBatch, getTemplateSuggestions } from '@/lib/coptic-api'
+import { Suspense } from 'react'
 
 export default async function AdminDashboardPage() {
   const session = await auth()
@@ -21,8 +23,8 @@ export default async function AdminDashboardPage() {
   const startStr = weekStart.toISOString().slice(0, 10)
   const endStr = weekEnd.toISOString().slice(0, 10)
 
-  // Fetch events, templates, and coptic data in parallel
-  const [raw, rawTemplates, copticData] = await Promise.all([
+  // Fetch events, templates, weekly services, and coptic data in parallel
+  const [raw, rawTemplates, rawWeeklyServices, copticData] = await Promise.all([
     prisma.scheduleEvent.findMany({
       where: { date: { gte: weekStart, lte: weekEnd } },
       orderBy: [{ date: "asc" }, { sortOrder: "asc" }],
@@ -35,6 +37,9 @@ export default async function AdminDashboardPage() {
         },
       },
       orderBy: { name: 'asc' },
+    }),
+    prisma.weeklyService.findMany({
+      orderBy: [{ dayOfWeek: 'asc' }, { sortOrder: 'asc' }],
     }),
     getCopticDayDataBatch(startStr, endStr).catch(() => ({} as Record<string, never>)),
   ])
@@ -69,18 +74,43 @@ export default async function AdminDashboardPage() {
     })),
   }))
 
+  const weeklyServices = rawWeeklyServices.map((s) => ({
+    id: s.id,
+    dayOfWeek: s.dayOfWeek,
+    title: s.title,
+    time: s.time,
+    durationMinutes: s.durationMinutes,
+    location: s.location,
+    description: s.description,
+    enabled: s.enabled,
+    sortOrder: s.sortOrder,
+  }))
+
   // Find template suggestions based on feast days in the coptic data
   const suggestedTemplates = await getTemplateSuggestions(
     copticData,
     templates.map((t) => ({ id: t.id, name: t.name }))
   )
 
+  const isKirolous = session.user?.name === 'Kirolous'
+
   return (
-    <ScheduleManager
-      initialEvents={events}
-      initialTemplates={templates}
-      copticData={copticData}
-      suggestedTemplates={suggestedTemplates}
-    />
+    <div>
+      {isKirolous && (
+        <div className="pt-6">
+          <Suspense fallback={null}>
+            <StatsPanel />
+          </Suspense>
+        </div>
+      )}
+      <ScheduleManager
+        initialEvents={events}
+        initialTemplates={templates}
+        initialWeeklyServices={weeklyServices}
+        copticData={copticData}
+        suggestedTemplates={suggestedTemplates}
+        userName={session.user?.name ?? ''}
+      />
+    </div>
   )
 }

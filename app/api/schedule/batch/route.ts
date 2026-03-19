@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+import { logActivity } from '@/lib/activity-log'
 
 interface BatchEvent {
   date: string
@@ -67,6 +68,21 @@ export async function POST(request: Request) {
 
     revalidatePath('/')
     revalidatePath('/schedule')
+
+    // Build a concise log entry: group by date
+    const dateGroups: Record<string, string[]> = {}
+    for (const ev of events) {
+      if (!dateGroups[ev.date]) dateGroups[ev.date] = []
+      dateGroups[ev.date].push(ev.title)
+    }
+    const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+    const detail = Object.entries(dateGroups).map(([d, titles]) => {
+      const dt = new Date(`${d}T12:00:00.000Z`)
+      return `${titles.join(', ')} on ${DAY_SHORT[dt.getUTCDay()]}, ${MONTH_SHORT[dt.getUTCMonth()]} ${dt.getUTCDate()}`
+    }).join(' · ')
+    await logActivity(session.user?.name ?? 'Unknown', 'batch_created', detail, created.length)
+
     return NextResponse.json({ created, count: created.length }, { status: 201 })
   } catch (error) {
     console.error('Error batch creating events:', error)

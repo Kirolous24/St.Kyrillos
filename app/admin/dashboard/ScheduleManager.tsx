@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from 'react'
 import { signOut } from 'next-auth/react'
-import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Settings, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Settings, Sparkles, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { EVENT_PRESETS, DURATION_OPTIONS, DAY_PRESETS } from '@/lib/presets'
+import type { WeeklyService } from '@/app/admin/weekly-services/WeeklyServicesManager'
 import { CopticDayMeta, CopticDayPanel } from './CopticDayInfo'
 import type { CopticDayData, TemplateSuggestion } from '@/lib/coptic-api'
 
@@ -122,8 +123,18 @@ function timesOverlap(startA: number, durA: number, startB: number, durB: number
   return startA < endB && startB < endA
 }
 
-export function ScheduleManager({ initialEvents, initialTemplates, copticData, suggestedTemplates }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[]; copticData?: Record<string, CopticDayData>; suggestedTemplates?: TemplateSuggestion[] }) {
+// All days in week order for weekly services modal
+const ALL_WEEK_DAYS = [0, 1, 2, 3, 4, 5, 6]
+
+const GREETINGS: Record<string, string> = {
+  'Kirolous':   'Hello Kirolous!',
+  'Fr. Pachom': 'Hello Abouna!',
+  'T. Marcelle': 'Hello Tasoni!',
+}
+
+export function ScheduleManager({ initialEvents, initialTemplates, initialWeeklyServices, copticData, suggestedTemplates, userName }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[]; initialWeeklyServices?: WeeklyService[]; copticData?: Record<string, CopticDayData>; suggestedTemplates?: TemplateSuggestion[]; userName?: string }) {
   const [events, setEvents] = useState<ScheduleEvent[]>(initialEvents)
+  const [weeklyServices, setWeeklyServices] = useState<WeeklyService[]>(initialWeeklyServices ?? [])
   const [selectedWeek, setSelectedWeek] = useState(0)
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => toDateStr(new Date()))
   const [showForm, setShowForm] = useState(false)
@@ -132,6 +143,11 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [fillDayConfirm, setFillDayConfirm] = useState<{ dateStr: string; dayOfWeek: number } | null>(null)
+  // Weekly Services modal state
+  const [weeklyModal, setWeeklyModal] = useState<{
+    // Which services are toggled on for this apply (keyed by service id)
+    toggled: Record<string, boolean>
+  } | null>(null)
   const [templateModal, setTemplateModal] = useState<{
     step: 'select' | 'date' | 'preview'
     template?: DBTemplate
@@ -498,18 +514,97 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
     setTemplateModal({ ...templateModal, editableEvents: updated })
   }
 
+  function openWeeklyModal() {
+    // Default: all enabled services are toggled on
+    const toggled: Record<string, boolean> = {}
+    weeklyServices.forEach((s) => { toggled[s.id] = s.enabled })
+    setWeeklyModal({ toggled })
+  }
+
+  function getWeekDayDate(dayOfWeek: number): string | null {
+    const { start } = weekBounds[selectedWeek]
+    // start is Sunday of that week
+    const d = new Date(start)
+    d.setDate(start.getDate() + dayOfWeek)
+    const dateStr = toDateStr(d)
+    // Only return if within the 4-week window
+    if (d < weekBounds[0].start || d > weekBounds[3].end) return null
+    return dateStr
+  }
+
+  async function handleApplyWeeklyServices() {
+    if (!weeklyModal) return
+    setSaving(true)
+    setError('')
+    try {
+      const batchEvents: Array<{
+        date: string; time: string; sortOrder: number;
+        durationMinutes: number; title: string;
+        description: string | null; location: string | null
+      }> = []
+
+      for (const service of weeklyServices) {
+        if (!weeklyModal.toggled[service.id]) continue
+        const dateStr = getWeekDayDate(service.dayOfWeek)
+        if (!dateStr) continue
+        batchEvents.push({
+          date: dateStr,
+          time: formatTimeForDisplay(service.time),
+          sortOrder: service.sortOrder,
+          durationMinutes: service.durationMinutes,
+          title: service.title,
+          description: service.description,
+          location: service.location,
+        })
+      }
+
+      if (batchEvents.length === 0) {
+        setError('No services selected or all fall outside the schedule window.')
+        setSaving(false)
+        return
+      }
+
+      const res = await fetch('/api/schedule/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: batchEvents }),
+      })
+      if (!res.ok) throw new Error('Failed to create')
+      const { created } = await res.json()
+      setEvents((prev) => [...prev, ...created])
+      setWeeklyModal(null)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {
+      setError('Failed to apply weekly services. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
+          {userName && GREETINGS[userName] && (
+            <p className="text-xl font-semibold text-gold mb-0.5">{GREETINGS[userName]}</p>
+          )}
           <h1 className="text-2xl font-bold text-gray-900">Schedule Management</h1>
           <p className="text-gray-500 text-sm">
             Managing {MONTH_SHORT[weekBounds[0].start.getMonth()]} {weekBounds[0].start.getDate()} –{' '}
             {MONTH_SHORT[weekBounds[3].end.getMonth()]} {weekBounds[3].end.getDate()}, {weekBounds[3].end.getFullYear()}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {weeklyServices.filter((s) => s.enabled).length > 0 && (
+            <button
+              onClick={openWeeklyModal}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-green-800 hover:bg-green-50 border border-green-300 rounded-lg transition-colors font-medium"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Weekly Services
+            </button>
+          )}
           <button
             onClick={() => setTemplateModal({ step: 'select' })}
             className="flex items-center gap-2 px-4 py-2 text-sm text-primary-900 hover:bg-primary-50 border border-primary-200 rounded-lg transition-colors font-medium"
@@ -517,6 +612,13 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
             <Calendar className="w-4 h-4" />
             Apply Template
           </button>
+          <Link
+            href="/admin/weekly-services"
+            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Weekly
+          </Link>
           <Link
             href="/admin/templates"
             className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -799,6 +901,113 @@ export function ScheduleManager({ initialEvents, initialTemplates, copticData, s
 
       {error && !showForm && <p className="mt-4 text-red-600 text-sm">{error}</p>}
 
+
+      {/* Weekly Services Modal */}
+      {weeklyModal && (() => {
+        const weekLabel = selectedWeek === 0 ? 'This Week' : selectedWeek === 1 ? 'Next Week' : `Week ${selectedWeek + 1}`
+        const { start } = weekBounds[selectedWeek]
+
+        // Build preview: all days that have services configured for this week
+        const dayPreviews = ALL_WEEK_DAYS.map((dow) => {
+          const d = new Date(start)
+          d.setDate(start.getDate() + dow)
+          const dateStr = toDateStr(d)
+          const dayServices = weeklyServices.filter((s) => s.dayOfWeek === dow)
+          const existingCount = events.filter((e) => isoToDateStr(e.date) === dateStr).length
+          const selectedServices = dayServices.filter((s) => weeklyModal.toggled[s.id])
+          const conflicts = selectedServices.length > 0 ? getConflicts(dateStr, selectedServices.map((s) => ({ time: s.time, durationMinutes: s.durationMinutes, title: s.title }))) : []
+          return { dow, dateStr, d, dayServices, existingCount, conflicts }
+        }).filter((dp) => dp.dayServices.length > 0)
+
+        const totalSelected = weeklyServices.filter((s) => weeklyModal.toggled[s.id]).length
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Apply Weekly Services</h2>
+                  <p className="text-sm text-gray-500">{weekLabel} · {MONTH_SHORT[start.getMonth()]} {start.getDate()} – {MONTH_SHORT[weekBounds[selectedWeek].end.getMonth()]} {weekBounds[selectedWeek].end.getDate()}</p>
+                </div>
+                <button onClick={() => { setWeeklyModal(null); setError('') }} className="p-1 text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {dayPreviews.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-400 text-sm mb-2">No weekly services configured.</p>
+                    <Link href="/admin/weekly-services" className="text-sm text-primary-900 hover:underline">Configure weekly services</Link>
+                  </div>
+                ) : (
+                  dayPreviews.map(({ dow, dateStr, d, dayServices, existingCount, conflicts }) => (
+                    <div key={dow} className={`rounded-lg border ${conflicts.length > 0 ? 'border-amber-300' : 'border-gray-200'}`}>
+                      <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 rounded-t-lg flex items-center justify-between">
+                        <div>
+                          <span className="text-sm font-semibold text-gray-900">{DAY_NAMES[dow]}</span>
+                          <span className="text-xs text-gray-500 ml-2">{MONTH_SHORT[d.getMonth()]} {d.getDate()}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {conflicts.length > 0 && <span className="text-xs text-amber-600">{conflicts.length} conflict{conflicts.length > 1 ? 's' : ''}</span>}
+                          {existingCount > 0 && conflicts.length === 0 && <span className="text-xs text-gray-400">{existingCount} existing</span>}
+                        </div>
+                      </div>
+                      <div className="p-3 space-y-2">
+                        {dayServices.map((service) => (
+                          <div key={service.id} className={`flex items-center gap-3 ${!weeklyModal.toggled[service.id] ? 'opacity-40' : ''}`}>
+                            <button
+                              onClick={() => setWeeklyModal({ ...weeklyModal, toggled: { ...weeklyModal.toggled, [service.id]: !weeklyModal.toggled[service.id] } })}
+                              className={`shrink-0 transition-colors ${weeklyModal.toggled[service.id] ? 'text-primary-900' : 'text-gray-300'}`}
+                            >
+                              {weeklyModal.toggled[service.id]
+                                ? <ToggleRight className="w-6 h-6" />
+                                : <ToggleLeft className="w-6 h-6" />
+                              }
+                            </button>
+                            <span className="text-sm font-medium text-primary-900 tabular-nums w-16 shrink-0">
+                              {formatTimeForDisplay(service.time)}
+                            </span>
+                            <span className="text-sm text-gray-900 flex-1">{service.title}</span>
+                            <span className="text-xs text-gray-400 shrink-0">
+                              {service.durationMinutes < 60 ? `${service.durationMinutes}m` : `${service.durationMinutes / 60}h`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {error && <p className="text-red-600 text-sm">{error}</p>}
+
+                {dayPreviews.length > 0 && (
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={handleApplyWeeklyServices}
+                      disabled={saving || totalSelected === 0}
+                      className="flex-1 py-2.5 bg-primary-900 text-white rounded-lg font-medium hover:bg-primary-800 transition-colors disabled:opacity-50"
+                    >
+                      {saving ? 'Adding...' : `Add ${totalSelected} Service${totalSelected !== 1 ? 's' : ''}`}
+                    </button>
+                    <button
+                      onClick={() => { setWeeklyModal(null); setError('') }}
+                      className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-400 text-center">
+                  Toggle individual services on/off. Manage defaults in{' '}
+                  <Link href="/admin/weekly-services" className="text-primary-900 hover:underline">Weekly Services settings</Link>.
+                </p>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Fill Day Confirmation Modal */}
       {fillDayConfirm && (() => {

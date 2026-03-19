@@ -85,6 +85,39 @@ model LiturgicalEvent {
   @@index([date])
 }
 
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userName  String
+  action    String   // "created" | "updated" | "deleted" | "batch_created"
+  detail    String   // e.g. "Divine Liturgy on Sun Mar 22"
+  count     Int      @default(1) // >1 for batch operations
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userName])
+}
+
+model UserLastSeen {
+  userName   String   @id
+  lastSeenAt DateTime
+}
+
+model WeeklyService {
+  id              String   @id @default(cuid())
+  dayOfWeek       Int      // 0=Sunday, 5=Friday, 6=Saturday
+  title           String
+  time            String   // 24-hr format "08:00"
+  durationMinutes Int      @default(60)
+  location        String
+  description     String?
+  enabled         Boolean  @default(true)
+  sortOrder       Int      // minutes from midnight, for ordering within the day
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([dayOfWeek])
+}
+
 // Singleton row (id = "current") tracking YouTube live status via PubSubHubbub webhook
 model LivestreamStatus {
   id        String   @id @default("current")

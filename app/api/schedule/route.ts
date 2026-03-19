@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+import { logActivity, formatEventDetail } from '@/lib/activity-log'
 
 // Get the start of the current week (Sunday) and end of week 4 (Saturday)
 function getScheduleWindow() {
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
 
     revalidatePath('/')
     revalidatePath('/schedule')
+    await logActivity(session.user?.name ?? 'Unknown', 'created', formatEventDetail(event.title, date))
     return NextResponse.json(event, { status: 201 })
   } catch (error) {
     console.error('Error creating event:', error)

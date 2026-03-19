@@ -2,6 +2,7 @@ import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { checkRateLimit } from './rate-limit'
+import { prisma } from './prisma'
 
 const adminUsers = [
   {
@@ -60,6 +61,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     maxAge: 24 * 60 * 60, // 24 hours
   },
   callbacks: {
+    async jwt({ token, user, trigger }) {
+      if (trigger === 'signIn' && user?.name) {
+        // Record last seen — fire and forget, don't block sign-in
+        prisma.userLastSeen.upsert({
+          where: { userName: user.name },
+          update: { lastSeenAt: new Date() },
+          create: { userName: user.name, lastSeenAt: new Date() },
+        }).catch(() => {})
+      }
+      return token
+    },
     authorized({ auth, request }) {
       const isAdminRoute = request.nextUrl.pathname.startsWith('/admin')
       const isLoginPage = request.nextUrl.pathname === '/admin/login'

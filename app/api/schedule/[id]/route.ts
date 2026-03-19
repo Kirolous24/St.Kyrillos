@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+import { logActivity, formatEventDetail } from '@/lib/activity-log'
 
 export async function PUT(
   request: Request,
@@ -44,6 +45,7 @@ export async function PUT(
 
     revalidatePath('/')
     revalidatePath('/schedule')
+    await logActivity(session.user?.name ?? 'Unknown', 'updated', formatEventDetail(event.title, date))
     return NextResponse.json(event)
   } catch (error) {
     console.error('Error updating event:', error)
@@ -66,12 +68,15 @@ export async function DELETE(
 
     const { id } = params
 
-    await prisma.scheduleEvent.delete({
-      where: { id },
-    })
+    const existing = await prisma.scheduleEvent.findUnique({ where: { id } })
+    await prisma.scheduleEvent.delete({ where: { id } })
 
     revalidatePath('/')
     revalidatePath('/schedule')
+    if (existing) {
+      const dateStr = existing.date.toISOString().slice(0, 10)
+      await logActivity(session.user?.name ?? 'Unknown', 'deleted', formatEventDetail(existing.title, dateStr))
+    }
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting event:', error)
