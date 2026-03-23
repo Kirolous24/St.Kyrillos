@@ -56,20 +56,11 @@ export function QuickActions() {
           )}
         >
           {actions.map((action, index) => {
-            // TODO (re-enable): Once confession is approved, the `disabled` flag will be removed
-            // from the actions array above and this wrapper will render a normal Link again.
+            // TODO (re-enable): Once confession is approved, remove `disabled: true` from the
+            // actions array above and this isDisabled check will automatically restore the Link.
             const isDisabled = 'disabled' in action && action.disabled
-            const Wrapper = isDisabled ? 'div' : Link
-            const wrapperProps = isDisabled
-              ? { className: 'block cursor-not-allowed select-none' }
-              : { href: action.href, className: 'group block' }
 
-            return (
-              <Wrapper
-                key={action.href}
-                {...(wrapperProps as never)}
-                style={{ animationDelay: `${index * 100}ms` }}
-              >
+            const cardInner = (
                 <div
                   className={cn(
                     "relative h-full p-6 rounded-2xl bg-white shadow-soft-lg",
@@ -130,7 +121,16 @@ export function QuickActions() {
                     <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-gold/10 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   )}
                 </div>
-              </Wrapper>
+            )
+
+            return isDisabled ? (
+              <div key={action.href} className="block cursor-not-allowed select-none" style={{ animationDelay: `${index * 100}ms` }}>
+                {cardInner}
+              </div>
+            ) : (
+              <Link key={action.href} href={action.href} className="group block" style={{ animationDelay: `${index * 100}ms` }}>
+                {cardInner}
+              </Link>
             )
           })}
         </div>
