@@ -159,6 +159,10 @@ export const NAV_ITEMS = [
     label: "Resources",
     href: "/resources",
   },
+  {
+    label: "Join",
+    href: "/members/join",
+  },
 ] as const;
 
 export const FOOTER_LINKS = {

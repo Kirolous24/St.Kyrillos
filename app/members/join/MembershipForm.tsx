@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle } from 'lucide-react'
+import { User, Mail, MapPin, Info, CheckCircle } from 'lucide-react'
 
 const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
@@ -11,18 +11,9 @@ const US_STATES = [
 ]
 
 interface FormData {
-  firstName: string
-  lastName: string
-  email: string
-  phone: string
-  address: string
-  city: string
-  state: string
-  zip: string
-  dob: string
-  gender: string
-  maritalStatus: string
-  hasChildren: string
+  firstName: string; lastName: string; email: string; phone: string
+  address: string; city: string; state: string; zip: string; dob: string
+  gender: string; maritalStatus: string; hasChildren: string
 }
 
 const INITIAL: FormData = {
@@ -31,19 +22,27 @@ const INITIAL: FormData = {
   gender: '', maritalStatus: '', hasChildren: '',
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+const inputCls = "w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-900/20 focus:border-primary-800 transition-all"
+const selectCls = `${inputCls} appearance-none cursor-pointer`
+
+function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        {label} {required && <span className="text-red-500">*</span>}
-      </label>
-      {children}
-    </div>
+    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+      {children}{required && <span className="text-red-400 ml-0.5">*</span>}
+    </label>
   )
 }
 
-const inputClass = "w-full px-3.5 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-900/30 focus:border-primary-900 transition-colors"
-const selectClass = `${inputClass} bg-white`
+function SectionHeader({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-5">
+      <div className="w-8 h-8 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+        <Icon className="w-4 h-4 text-primary-900" />
+      </div>
+      <h2 className="font-serif text-base font-semibold text-gray-900">{title}</h2>
+    </div>
+  )
+}
 
 export function MembershipForm() {
   const [form, setForm] = useState<FormData>(INITIAL)
@@ -51,9 +50,8 @@ export function MembershipForm() {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
 
-  function update(field: keyof FormData, value: string) {
-    setForm(prev => ({ ...prev, [field]: value }))
-  }
+  const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm(prev => ({ ...prev, [field]: e.target.value }))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -68,7 +66,7 @@ export function MembershipForm() {
       if (!res.ok) throw new Error()
       setSubmitted(true)
     } catch {
-      setError('Something went wrong. Please try again or contact us directly.')
+      setError('Something went wrong. Please try again or email us directly.')
     } finally {
       setSubmitting(false)
     }
@@ -76,117 +74,133 @@ export function MembershipForm() {
 
   if (submitted) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft p-10 text-center">
-        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-5">
-          <CheckCircle className="w-8 h-8 text-green-600" />
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft p-12 text-center">
+        <div className="w-16 h-16 rounded-full bg-green-50 border border-green-100 flex items-center justify-center mx-auto mb-5">
+          <CheckCircle className="w-8 h-8 text-green-500" />
         </div>
-        <h2 className="font-serif text-2xl font-semibold text-gray-900 mb-3">Form Submitted!</h2>
-        <p className="text-gray-600 leading-relaxed">
-          Thank you for reaching out. Fr. Pachom will contact you soon.
-          <br />
-          God bless you and your family.
+        <h2 className="font-serif text-2xl font-semibold text-gray-900 mb-3">Form Received!</h2>
+        <p className="text-gray-500 leading-relaxed max-w-sm mx-auto">
+          Thank you for reaching out. Fr. Pachom will be in touch with you soon.<br />
+          <span className="text-primary-900 font-medium">God bless you and your family.</span>
         </p>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-100 shadow-soft p-8 md:p-10 space-y-8">
-      {/* Name */}
-      <div>
-        <h2 className="font-serif text-lg font-semibold text-gray-900 mb-5 pb-2 border-b border-gray-100">Personal Information</h2>
+    <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
+      {/* Section 1 — Name */}
+      <div className="p-7 border-b border-gray-50">
+        <SectionHeader icon={User} title="Personal Information" />
         <div className="grid grid-cols-2 gap-4">
-          <Field label="First Name" required>
-            <input className={inputClass} value={form.firstName} onChange={e => update('firstName', e.target.value)} required />
-          </Field>
-          <Field label="Last Name" required>
-            <input className={inputClass} value={form.lastName} onChange={e => update('lastName', e.target.value)} required />
-          </Field>
-        </div>
-      </div>
-
-      {/* Contact */}
-      <div className="space-y-4">
-        <h2 className="font-serif text-lg font-semibold text-gray-900 pb-2 border-b border-gray-100">Contact</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Email" required>
-            <input type="email" className={inputClass} value={form.email} onChange={e => update('email', e.target.value)} required />
-          </Field>
-          <Field label="Phone">
-            <input type="tel" className={inputClass} value={form.phone} onChange={e => update('phone', e.target.value)} />
-          </Field>
-        </div>
-      </div>
-
-      {/* Address */}
-      <div className="space-y-4">
-        <h2 className="font-serif text-lg font-semibold text-gray-900 pb-2 border-b border-gray-100">Address</h2>
-        <Field label="Street Address">
-          <input className={inputClass} value={form.address} onChange={e => update('address', e.target.value)} />
-        </Field>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="col-span-2">
-            <Field label="City">
-              <input className={inputClass} value={form.city} onChange={e => update('city', e.target.value)} />
-            </Field>
+          <div>
+            <Label required>First Name</Label>
+            <input className={inputCls} value={form.firstName} onChange={set('firstName')} required placeholder="John" />
           </div>
-          <Field label="State">
-            <select className={selectClass} value={form.state} onChange={e => update('state', e.target.value)}>
-              <option value="">—</option>
-              {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-          <Field label="Zip">
-            <input className={inputClass} value={form.zip} onChange={e => update('zip', e.target.value)} maxLength={10} />
-          </Field>
+          <div>
+            <Label required>Last Name</Label>
+            <input className={inputCls} value={form.lastName} onChange={set('lastName')} required placeholder="Doe" />
+          </div>
         </div>
       </div>
 
-      {/* More Info */}
-      <div className="space-y-4">
-        <h2 className="font-serif text-lg font-semibold text-gray-900 pb-2 border-b border-gray-100">Additional Information</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Date of Birth">
-            <input type="date" className={inputClass} value={form.dob} onChange={e => update('dob', e.target.value)} />
-          </Field>
-          <Field label="Gender">
-            <select className={selectClass} value={form.gender} onChange={e => update('gender', e.target.value)}>
+      {/* Section 2 — Contact */}
+      <div className="p-7 border-b border-gray-50">
+        <SectionHeader icon={Mail} title="Contact" />
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label required>Email</Label>
+            <input type="email" className={inputCls} value={form.email} onChange={set('email')} required placeholder="john@example.com" />
+          </div>
+          <div>
+            <Label>Phone</Label>
+            <input type="tel" className={inputCls} value={form.phone} onChange={set('phone')} placeholder="(555) 000-0000" />
+          </div>
+        </div>
+      </div>
+
+      {/* Section 3 — Address */}
+      <div className="p-7 border-b border-gray-50">
+        <SectionHeader icon={MapPin} title="Address" />
+        <div className="space-y-4">
+          <div>
+            <Label>Street Address</Label>
+            <input className={inputCls} value={form.address} onChange={set('address')} placeholder="123 Main St" />
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            <div className="col-span-2">
+              <Label>City</Label>
+              <input className={inputCls} value={form.city} onChange={set('city')} placeholder="Nashville" />
+            </div>
+            <div>
+              <Label>State</Label>
+              <select className={selectCls} value={form.state} onChange={set('state')}>
+                <option value="">—</option>
+                {US_STATES.map(s => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Zip</Label>
+              <input className={inputCls} value={form.zip} onChange={set('zip')} placeholder="37013" maxLength={10} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 4 — Additional */}
+      <div className="p-7">
+        <SectionHeader icon={Info} title="Additional Information" />
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label>Date of Birth</Label>
+            <input type="date" className={inputCls} value={form.dob} onChange={set('dob')} />
+          </div>
+          <div>
+            <Label>Gender</Label>
+            <select className={selectCls} value={form.gender} onChange={set('gender')}>
               <option value="">Select…</option>
               <option>Male</option>
               <option>Female</option>
               <option>Prefer not to say</option>
             </select>
-          </Field>
-          <Field label="Marital Status">
-            <select className={selectClass} value={form.maritalStatus} onChange={e => update('maritalStatus', e.target.value)}>
+          </div>
+          <div>
+            <Label>Marital Status</Label>
+            <select className={selectCls} value={form.maritalStatus} onChange={set('maritalStatus')}>
               <option value="">Select…</option>
               <option>Single</option>
               <option>Married</option>
               <option>Divorced</option>
               <option>Widowed</option>
             </select>
-          </Field>
-          <Field label="Do you have children?">
-            <select className={selectClass} value={form.hasChildren} onChange={e => update('hasChildren', e.target.value)}>
+          </div>
+          <div>
+            <Label>Do you have children?</Label>
+            <select className={selectCls} value={form.hasChildren} onChange={set('hasChildren')}>
               <option value="">Select…</option>
               <option>Yes</option>
               <option>No</option>
             </select>
-          </Field>
+          </div>
         </div>
       </div>
 
-      {error && (
-        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</p>
-      )}
-
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-full py-3.5 bg-primary-900 text-white font-semibold rounded-xl hover:bg-primary-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {submitting ? 'Submitting…' : 'Submit Membership Form'}
-      </button>
+      {/* Footer */}
+      <div className="px-7 pb-7">
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4">{error}</p>
+        )}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full py-3.5 bg-primary-900 text-white font-semibold text-sm rounded-xl hover:bg-primary-800 active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? 'Submitting…' : 'Submit Membership Form'}
+        </button>
+        <p className="text-xs text-center text-gray-400 mt-3">
+          Your information is kept private and shared only with our priest.
+        </p>
+      </div>
     </form>
   )
 }
