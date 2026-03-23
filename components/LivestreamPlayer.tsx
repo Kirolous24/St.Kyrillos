@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { Play, ExternalLink, Calendar, Clock, Users } from 'lucide-react'
 import { LIVESTREAM } from '@/lib/constants'
 import { Button } from '@/components/ui/Button'
@@ -193,10 +194,11 @@ export function LivestreamPlayer() {
         <div className="bg-gray-900 rounded-b-2xl overflow-hidden shadow-soft-xl">
           <div className="relative aspect-video">
             {liveStatus.thumbnail ? (
-              <img
+              <Image
                 src={liveStatus.thumbnail}
                 alt={liveStatus.title || 'Upcoming stream'}
-                className="w-full h-full object-cover"
+                fill
+                className="object-cover"
               />
             ) : (
               <div className="w-full h-full bg-gray-800 flex items-center justify-center">

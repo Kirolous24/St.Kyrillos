@@ -99,6 +99,7 @@ export function WeeklySchedule({ events, copticData }: { events: ScheduleEvent[]
 
   useEffect(() => {
     setDisplayedEvents(getEventsForDay(selectedDay))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDay, events])
 
   // Get coptic data for the selected day
