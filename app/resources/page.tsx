@@ -8,7 +8,9 @@ import {
   Scroll,
   CalendarDays,
   ExternalLink,
+  UserPlus,
 } from 'lucide-react'
+import Link from 'next/link'
 
 export const metadata: Metadata = {
   title: 'Resources',
@@ -234,6 +236,29 @@ export default function ResourcesPage() {
               Curated links to grow in faith: hymns, liturgy, prayer,
               scripture, and more from trusted Coptic Orthodox sources.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Join CTA */}
+      <section className="bg-white border-b border-gray-100">
+        <div className="container-custom py-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-gradient-to-r from-primary-50 to-gold/10 rounded-2xl px-6 py-5 border border-primary-100">
+            <div className="flex items-center gap-4">
+              <div className="w-11 h-11 rounded-xl bg-primary-900 flex items-center justify-center flex-shrink-0">
+                <UserPlus className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">Want to become a member?</p>
+                <p className="text-sm text-gray-500">Fill out our membership form and Fr. Pachom will be in touch.</p>
+              </div>
+            </div>
+            <Link
+              href="/members/join"
+              className="flex-shrink-0 px-5 py-2.5 bg-primary-900 text-white text-sm font-semibold rounded-xl hover:bg-primary-800 transition-colors"
+            >
+              Join Our Church
+            </Link>
           </div>
         </div>
       </section>

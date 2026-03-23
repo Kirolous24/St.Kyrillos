@@ -20,7 +20,7 @@ export const CHURCH_INFO = {
     full: "5988 Cane Ridge Rd Antioch, TN 37013",
   },
   phone: "(954) 663-0569",
-  email: "[EMAIL ADDRESS]",
+  email: "fr.pachom@stkyrillostn.org",
 
   // Office Hours (UPDATE THESE)
   officeHours: [
@@ -47,7 +47,7 @@ export const CLERGY = [
     image: "/images/clergy/headshot.png", // Placeholder
     bio: `Fr. Pachom Ibrahim is the priest for St. Kyrillos the Sixth Coptic Orthodox Church located in Nashville, TN. H.H. Pope Tawadros, with the presence of his Eminence Metropolitan Youssef and other bishops, ordained him priest on October 10, 2015. He began his service in St. Mark Coptic Orthodox Church in Nashville, Tennessee. Then in 2016, his Eminence Metropolitan Youssef asked him to serve in St. Kyrillos the Sixth Coptic Orthodox Church. Fr. Pachom has been serving within the Diocese of the Southern United States since October 10, 2015. We pray that the Lord will continue blessing his service.`,
     contact: {
-      email: "[FR. PACHOM EMAIL]",
+      email: "fr.pachom@stkyrillostn.org",
       phone: "[FR. PACHOM PHONE]",
     },
   },
