@@ -113,8 +113,8 @@ export function MembershipForm() {
             <input type="email" className={inputCls} value={form.email} onChange={set('email')} required placeholder="john@example.com" />
           </div>
           <div>
-            <Label>Phone</Label>
-            <input type="tel" className={inputCls} value={form.phone} onChange={set('phone')} placeholder="(555) 000-0000" />
+            <Label required>Phone</Label>
+            <input type="tel" className={inputCls} value={form.phone} onChange={set('phone')} placeholder="(555) 000-0000" required />
           </div>
         </div>
       </div>
@@ -124,24 +124,24 @@ export function MembershipForm() {
         <SectionHeader icon={MapPin} title="Address" />
         <div className="space-y-4">
           <div>
-            <Label>Street Address</Label>
-            <input className={inputCls} value={form.address} onChange={set('address')} placeholder="123 Main St" />
+            <Label required>Street Address</Label>
+            <input className={inputCls} value={form.address} onChange={set('address')} placeholder="123 Main St" required />
           </div>
           <div className="grid grid-cols-4 gap-3">
             <div className="col-span-2">
-              <Label>City</Label>
-              <input className={inputCls} value={form.city} onChange={set('city')} placeholder="Nashville" />
+              <Label required>City</Label>
+              <input className={inputCls} value={form.city} onChange={set('city')} placeholder="Nashville" required />
             </div>
             <div>
-              <Label>State</Label>
-              <select className={selectCls} value={form.state} onChange={set('state')}>
+              <Label required>State</Label>
+              <select className={selectCls} value={form.state} onChange={set('state')} required>
                 <option value="">—</option>
                 {US_STATES.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
             <div>
-              <Label>Zip</Label>
-              <input className={inputCls} value={form.zip} onChange={set('zip')} placeholder="37013" maxLength={10} />
+              <Label required>Zip</Label>
+              <input className={inputCls} value={form.zip} onChange={set('zip')} placeholder="37013" maxLength={10} required />
             </div>
           </div>
         </div>
@@ -152,21 +152,20 @@ export function MembershipForm() {
         <SectionHeader icon={Info} title="Additional Information" />
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <Label>Date of Birth</Label>
-            <input type="date" className={inputCls} value={form.dob} onChange={set('dob')} />
+            <Label required>Date of Birth</Label>
+            <input type="date" className={inputCls} value={form.dob} onChange={set('dob')} required />
           </div>
           <div>
-            <Label>Gender</Label>
-            <select className={selectCls} value={form.gender} onChange={set('gender')}>
+            <Label required>Gender</Label>
+            <select className={selectCls} value={form.gender} onChange={set('gender')} required>
               <option value="">Select…</option>
               <option>Male</option>
               <option>Female</option>
-              <option>Prefer not to say</option>
             </select>
           </div>
           <div>
-            <Label>Marital Status</Label>
-            <select className={selectCls} value={form.maritalStatus} onChange={set('maritalStatus')}>
+            <Label required>Marital Status</Label>
+            <select className={selectCls} value={form.maritalStatus} onChange={set('maritalStatus')} required>
               <option value="">Select…</option>
               <option>Single</option>
               <option>Married</option>
@@ -175,8 +174,8 @@ export function MembershipForm() {
             </select>
           </div>
           <div>
-            <Label>Do you have children?</Label>
-            <select className={selectCls} value={form.hasChildren} onChange={set('hasChildren')}>
+            <Label required>Do you have children?</Label>
+            <select className={selectCls} value={form.hasChildren} onChange={set('hasChildren')} required>
               <option value="">Select…</option>
               <option>Yes</option>
               <option>No</option>
