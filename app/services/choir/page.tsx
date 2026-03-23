@@ -36,8 +36,7 @@ export default function ChoirPage() {
     <ServicePageLayout
       title="Choir"
       subtitle="Lifting Our Voices in Praise"
-      heroImage="/images/choir-singing.jpg"
-      description="Music is one of the most powerful forms of prayer. Our choir ministry serves people of all ages — from our youngest children to adults — offering a space to grow in faith through the sacred hymns and chants of the Coptic Orthodox tradition."
+description="Music is one of the most powerful forms of prayer. Our choir ministry serves people of all ages — from our youngest children to adults — offering a space to grow in faith through the sacred hymns and chants of the Coptic Orthodox tradition."
       infoCards={[
         {
           icon: Users,

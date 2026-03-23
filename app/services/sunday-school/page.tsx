@@ -26,8 +26,7 @@ export default function SundaySchoolPage() {
     <ServicePageLayout
       title="Sunday School"
       subtitle="Growing in Faith, Together"
-      heroImage="/images/sunday-school.jpg"
-      description="Sunday School is the heart of our faith formation ministry. We provide structured, age-appropriate religious education for children and young people, helping them understand the teachings of the Gospel and develop a deeper connection with Christ and the Church."
+description="Sunday School is the heart of our faith formation ministry. We provide structured, age-appropriate religious education for children and young people, helping them understand the teachings of the Gospel and develop a deeper connection with Christ and the Church."
       infoCards={[
         {
           icon: Users,

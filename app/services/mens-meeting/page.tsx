@@ -13,8 +13,7 @@ export default function MensMeetingPage() {
     <ServicePageLayout
       title="Men's Meeting"
       subtitle="Brotherhood in Faith & Service"
-      heroImage="/images/bible-study.jpg"
-      description="Our Men's Meeting brings together men of the parish for spiritual growth, mutual support, and service to the Church and community. Through Bible study, mentorship, and fraternal activities, we cultivate Christian brotherhood and help men live out their faith as husbands, fathers, and witnesses to Christ in the world."
+description="Our Men's Meeting brings together men of the parish for spiritual growth, mutual support, and service to the Church and community. Through Bible study, mentorship, and fraternal activities, we cultivate Christian brotherhood and help men live out their faith as husbands, fathers, and witnesses to Christ in the world."
       infoCards={[
         {
           icon: Users,

@@ -23,8 +23,8 @@ export default async function AdminDashboardPage() {
   const startStr = weekStart.toISOString().slice(0, 10)
   const endStr = weekEnd.toISOString().slice(0, 10)
 
-  // Fetch events, templates, weekly services, and coptic data in parallel
-  const [raw, rawTemplates, rawWeeklyServices, copticData] = await Promise.all([
+  // Fetch events, templates, weekly services, coptic data, and settings in parallel
+  const [raw, rawTemplates, rawWeeklyServices, copticData, autoFillSetting] = await Promise.all([
     prisma.scheduleEvent.findMany({
       where: { date: { gte: weekStart, lte: weekEnd } },
       orderBy: [{ date: "asc" }, { sortOrder: "asc" }],
@@ -42,6 +42,7 @@ export default async function AdminDashboardPage() {
       orderBy: [{ dayOfWeek: 'asc' }, { sortOrder: 'asc' }],
     }),
     getCopticDayDataBatch(startStr, endStr).catch(() => ({} as Record<string, never>)),
+    prisma.appSetting.findUnique({ where: { key: 'autoFillWeeklyServices' } }),
   ])
 
   // Serialize Date objects for client component
@@ -93,6 +94,7 @@ export default async function AdminDashboardPage() {
   )
 
   const isKirolous = session.user?.name === 'Kirolous'
+  const initialAutoFill = autoFillSetting?.value === 'true'
 
   return (
     <div>
@@ -110,6 +112,7 @@ export default async function AdminDashboardPage() {
         copticData={copticData}
         suggestedTemplates={suggestedTemplates}
         userName={session.user?.name ?? ''}
+        initialAutoFill={initialAutoFill}
       />
     </div>
   )

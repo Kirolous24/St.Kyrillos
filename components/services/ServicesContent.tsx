@@ -13,7 +13,6 @@ const services = [
     icon: BookOpen,
     shortDescription: 'Religious education for all ages',
     href: '/services/sunday-school',
-    imageSrc: '/images/sunday-school.jpg',
   },
   {
     id: 'hymns',
@@ -37,7 +36,6 @@ const services = [
     icon: Users,
     shortDescription: 'Brotherhood and spiritual development',
     href: '/services/mens-meeting',
-    imageSrc: '/images/bible-study.jpg',
   },
   {
     id: 'womens-meeting',
@@ -45,7 +43,6 @@ const services = [
     icon: Heart,
     shortDescription: 'Community and spiritual nurturing',
     href: '/services/womens-meeting',
-    imageSrc: '/images/congregation.jpg',
   },
   {
     id: 'choir',
@@ -53,7 +50,6 @@ const services = [
     icon: Music,
     shortDescription: 'Praising God through sacred music, Kg through adult',
     href: '/services/choir',
-    imageSrc: '/images/choir-singing.jpg',
   },
   {
     id: 'bookstore',
@@ -69,7 +65,6 @@ const services = [
     icon: UtensilsCrossed,
     shortDescription: 'Serving the community through hospitality and care',
     href: '/services/kitchen-cleaning',
-    imageSrc: '/images/kitchen-service.jpg',
   },
 ]
 
@@ -110,14 +105,22 @@ function ServicesGrid() {
               >
                 {/* Card image */}
                 <div className="relative aspect-[3/2] overflow-hidden">
-                  <OptimizedImage
-                    src={service.imageSrc}
-                    alt={service.title}
-                    fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-110"
-                    style={service.id === 'hymns' ? { objectPosition: '50% 55%' } : undefined}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                  {service.imageSrc ? (
+                    <>
+                      <OptimizedImage
+                        src={service.imageSrc}
+                        alt={service.title}
+                        fill
+                        className="object-cover transition-transform duration-500 group-hover:scale-110"
+                        style={service.id === 'hymns' ? { objectPosition: '50% 55%' } : undefined}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary-950 via-primary-900 to-primary-800 flex items-center justify-center">
+                      <Icon className="w-10 h-10 text-white/20" />
+                    </div>
+                  )}
                   {/* Icon badge */}
                   <div className="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-soft transition-all duration-300 group-hover:bg-gold group-hover:scale-110">
                     <Icon className="w-5 h-5 text-primary-900 group-hover:text-white transition-colors" />

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { ClearLogsButton } from './ClearLogsButton'
 
 const KNOWN_USERS = ['Kirolous', 'Fr. Pachom', 'T. Marcelle']
 const DISPLAY_NAMES: Record<string, string> = {
@@ -94,6 +95,7 @@ export async function StatsPanel() {
             <h2 className="text-base font-bold text-gray-900">Activity Overview</h2>
             <p className="text-xs text-gray-400 mt-0.5">{totalEvents} events live · {totalActions} actions logged</p>
           </div>
+          <ClearLogsButton />
         </div>
 
         {/* User cards */}

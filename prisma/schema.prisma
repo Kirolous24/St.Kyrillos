@@ -118,6 +118,11 @@ model WeeklyService {
   @@index([dayOfWeek])
 }
 
+model AppSetting {
+  key   String @id
+  value String
+}
+
 // Singleton row (id = "current") tracking YouTube live status via PubSubHubbub webhook
 model LivestreamStatus {
   id        String   @id @default("current")

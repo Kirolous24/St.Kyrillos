@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { signOut } from 'next-auth/react'
 import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Settings, Sparkles, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
@@ -132,9 +132,11 @@ const GREETINGS: Record<string, string> = {
   'T. Marcelle': 'Hello Tasoni!',
 }
 
-export function ScheduleManager({ initialEvents, initialTemplates, initialWeeklyServices, copticData, suggestedTemplates, userName }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[]; initialWeeklyServices?: WeeklyService[]; copticData?: Record<string, CopticDayData>; suggestedTemplates?: TemplateSuggestion[]; userName?: string }) {
+export function ScheduleManager({ initialEvents, initialTemplates, initialWeeklyServices, copticData, suggestedTemplates, userName, initialAutoFill }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[]; initialWeeklyServices?: WeeklyService[]; copticData?: Record<string, CopticDayData>; suggestedTemplates?: TemplateSuggestion[]; userName?: string; initialAutoFill?: boolean }) {
   const [events, setEvents] = useState<ScheduleEvent[]>(initialEvents)
   const [weeklyServices, setWeeklyServices] = useState<WeeklyService[]>(initialWeeklyServices ?? [])
+  const [autoFill, setAutoFill] = useState(initialAutoFill ?? false)
+  const autoFilledWeekStarts = useRef<Set<string>>(new Set())
   const [selectedWeek, setSelectedWeek] = useState(0)
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => toDateStr(new Date()))
   const [showForm, setShowForm] = useState(false)
@@ -581,6 +583,67 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
     }
   }
 
+  async function toggleAutoFill() {
+    const next = !autoFill
+    setAutoFill(next)
+    await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'autoFillWeeklyServices', value: String(next) }),
+    })
+  }
+
+  async function autoFillWeek(weekIdx: number) {
+    const enabled = weeklyServices.filter((s) => s.enabled)
+    if (enabled.length === 0) return
+    const { start } = weekBounds[weekIdx]
+    const batchEvents = enabled.map((service) => {
+      const d = new Date(start)
+      d.setDate(start.getDate() + service.dayOfWeek)
+      return {
+        date: toDateStr(d),
+        time: formatTimeForDisplay(service.time),
+        sortOrder: service.sortOrder,
+        durationMinutes: service.durationMinutes,
+        title: service.title,
+        description: service.description,
+        location: service.location,
+      }
+    })
+    try {
+      const res = await fetch('/api/schedule/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: batchEvents }),
+      })
+      if (!res.ok) return
+      const { created } = await res.json()
+      setEvents((prev) => [...prev, ...created])
+    } catch {
+      // silent — auto-fill is a convenience feature
+    }
+  }
+
+  // Reset which weeks have been auto-filled whenever the toggle is turned back on
+  useEffect(() => {
+    if (autoFill) autoFilledWeekStarts.current = new Set()
+  }, [autoFill])
+
+  // Auto-fill empty weeks when navigating with the toggle ON
+  useEffect(() => {
+    if (!autoFill) return
+    const { start, end } = weekBounds[selectedWeek]
+    const weekStartStr = toDateStr(start)
+    if (autoFilledWeekStarts.current.has(weekStartStr)) return
+    autoFilledWeekStarts.current.add(weekStartStr)
+    const weekHasEvents = events.some((e) => {
+      const d = dateStrToLocal(isoToDateStr(e.date))
+      return d >= start && d <= end
+    })
+    if (!weekHasEvents) void autoFillWeek(selectedWeek)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWeek, autoFill])
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
@@ -633,6 +696,44 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
             <LogOut className="w-4 h-4" />
           </button>
         </div>
+      </div>
+
+      {/* Auto-fill Weekly Services toggle */}
+      <div
+        className={`mb-6 flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${
+          autoFill ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleAutoFill}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+              autoFill ? 'bg-green-500' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                autoFill ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+          <div>
+            <p className={`text-sm font-semibold ${autoFill ? 'text-green-800' : 'text-gray-700'}`}>
+              Weekly Services
+            </p>
+            <p className="text-xs text-gray-400">
+              {autoFill
+                ? 'Empty weeks auto-fill with your weekly services when selected'
+                : 'Toggle on to auto-fill empty weeks with your weekly services'}
+            </p>
+          </div>
+        </div>
+        {autoFill && (
+          <span className="flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-100 px-2.5 py-1 rounded-full shrink-0">
+            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+            Active
+          </span>
+        )}
       </div>
 
       {/* Template Suggestions from Coptic Calendar */}

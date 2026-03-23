@@ -13,8 +13,7 @@ export default function KitchenCleaningPage() {
     <ServicePageLayout
       title="Kitchen & Cleaning"
       subtitle="Serving with Love Behind the Scenes"
-      heroImage="/images/kitchen-service.jpg"
-      description='"Whoever wants to become great among you must be your servant." (Matthew 20:26) — The Kitchen and Cleaning ministry is one of the most humble and essential forms of service in our church. These dedicated volunteers ensure our church home is clean, welcoming, and ready to receive the congregation, reflecting the care and love we have for one another.'
+description='"Whoever wants to become great among you must be your servant." (Matthew 20:26) — The Kitchen and Cleaning ministry is one of the most humble and essential forms of service in our church. These dedicated volunteers ensure our church home is clean, welcoming, and ready to receive the congregation, reflecting the care and love we have for one another.'
       infoCards={[
         {
           icon: Heart,

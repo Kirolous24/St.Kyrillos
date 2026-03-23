@@ -13,8 +13,7 @@ export default function WomensMeetingPage() {
     <ServicePageLayout
       title="Women's Meeting"
       subtitle="Sisters in Faith & Service"
-      heroImage="/images/congregation.jpg"
-      description="Our Women's Meeting is a nurturing community where women come together to deepen their faith, support one another, and serve the Church and community. Through prayer, Bible study, spiritual formation, and fellowship, we encourage each other in our journeys as daughters of God, wives, mothers, and witnesses to Christ's love."
+description="Our Women's Meeting is a nurturing community where women come together to deepen their faith, support one another, and serve the Church and community. Through prayer, Bible study, spiritual formation, and fellowship, we encourage each other in our journeys as daughters of God, wives, mothers, and witnesses to Christ's love."
       infoCards={[
         {
           icon: Users,
