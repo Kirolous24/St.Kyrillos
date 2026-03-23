@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { User, Mail, MapPin, Info, CheckCircle } from 'lucide-react'
+import { User, Mail, MapPin, Info } from 'lucide-react'
 
 const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
@@ -75,14 +75,7 @@ export function MembershipForm() {
   if (submitted) {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 shadow-soft p-12 text-center">
-        <div className="w-16 h-16 rounded-full bg-green-50 border border-green-100 flex items-center justify-center mx-auto mb-5">
-          <CheckCircle className="w-8 h-8 text-green-500" />
-        </div>
-        <h2 className="font-serif text-2xl font-semibold text-gray-900 mb-3">Form Received!</h2>
-        <p className="text-gray-500 leading-relaxed max-w-sm mx-auto">
-          Thank you for reaching out. Fr. Pachom will be in touch with you soon.<br />
-          <span className="text-primary-900 font-medium">God bless you and your family.</span>
-        </p>
+        <h2 className="font-serif text-2xl font-semibold text-gray-900">Thank you!</h2>
       </div>
     )
   }
