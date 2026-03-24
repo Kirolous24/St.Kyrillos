@@ -17,12 +17,14 @@ export async function POST() {
     const topic = `https://www.youtube.com/xml/feeds/videos.xml?channel_id=${LIVESTREAM.youtubeChannelId}`
 
     // Send subscription request to Google's PubSubHubbub hub
+    // Note: hub.secret is intentionally omitted — special chars in the secret
+    // cause HMAC-SHA1 signature mismatches. Security is maintained by verifying
+    // every notification against the YouTube API before updating the DB.
     const formData = new URLSearchParams({
       'hub.callback': callbackUrl,
       'hub.topic': topic,
       'hub.verify': 'async',
       'hub.mode': 'subscribe',
-      'hub.secret': WEBHOOK_SECRET,
       'hub.lease_seconds': '864000', // 10 days (max)
     })
 

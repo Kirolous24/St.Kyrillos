@@ -136,4 +136,7 @@ model LivestreamStatus {
   // PubSubHubbub subscription tracking
   subscribedAt    DateTime?
   leaseExpiresAt  DateTime?
+
+  // Fallback polling: timestamp of last YouTube search.list call
+  lastSearchAt    DateTime?
 }

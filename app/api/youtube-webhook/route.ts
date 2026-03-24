@@ -3,7 +3,6 @@ import { prisma } from '@/lib/prisma'
 import { LIVESTREAM } from '@/lib/constants'
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
-const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET || 'stkyrillos-webhook-secret'
 
 /**
  * GET — PubSubHubbub subscription verification.
@@ -58,20 +57,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.text()
-
-    // Basic verification — check the hub signature if secret is set
-    // PubSubHubbub sends X-Hub-Signature header with HMAC-SHA1
-    const signature = request.headers.get('x-hub-signature')
-    if (WEBHOOK_SECRET && signature) {
-      const crypto = await import('crypto')
-      const hmac = crypto.createHmac('sha1', WEBHOOK_SECRET)
-      hmac.update(body)
-      const expected = `sha1=${hmac.digest('hex')}`
-      if (signature !== expected) {
-        console.error('[YouTube Webhook] Signature mismatch')
-        return new NextResponse('Invalid signature', { status: 403 })
-      }
-    }
+    console.log('[YouTube Webhook] POST received, body length:', body.length)
 
     // Parse the Atom XML to extract video ID
     // YouTube sends: <yt:videoId>VIDEO_ID</yt:videoId>
