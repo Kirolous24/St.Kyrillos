@@ -98,12 +98,6 @@ export function FAQPageContent() {
               >
                 Contact Our Clergy
               </a>
-              <a
-                href="mailto:church@stkyrillos.org"
-                className="px-8 py-3 border-2 border-primary-900 text-primary-900 hover:bg-primary-50 font-semibold rounded transition-colors"
-              >
-                Email Us
-              </a>
             </div>
           </div>
         </div>

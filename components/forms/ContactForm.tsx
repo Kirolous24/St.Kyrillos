@@ -207,8 +207,8 @@ export function ContactForm() {
 
       <p className="text-gray-500 text-sm text-center">
         For urgent matters, please call us at{' '}
-        <a href="tel:" className="text-primary-900 font-medium">
-          [PHONE NUMBER]
+        <a href="tel:9546630569" className="text-primary-900 font-medium">
+          954-663-0569
         </a>
       </p>
     </form>

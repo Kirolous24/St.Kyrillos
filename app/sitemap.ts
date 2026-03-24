@@ -10,7 +10,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/about/coptic-orthodoxy`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/about/st-kyrillos-vi`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/about/clergy`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${base}/about/our-story`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/about/faqs`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/services`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
     { url: `${base}/services/sunday-school`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.6 },
@@ -24,9 +23,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/give`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.7 },
     { url: `${base}/media/livestream`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.8 },
     { url: `${base}/resources`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.6 },
-    { url: `${base}/resources/articles`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
-    { url: `${base}/resources/sermons`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
-    { url: `${base}/resources/bible-studies`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
   ]
 
   return routes
