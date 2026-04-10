@@ -94,28 +94,42 @@ export async function POST(request: NextRequest) {
     const isLive = liveBroadcastContent === 'live'
     const isUpcoming = liveBroadcastContent === 'upcoming'
 
-    if (isLive || isUpcoming) {
-      await prisma.livestreamStatus.upsert({
-        where: { id: 'current' },
-        create: {
-          id: 'current',
-          isLive,
-          videoId,
-          title: video.snippet?.title,
-          thumbnail: video.snippet?.thumbnails?.high?.url,
-          viewers: video.liveStreamingDetails?.concurrentViewers || null,
-        },
-        update: {
-          isLive,
-          videoId,
-          title: video.snippet?.title,
-          thumbnail: video.snippet?.thumbnails?.high?.url,
-          viewers: video.liveStreamingDetails?.concurrentViewers || null,
-        },
-      })
-
-      console.log(`[YouTube Webhook] Updated livestream status: ${isLive ? 'LIVE' : 'UPCOMING'} — ${video.snippet?.title}`)
+    if (!isLive && !isUpcoming) {
+      console.log(`[YouTube Webhook] ⏭️ Ignoring video ${videoId} (broadcast content: ${liveBroadcastContent})`)
+      return new NextResponse('OK', { status: 200 })
     }
+
+    // Don't let an "upcoming" notification clobber an active live stream.
+    // YouTube re-fires webhooks whenever metadata changes, and a scheduled
+    // future stream can arrive while we're still live on a different video.
+    // The live verification in /api/youtube-live will clear state when the
+    // current stream actually ends, freeing the slot for the next one.
+    const current = await prisma.livestreamStatus.findUnique({ where: { id: 'current' } })
+    if (isUpcoming && current?.isLive && current.videoId && current.videoId !== videoId) {
+      console.log(`[YouTube Webhook] 🛡️ Protecting live stream ${current.videoId} — ignoring upcoming notification for ${videoId}`)
+      return new NextResponse('OK', { status: 200 })
+    }
+
+    await prisma.livestreamStatus.upsert({
+      where: { id: 'current' },
+      create: {
+        id: 'current',
+        isLive,
+        videoId,
+        title: video.snippet?.title,
+        thumbnail: video.snippet?.thumbnails?.high?.url,
+        viewers: video.liveStreamingDetails?.concurrentViewers || null,
+      },
+      update: {
+        isLive,
+        videoId,
+        title: video.snippet?.title,
+        thumbnail: video.snippet?.thumbnails?.high?.url,
+        viewers: video.liveStreamingDetails?.concurrentViewers || null,
+      },
+    })
+
+    console.log(`[YouTube Webhook] ✅ Updated livestream status: ${isLive ? '🔴 LIVE' : '⏱️ UPCOMING'} — ${video.snippet?.title}`)
 
     return new NextResponse('OK', { status: 200 })
   } catch (error) {
