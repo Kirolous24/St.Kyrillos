@@ -99,15 +99,28 @@ export async function POST(request: NextRequest) {
       return new NextResponse('OK', { status: 200 })
     }
 
-    // Don't let an "upcoming" notification clobber an active live stream.
+    // Don't let an "upcoming" notification clobber an ACTUALLY-live stream.
     // YouTube re-fires webhooks whenever metadata changes, and a scheduled
     // future stream can arrive while we're still live on a different video.
-    // The live verification in /api/youtube-live will clear state when the
-    // current stream actually ends, freeing the slot for the next one.
+    //
+    // But we can't blindly trust the DB's isLive flag — if nobody visits the
+    // page, verification never runs and a long-ended stream stays marked live
+    // forever, causing every subsequent upcoming notification to be rejected.
+    // So when we'd otherwise reject, verify the stored stream one more time.
     const current = await prisma.livestreamStatus.findUnique({ where: { id: 'current' } })
     if (isUpcoming && current?.isLive && current.videoId && current.videoId !== videoId) {
-      console.log(`[YouTube Webhook] 🛡️ Protecting live stream ${current.videoId} — ignoring upcoming notification for ${videoId}`)
-      return new NextResponse('OK', { status: 200 })
+      const currentVideo = await fetchVideoStatus(current.videoId)
+      const currentBroadcast = currentVideo?.snippet?.liveBroadcastContent
+      if (currentBroadcast === 'live') {
+        console.log(`[YouTube Webhook] 🛡️ Protecting live stream ${current.videoId} — ignoring upcoming notification for ${videoId}`)
+        return new NextResponse('OK', { status: 200 })
+      }
+      // Stored "live" stream has actually ended — clear it so the new upcoming can register
+      console.log(`[YouTube Webhook] 🧹 Stored live stream ${current.videoId} is no longer live (${currentBroadcast}) — clearing`)
+      await prisma.livestreamStatus.update({
+        where: { id: 'current' },
+        data: { isLive: false, videoId: null, title: null, thumbnail: null, viewers: null },
+      })
     }
 
     await prisma.livestreamStatus.upsert({
@@ -135,5 +148,22 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[YouTube Webhook] Error processing notification:', error)
     return new NextResponse('Internal error', { status: 500 })
+  }
+}
+
+/** Check a single video's current broadcast state — 1 quota unit */
+async function fetchVideoStatus(videoId: string) {
+  if (!YOUTUBE_API_KEY) return null
+  try {
+    const url = new URL('https://www.googleapis.com/youtube/v3/videos')
+    url.searchParams.set('part', 'snippet,liveStreamingDetails')
+    url.searchParams.set('id', videoId)
+    url.searchParams.set('key', YOUTUBE_API_KEY)
+    const response = await fetch(url.toString())
+    const data = await response.json()
+    return data.items?.[0] || null
+  } catch (err) {
+    console.error(`[YouTube Webhook] fetchVideoStatus error for ${videoId}:`, err)
+    return null
   }
 }

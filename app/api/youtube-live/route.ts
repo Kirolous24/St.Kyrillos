@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { LIVESTREAM } from '@/lib/constants'
 
+// Don't let Vercel edge cache responses — we rely on server-side rate limiting
+// (VERIFY_INTERVAL_MS / SEARCH_INTERVAL_MS) to protect quota. An aggressive edge
+// cache once pinned a 5-day-old "live" response because the cached entry persisted
+// across deploys and stream lifecycles.
+export const dynamic = 'force-dynamic'
+
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
 const SEARCH_INTERVAL_MS = 15 * 60 * 1000 // 15 minutes between search.list calls (100 units each)
 const VERIFY_INTERVAL_MS = 30 * 1000 // 30 seconds between videos.list calls (1 unit each)
@@ -82,7 +88,7 @@ export async function GET() {
         watchUrl: `https://www.youtube.com/watch?v=${status.videoId}`,
         viewers: status.viewers,
       }, {
-        headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=30' },
+        headers: { 'Cache-Control': 'no-store, must-revalidate' },
       })
     }
 
@@ -127,7 +133,7 @@ export async function GET() {
             embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1`,
             watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
           }, {
-            headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=30' },
+            headers: { 'Cache-Control': 'no-store, must-revalidate' },
           })
         } else {
           console.log('[YouTube Live] 🔍 search.list found no live stream')
