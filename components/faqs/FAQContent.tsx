@@ -84,22 +84,6 @@ export function FAQPageContent() {
               <FAQCategory key={idx} category={category} />
             ))}
           </div>
-
-          {/* Footer CTA */}
-          <div className="mt-20 pt-16 border-t border-gray-200 text-center">
-            <h3 className="font-serif text-2xl text-gray-900 mb-4">Still have questions?</h3>
-            <p className="text-gray-600 mb-8">
-              Our clergy are always available to discuss your questions about our faith and community.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href="/about/clergy"
-                className="px-8 py-3 bg-gold hover:bg-gold-light text-primary-950 font-semibold rounded transition-colors"
-              >
-                Contact Our Clergy
-              </a>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
-import { Star } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
 export const metadata: Metadata = {
@@ -283,46 +282,6 @@ export default function StKyrillosPage() {
               More than <strong>18 printed volumes</strong> document the miracles of Pope Kyrillos VI, originally published
               in Arabic by the Pope Kyrillos VI Society and translated into English, French, and other languages.
             </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Legacy card */}
-      <section className="py-16 bg-stone-50">
-        <div className="container-custom">
-          <div className="max-w-3xl mx-auto">
-            <div className="bg-primary-50 rounded-2xl p-8 md:p-12">
-              <h2 className="font-serif text-2xl text-primary-900 mb-6 text-center">
-                His Legacy for Our Church
-              </h2>
-              <p className="text-gray-700 text-lg leading-relaxed text-center">
-                As our patron saint, Saint Pope Kyrillos VI calls us to be rooted in the altar,
-                the Scriptures, confession, and prayer, and to live with confidence that Christ
-                is present and faithful in every generation. In <strong>2013</strong> the Coptic Orthodox Church
-                formally canonized him, confirming what millions had witnessed for decades: a life
-                marked by humility, repentance, deep prayer, and an unwavering witness to God.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Prayer */}
-      <section className="py-16 bg-white">
-        <div className="container-custom">
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-2xl p-8 md:p-12 text-center shadow-soft border border-gray-100">
-              <Star className="w-10 h-10 text-gold mx-auto mb-6" />
-              <h2 className="font-serif text-2xl text-gray-900 mb-6">
-                Prayer to St. Kyrillos VI
-              </h2>
-              <blockquote className="text-gray-700 italic text-lg leading-relaxed">
-                &quot;O great saint, Pope Kyrillos VI, you who loved silence and prayer,
-                intercede for us before the throne of grace. Pray for our church
-                that bears your name, that we may follow your example of humility
-                and devotion to Christ our God. Amen.&quot;
-              </blockquote>
-            </div>
           </div>
         </div>
       </section>
