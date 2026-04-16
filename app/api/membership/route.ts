@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 
-const TO_EMAIL = 'kirolouskamel24@gmail.com'
+const TO_EMAIL = 'fr.pachom@stkyrillostn.org'
 
 export async function POST(req: NextRequest) {
-  const resend = new Resend(process.env.RESEND_API_KEY)
+  const resend = new Resend(process.env.RESEND_API_KEY2)
   const data = await req.json()
 
   const {
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   try {
     await resend.emails.send({
-      from: 'St. Kyrillos Website <onboarding@resend.dev>',
+      from: 'St. Kyrillos Website <noreply@stkyrillostn.org>',
       to: TO_EMAIL,
       replyTo: email,
       subject: `New Member — ${firstName} ${lastName}`,
