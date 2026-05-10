@@ -19,20 +19,20 @@ export default function ZelleCard() {
   }
 
   return (
-    <div className="bg-white rounded-2xl p-8 shadow-soft border border-gray-100">
-      <div className="w-16 h-16 rounded-full bg-[#6D1ED4]/10 flex items-center justify-center mb-6">
-        <svg className="w-8 h-8" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <div className="p-8 md:p-10 flex flex-col">
+      <div className="w-14 h-14 rounded-full bg-[#6D1ED4]/10 ring-1 ring-[#6D1ED4]/20 flex items-center justify-center mb-6">
+        <svg className="w-7 h-7" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect width="48" height="48" rx="12" fill="#6D1ED4"/>
           <path d="M12 14h24l-16 20h16" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
-      <h2 className="font-serif text-heading-3 text-gray-900 mb-4">
+      <h2 className="font-serif text-heading-3 text-gray-900 mb-3">
         Give via Zelle
       </h2>
       <p className="text-gray-600 mb-6">
-        Send your donation directly via Zelle. No fees, instant transfer.
+        Send your donation directly via Zelle — no fees, instant transfer.
       </p>
-      <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+      <div className="rounded-lg border border-gray-200 bg-gray-50/70 p-4 space-y-3">
         {/* Email */}
         <div>
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Email</p>
@@ -66,7 +66,7 @@ export default function ZelleCard() {
           </div>
         </div>
       </div>
-      <p className="text-gray-500 text-sm mt-4 text-center">
+      <p className="text-gray-400 text-xs mt-4 text-center">
         Search by email or phone in your Zelle app
       </p>
     </div>
