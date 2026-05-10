@@ -105,15 +105,6 @@ export function Hero() {
             </span>
           </p>
 
-          {/* Tagline */}
-          <p
-            className={`text-lg md:text-xl text-white/70 mt-8 max-w-2xl mx-auto transition-all duration-1000 delay-300 leading-relaxed ${
-              isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-            }`}
-          >
-            {CHURCH_INFO.tagline}
-          </p>
-
           {/* Location badge (commented out per request) */}
           {/*
           <div className={`mt-6 transition-all duration-1000 delay-400 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>

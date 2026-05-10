@@ -123,37 +123,6 @@ export default function GivePage() {
               </div>
             </div>
 
-            {/* What Your Giving Supports */}
-            <div className="mt-16">
-              <div className="text-center mb-10">
-                <h2 className="font-serif text-heading-2 text-gray-900 mb-4">
-                  What Your Giving Supports
-                </h2>
-                <p className="text-gray-600 max-w-2xl mx-auto">
-                  Your tithes and offerings help us fulfill our mission in the
-                  following ways:
-                </p>
-              </div>
-
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {[
-                  { icon: Heart, label: 'Worship & Sacraments', description: 'Liturgy supplies, altar needs' },
-                  { icon: Heart, label: 'Education & Formation', description: 'Sunday School, Bible studies' },
-                  { icon: Heart, label: 'Facilities & Operations', description: 'Building maintenance, utilities' },
-                  { icon: Heart, label: 'Outreach & Service', description: 'Community support, charitable giving' },
-                ].map((item, idx) => (
-                  <div key={idx} className="text-center">
-                    <div className="w-12 h-12 rounded-full bg-primary-50 flex items-center justify-center mx-auto mb-4">
-                      <item.icon className="w-6 h-6 text-primary-900" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 mb-1">
-                      {item.label}
-                    </h3>
-                    <p className="text-gray-500 text-sm">{item.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </section>
