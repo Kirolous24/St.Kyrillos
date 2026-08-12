@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+import { isValidDayOfWeek, isValidTime24, isValidDuration, time24ToSortOrder } from '@/lib/schedule-validation'
+import { materializeWeeklyServices } from '@/lib/weekly-services-materialize'
+
+function revalidateScheduleSurfaces() {
+  revalidatePath('/')
+  revalidatePath('/schedule')
+  revalidatePath('/admin/dashboard')
+  revalidatePath('/admin/weekly-services')
+}
 
 // GET all weekly services ordered by day + time
 export async function GET() {
@@ -28,25 +38,33 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { dayOfWeek, title, time, durationMinutes, location, description, enabled } = body
 
-    if (typeof dayOfWeek !== 'number' || !title || !time) {
-      return NextResponse.json({ error: 'dayOfWeek, title, and time are required' }, { status: 400 })
+    if (!isValidDayOfWeek(dayOfWeek) || !title || !isValidTime24(time)) {
+      return NextResponse.json(
+        { error: 'Required: dayOfWeek (0-6), title, and time (HH:MM)' },
+        { status: 400 }
+      )
     }
-
-    const [h, m] = time.split(':').map(Number)
-    const sortOrder = h * 60 + m
+    if (durationMinutes !== undefined && !isValidDuration(durationMinutes)) {
+      return NextResponse.json({ error: 'durationMinutes must be between 1 and 1440' }, { status: 400 })
+    }
 
     const service = await prisma.weeklyService.create({
       data: {
         dayOfWeek,
         title: String(title).slice(0, 200),
         time: String(time).slice(0, 10),
-        durationMinutes: typeof durationMinutes === 'number' ? durationMinutes : 60,
+        durationMinutes: isValidDuration(durationMinutes) ? durationMinutes : 60,
         location: String(location || 'Main Church').slice(0, 200),
         description: description ? String(description).slice(0, 500) : null,
         enabled: enabled !== false,
-        sortOrder,
+        sortOrder: time24ToSortOrder(time),
       },
     })
+
+    // Auto-populate the rolling window with the new service right away (respects
+    // the master auto-fill switch; no-op if it's off). Idempotent.
+    await materializeWeeklyServices().catch(() => {})
+    revalidateScheduleSurfaces()
 
     return NextResponse.json(service, { status: 201 })
   } catch (error) {

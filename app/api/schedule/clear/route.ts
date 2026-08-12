@@ -24,6 +24,9 @@ export async function POST(request: Request) {
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       return NextResponse.json({ error: 'Invalid date format' }, { status: 400 })
     }
+    if (start > end) {
+      return NextResponse.json({ error: 'startDate must be on or before endDate' }, { status: 400 })
+    }
 
     const result = await prisma.scheduleEvent.deleteMany({
       where: {
@@ -33,6 +36,7 @@ export async function POST(request: Request) {
 
     revalidatePath('/')
     revalidatePath('/schedule')
+    revalidatePath('/admin/dashboard')
     return NextResponse.json({ deleted: result.count })
   } catch (error) {
     console.error('Error clearing events:', error)

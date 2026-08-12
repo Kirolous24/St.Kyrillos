@@ -3,25 +3,12 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { logActivity, formatEventDetail } from '@/lib/activity-log'
-
-// Get the start of the current week (Sunday) and end of week 4 (Saturday)
-function getScheduleWindow() {
-  const now = new Date()
-  const dayOfWeek = now.getUTCDay()
-  const weekStart = new Date(now)
-  weekStart.setUTCDate(now.getUTCDate() - dayOfWeek)
-  weekStart.setUTCHours(0, 0, 0, 0)
-
-  const weekEnd = new Date(weekStart)
-  weekEnd.setUTCDate(weekStart.getUTCDate() + 27) // 4 weeks
-  weekEnd.setUTCHours(23, 59, 59, 999)
-
-  return { weekStart, weekEnd }
-}
+import { scheduleWindowUTC, dateStrToNoonUTC, isWithinWindow } from '@/lib/schedule-window'
+import { isValidDuration, isValidSortOrder, isValidDateStr } from '@/lib/schedule-validation'
 
 export async function GET() {
   try {
-    const { weekStart, weekEnd } = getScheduleWindow()
+    const { weekStart, weekEnd } = scheduleWindowUTC(new Date())
 
     const events = await prisma.scheduleEvent.findMany({
       where: {
@@ -33,10 +20,7 @@ export async function GET() {
     return NextResponse.json(events)
   } catch (error) {
     console.error('Error fetching schedule:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch schedule' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch schedule' }, { status: 500 })
   }
 }
 
@@ -50,26 +34,34 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { date, time, sortOrder, title, description, durationMinutes, location } = body
 
-    if (!date || !time || typeof sortOrder !== 'number' || !title) {
+    if (!isValidDateStr(date) || !time || !isValidSortOrder(sortOrder) || !title) {
       return NextResponse.json(
-        { error: 'Invalid input. Required: date (YYYY-MM-DD), time, sortOrder, title' },
+        { error: 'Invalid input. Required: date (YYYY-MM-DD), time, sortOrder (0-1439), title' },
         { status: 400 }
       )
+    }
+    if (durationMinutes !== undefined && !isValidDuration(durationMinutes)) {
+      return NextResponse.json({ error: 'durationMinutes must be between 1 and 1440' }, { status: 400 })
     }
 
     // Store at noon UTC so the date never shifts by timezone
-    const eventDate = new Date(`${date}T12:00:00.000Z`)
-    if (isNaN(eventDate.getTime())) {
-      return NextResponse.json({ error: 'Invalid date format' }, { status: 400 })
+    const eventDate = dateStrToNoonUTC(date)
+
+    // Validate within the rolling window (same window the public site shows)
+    if (!isWithinWindow(date, new Date())) {
+      return NextResponse.json({ error: 'Date must be within the next 4 weeks' }, { status: 400 })
     }
 
-    // Validate within 4-week window
-    const { weekStart, weekEnd } = getScheduleWindow()
-    if (eventDate < weekStart || eventDate > weekEnd) {
-      return NextResponse.json(
-        { error: 'Date must be within the next 4 weeks' },
-        { status: 400 }
-      )
+    const cleanTitle = String(title).slice(0, 200)
+
+    // Idempotency: if an identical event (same day + start minute + title) already
+    // exists, return it instead of creating a duplicate. This makes double-submits,
+    // network retries, and re-applied presets safe without a DB unique constraint.
+    const existing = await prisma.scheduleEvent.findFirst({
+      where: { date: eventDate, sortOrder, title: { equals: cleanTitle, mode: 'insensitive' } },
+    })
+    if (existing) {
+      return NextResponse.json(existing, { status: 200 })
     }
 
     const event = await prisma.scheduleEvent.create({
@@ -77,8 +69,8 @@ export async function POST(request: Request) {
         date: eventDate,
         time: String(time).slice(0, 20),
         sortOrder,
-        durationMinutes: typeof durationMinutes === 'number' ? durationMinutes : 60,
-        title: String(title).slice(0, 200),
+        durationMinutes: isValidDuration(durationMinutes) ? durationMinutes : 60,
+        title: cleanTitle,
         description: description ? String(description).slice(0, 500) : null,
         location: location ? String(location).slice(0, 200) : null,
       },
@@ -86,13 +78,11 @@ export async function POST(request: Request) {
 
     revalidatePath('/')
     revalidatePath('/schedule')
+    revalidatePath('/admin/dashboard')
     await logActivity(session.user?.name ?? 'Unknown', 'created', formatEventDetail(event.title, date))
     return NextResponse.json(event, { status: 201 })
   } catch (error) {
     console.error('Error creating event:', error)
-    return NextResponse.json(
-      { error: 'Failed to create event' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create event' }, { status: 500 })
   }
 }

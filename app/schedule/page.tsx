@@ -1,5 +1,9 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
+
+// Renders the current week's live events — must never be served from a stale
+// static cache (matches app/page.tsx).
+export const dynamic = 'force-dynamic'
 import { MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { WeeklyScheduleSection } from '@/components/home/WeeklyScheduleSection'

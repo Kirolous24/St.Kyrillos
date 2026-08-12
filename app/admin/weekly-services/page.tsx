@@ -3,6 +3,9 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { WeeklyServicesManager } from './WeeklyServicesManager'
 
+// Always render fresh so returning to this page never shows a stale snapshot.
+export const dynamic = 'force-dynamic'
+
 export default async function WeeklyServicesPage() {
   const session = await auth()
   if (!session) redirect('/admin/login')

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import { Plus, Pencil, Trash2, X, LogOut, Zap, Calendar, ChevronRight, Minus, Settings, Sparkles, ToggleLeft, ToggleRight, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
@@ -8,6 +9,7 @@ import { EVENT_PRESETS, DURATION_OPTIONS, DAY_PRESETS } from '@/lib/presets'
 import type { WeeklyService } from '@/app/admin/weekly-services/WeeklyServicesManager'
 import { CopticDayMeta, CopticDayPanel } from './CopticDayInfo'
 import type { CopticDayData, TemplateSuggestion } from '@/lib/coptic-api'
+import { weekStartUTC, toUTCDateStr } from '@/lib/schedule-window'
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -52,11 +54,12 @@ function toDateStr(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-// Get the 4-week window bounds (local time), starting from this week's Sunday
+// Get the 4-week window bounds, starting from this week's Sunday. Anchored on
+// the SAME UTC week-start the server validates against, so every date the admin
+// can pick in the grid is a date the API will accept (no more "valid date
+// rejected" mismatches between local-time client math and UTC server math).
 function getWeekBounds() {
-  const now = new Date()
-  const sunday = new Date(now)
-  sunday.setDate(now.getDate() - now.getDay())
+  const sunday = dateStrToLocal(toUTCDateStr(weekStartUTC(new Date())))
   sunday.setHours(0, 0, 0, 0)
 
   return Array.from({ length: 4 }, (_, i) => {
@@ -133,10 +136,11 @@ const GREETINGS: Record<string, string> = {
 }
 
 export function ScheduleManager({ initialEvents, initialTemplates, initialWeeklyServices, copticData, suggestedTemplates, userName, initialAutoFill }: { initialEvents: ScheduleEvent[]; initialTemplates: DBTemplate[]; initialWeeklyServices?: WeeklyService[]; copticData?: Record<string, CopticDayData>; suggestedTemplates?: TemplateSuggestion[]; userName?: string; initialAutoFill?: boolean }) {
+  const router = useRouter()
   const [events, setEvents] = useState<ScheduleEvent[]>(initialEvents)
   const [weeklyServices, setWeeklyServices] = useState<WeeklyService[]>(initialWeeklyServices ?? [])
   const [autoFill, setAutoFill] = useState(initialAutoFill ?? false)
-  const autoFilledWeekStarts = useRef<Set<string>>(new Set())
+  const materializeRan = useRef(false)
   const [selectedWeek, setSelectedWeek] = useState(0)
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => toDateStr(new Date()))
   const [showForm, setShowForm] = useState(false)
@@ -263,7 +267,13 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
         })
         if (!res.ok) throw new Error('Failed to create')
         const created = await res.json()
-        setEvents((prev) => [...prev, created])
+        // The POST is idempotent and may return an existing row (200); replace it
+        // in place rather than appending a duplicate key.
+        setEvents((prev) =>
+          prev.some((e) => e.id === created.id)
+            ? prev.map((e) => (e.id === created.id ? created : e))
+            : [...prev, created]
+        )
       }
       closeForm()
       // Switch to the week that contains the saved date
@@ -274,6 +284,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
           break
         }
       }
+      router.refresh() // pull authoritative (de-duplicated) server state
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
@@ -282,13 +293,18 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
   }
 
   async function handleDelete(id: string) {
+    setSaving(true)
     try {
       const res = await fetch(`/api/schedule/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete')
+      if (!res.ok && res.status !== 404) throw new Error('Failed to delete')
       setEvents((prev) => prev.filter((ev) => ev.id !== id))
       setDeleteConfirm(null)
+      router.refresh()
     } catch {
+      setDeleteConfirm(null) // don't leave the row stuck in confirm state
       setError('Failed to delete event.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -301,10 +317,21 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
     setSaving(true)
     setError('')
     try {
-      await Promise.all(dayEvents.map((ev) => fetch(`/api/schedule/${ev.id}`, { method: 'DELETE' })))
-      setEvents((prev) => prev.filter((e) => isoToDateStr(e.date) !== dateStr))
+      // fetch() does not reject on 4xx/5xx, so check each response and only drop
+      // the events the server actually deleted (a 404 means it's already gone).
+      const results = await Promise.all(
+        dayEvents.map(async (ev) => {
+          const res = await fetch(`/api/schedule/${ev.id}`, { method: 'DELETE' })
+          return { id: ev.id, ok: res.ok || res.status === 404 }
+        })
+      )
+      const deletedIds = new Set(results.filter((r) => r.ok).map((r) => r.id))
+      setEvents((prev) => prev.filter((e) => !deletedIds.has(e.id)))
+      if (results.some((r) => !r.ok)) setError('Some events could not be deleted. Please try again.')
+      router.refresh()
     } catch {
       setError('Failed to delete day events.')
+      router.refresh()
     } finally {
       setSaving(false)
     }
@@ -322,13 +349,19 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
     setSaving(true)
     setError('')
     try {
-      await Promise.all(weekEvents.map((ev) => fetch(`/api/schedule/${ev.id}`, { method: 'DELETE' })))
-      setEvents((prev) => prev.filter((e) => {
-        const d = dateStrToLocal(isoToDateStr(e.date))
-        return d < start || d > end
-      }))
+      const results = await Promise.all(
+        weekEvents.map(async (ev) => {
+          const res = await fetch(`/api/schedule/${ev.id}`, { method: 'DELETE' })
+          return { id: ev.id, ok: res.ok || res.status === 404 }
+        })
+      )
+      const deletedIds = new Set(results.filter((r) => r.ok).map((r) => r.id))
+      setEvents((prev) => prev.filter((e) => !deletedIds.has(e.id)))
+      if (results.some((r) => !r.ok)) setError('Some events could not be deleted. Please try again.')
+      router.refresh()
     } catch {
       setError('Failed to delete week events.')
+      router.refresh()
     } finally {
       setSaving(false)
     }
@@ -367,6 +400,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
       const { created } = await res.json()
       setEvents((prev) => [...prev, ...created])
       setFillDayConfirm(null)
+      router.refresh()
     } catch {
       setError('Failed to fill day. Please try again.')
     } finally {
@@ -411,7 +445,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
   }
 
   async function handleApplyTemplate() {
-    if (!templateModal?.editableEvents) return
+    if (!templateModal?.editableEvents || saving) return
     setSaving(true)
     setError('')
     try {
@@ -465,6 +499,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
           break
         }
       }
+      router.refresh()
       // Scroll to top of page so the schedule is visible
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch {
@@ -535,7 +570,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
   }
 
   async function handleApplyWeeklyServices() {
-    if (!weeklyModal) return
+    if (!weeklyModal || saving) return
     setSaving(true)
     setError('')
     try {
@@ -575,6 +610,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
       const { created } = await res.json()
       setEvents((prev) => [...prev, ...created])
       setWeeklyModal(null)
+      router.refresh()
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch {
       setError('Failed to apply weekly services. Please try again.')
@@ -583,66 +619,58 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
     }
   }
 
-  async function toggleAutoFill() {
-    const next = !autoFill
-    setAutoFill(next)
-    await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: 'autoFillWeeklyServices', value: String(next) }),
-    })
-  }
-
-  async function autoFillWeek(weekIdx: number) {
-    const enabled = weeklyServices.filter((s) => s.enabled)
-    if (enabled.length === 0) return
-    const { start } = weekBounds[weekIdx]
-    const batchEvents = enabled.map((service) => {
-      const d = new Date(start)
-      d.setDate(start.getDate() + service.dayOfWeek)
-      return {
-        date: toDateStr(d),
-        time: formatTimeForDisplay(service.time),
-        sortOrder: service.sortOrder,
-        durationMinutes: service.durationMinutes,
-        title: service.title,
-        description: service.description,
-        location: service.location,
-      }
-    })
+  // Ask the server to materialize enabled weekly services across the whole
+  // window, then pull the results in. Idempotent server-side (never duplicates).
+  async function materializeAndRefresh(): Promise<void> {
     try {
-      const res = await fetch('/api/schedule/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ events: batchEvents }),
-      })
+      const res = await fetch('/api/schedule/materialize', { method: 'POST' })
       if (!res.ok) return
-      const { created } = await res.json()
-      setEvents((prev) => [...prev, ...created])
+      const data = await res.json()
+      if (data?.created > 0) router.refresh()
     } catch {
-      // silent — auto-fill is a convenience feature
+      // convenience feature — safe to ignore
     }
   }
 
-  // Reset which weeks have been auto-filled whenever the toggle is turned back on
-  useEffect(() => {
-    if (autoFill) autoFilledWeekStarts.current = new Set()
-  }, [autoFill])
+  async function toggleAutoFill() {
+    const next = !autoFill
+    setAutoFill(next) // optimistic
+    setError('')
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'autoFillWeeklyServices', value: String(next) }),
+      })
+      if (!res.ok) throw new Error('Failed to save setting')
+      // Turning it ON should populate the weeks right away.
+      if (next) await materializeAndRefresh()
+    } catch {
+      setAutoFill(!next) // revert the optimistic flip
+      setError('Could not update the auto-fill setting. Please try again.')
+    }
+  }
 
-  // Auto-fill empty weeks when navigating with the toggle ON
+  // Keep local state in sync with fresh server data. `initialEvents` /
+  // `initialWeeklyServices` get a new reference whenever the dashboard
+  // re-renders on the server (router.refresh(), or navigating back to it now
+  // that the page is force-dynamic). Without this, the client island kept its
+  // first snapshot forever — the reported "old data until I manually refresh".
   useEffect(() => {
-    if (!autoFill) return
-    const { start, end } = weekBounds[selectedWeek]
-    const weekStartStr = toDateStr(start)
-    if (autoFilledWeekStarts.current.has(weekStartStr)) return
-    autoFilledWeekStarts.current.add(weekStartStr)
-    const weekHasEvents = events.some((e) => {
-      const d = dateStrToLocal(isoToDateStr(e.date))
-      return d >= start && d <= end
-    })
-    if (!weekHasEvents) void autoFillWeek(selectedWeek)
+    setEvents(initialEvents)
+  }, [initialEvents])
+  useEffect(() => {
+    setWeeklyServices(initialWeeklyServices ?? [])
+  }, [initialWeeklyServices])
+
+  // One-time catch-up on load: if the daily cron hasn't yet materialized a
+  // newly-in-range week, do it now so the admin always opens a populated window.
+  useEffect(() => {
+    if (materializeRan.current) return
+    materializeRan.current = true
+    if (autoFill) void materializeAndRefresh()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWeek, autoFill])
+  }, [])
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -659,7 +687,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          {weeklyServices.filter((s) => s.enabled).length > 0 && (
+          {weeklyServices.length > 0 && (
             <button
               onClick={openWeeklyModal}
               className="flex items-center gap-2 px-4 py-2 text-sm text-green-800 hover:bg-green-50 border border-green-300 rounded-lg transition-colors font-medium"
@@ -962,10 +990,10 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
                         </button>
                         {deleteConfirm === event.id ? (
                           <div className="flex items-center gap-1">
-                            <button onClick={() => handleDelete(event.id)} className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700">
-                              Confirm
+                            <button onClick={() => handleDelete(event.id)} disabled={saving} className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">
+                              {saving ? '…' : 'Confirm'}
                             </button>
-                            <button onClick={() => setDeleteConfirm(null)} className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                            <button onClick={() => setDeleteConfirm(null)} disabled={saving} className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50">
                               Cancel
                             </button>
                           </div>
@@ -1042,7 +1070,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
                     <Link href="/admin/weekly-services" className="text-sm text-primary-900 hover:underline">Configure weekly services</Link>
                   </div>
                 ) : (
-                  dayPreviews.map(({ dow, dateStr, d, dayServices, existingCount, conflicts }) => (
+                  dayPreviews.map(({ dow, d, dayServices, existingCount, conflicts }) => (
                     <div key={dow} className={`rounded-lg border ${conflicts.length > 0 ? 'border-amber-300' : 'border-gray-200'}`}>
                       <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 rounded-t-lg flex items-center justify-between">
                         <div>
@@ -1123,7 +1151,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
                 <h2 className="text-lg font-semibold text-gray-900">
                   Fill {DAY_NAMES[d.getDay()]}, {MONTH_SHORT[d.getMonth()]} {d.getDate()}?
                 </h2>
-                <button onClick={() => setFillDayConfirm(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                <button onClick={() => { setFillDayConfirm(null); setError('') }} className="p-1 text-gray-400 hover:text-gray-600">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1161,7 +1189,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
                     {saving ? 'Adding...' : `Add ${presets.length} Event${presets.length > 1 ? 's' : ''}`}
                   </button>
                   <button
-                    onClick={() => setFillDayConfirm(null)}
+                    onClick={() => { setFillDayConfirm(null); setError('') }}
                     className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Cancel
@@ -1183,7 +1211,7 @@ export function ScheduleManager({ initialEvents, initialTemplates, initialWeekly
                 {templateModal.step === 'date' && templateModal.template?.name}
                 {templateModal.step === 'preview' && 'Preview & Edit'}
               </h2>
-              <button onClick={() => setTemplateModal(null)} className="p-1 text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setTemplateModal(null); setError('') }} className="p-1 text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, Pencil, Trash2, X, ArrowLeft, ToggleLeft, ToggleRight, Check } from 'lucide-react'
 import Link from 'next/link'
 import { DURATION_OPTIONS } from '@/lib/presets'
@@ -48,8 +49,15 @@ function formatTimeDisplay(t24: string): string {
 }
 
 export function WeeklyServicesManager({ initialServices }: { initialServices: WeeklyService[] }) {
+  const router = useRouter()
   const [services, setServices] = useState<WeeklyService[]>(initialServices)
   const [activeDay, setActiveDay] = useState<number>(0) // default to Sunday
+
+  // Re-sync with fresh server data after router.refresh() / back-navigation, so
+  // this page never shows a stale snapshot (page is force-dynamic).
+  useEffect(() => {
+    setServices(initialServices)
+  }, [initialServices])
   const [editingService, setEditingService] = useState<WeeklyService | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
@@ -148,6 +156,7 @@ export function WeeklyServicesManager({ initialServices }: { initialServices: We
         closeForm()
         showSuccess('Service added.')
       }
+      router.refresh() // reflect the change on the dashboard + public schedule
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
@@ -156,6 +165,8 @@ export function WeeklyServicesManager({ initialServices }: { initialServices: We
   }
 
   async function toggleEnabled(service: WeeklyService) {
+    if (saving) return // avoid overlapping toggles resolving out of order
+    setSaving(true)
     try {
       const res = await fetch(`/api/weekly-services/${service.id}`, {
         method: 'PUT',
@@ -165,8 +176,11 @@ export function WeeklyServicesManager({ initialServices }: { initialServices: We
       if (!res.ok) throw new Error('Failed')
       const updated: WeeklyService = await res.json()
       setServices((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+      router.refresh()
     } catch {
       setError('Failed to toggle service.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -174,11 +188,13 @@ export function WeeklyServicesManager({ initialServices }: { initialServices: We
     setSaving(true)
     try {
       const res = await fetch(`/api/weekly-services/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete')
+      if (!res.ok && res.status !== 404) throw new Error('Failed to delete')
       setServices((prev) => prev.filter((s) => s.id !== id))
       setDeleteConfirm(null)
       showSuccess('Service deleted.')
+      router.refresh()
     } catch {
+      setDeleteConfirm(null)
       setError('Failed to delete service.')
     } finally {
       setSaving(false)
@@ -279,7 +295,8 @@ export function WeeklyServicesManager({ initialServices }: { initialServices: We
                   {/* Toggle */}
                   <button
                     onClick={() => toggleEnabled(service)}
-                    className={`shrink-0 transition-colors ${service.enabled ? 'text-primary-900' : 'text-gray-300'}`}
+                    disabled={saving}
+                    className={`shrink-0 transition-colors disabled:opacity-50 ${service.enabled ? 'text-primary-900' : 'text-gray-300'}`}
                     title={service.enabled ? 'Disable' : 'Enable'}
                   >
                     {service.enabled
@@ -309,7 +326,8 @@ export function WeeklyServicesManager({ initialServices }: { initialServices: We
                 <div className="flex items-center gap-1 ml-3 shrink-0">
                   <button
                     onClick={() => openEditForm(service)}
-                    className="p-2 text-gray-400 hover:text-primary-900 hover:bg-gray-100 rounded-lg transition-colors"
+                    disabled={saving}
+                    className="p-2 text-gray-400 hover:text-primary-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
                     title="Edit"
                   >
                     <Pencil className="w-4 h-4" />

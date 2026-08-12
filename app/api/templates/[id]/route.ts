@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025'
+}
 
 // PUT — full replace of a template (deletes old days/events, creates new ones)
 export async function PUT(
@@ -55,8 +61,13 @@ export async function PUT(
       },
     })
 
+    revalidatePath('/admin/dashboard')
+    revalidatePath('/admin/templates')
     return NextResponse.json(template)
   } catch (error) {
+    if (isNotFound(error)) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+    }
     console.error('Error updating template:', error)
     return NextResponse.json({ error: 'Failed to update template' }, { status: 500 })
   }
@@ -75,8 +86,14 @@ export async function DELETE(
 
     const { id } = params
     await prisma.seasonTemplate.delete({ where: { id } })
+
+    revalidatePath('/admin/dashboard')
+    revalidatePath('/admin/templates')
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (isNotFound(error)) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+    }
     console.error('Error deleting template:', error)
     return NextResponse.json({ error: 'Failed to delete template' }, { status: 500 })
   }

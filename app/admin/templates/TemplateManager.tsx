@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import { Plus, Trash2, X, LogOut, ChevronDown, ChevronUp, ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
@@ -46,6 +47,7 @@ function formatTime(t24: string): string {
 }
 
 export function TemplateManager({ initialTemplates }: { initialTemplates: Template[] }) {
+  const router = useRouter()
   const [templates, setTemplates] = useState<Template[]>(initialTemplates)
   const [editing, setEditing] = useState<Template | null>(null)
   const [isNew, setIsNew] = useState(false)
@@ -53,6 +55,11 @@ export function TemplateManager({ initialTemplates }: { initialTemplates: Templa
   const [error, setError] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set())
+
+  // Re-sync with fresh server data after router.refresh() / back-navigation.
+  useEffect(() => {
+    setTemplates(initialTemplates)
+  }, [initialTemplates])
 
   function openNew() {
     setEditing({
@@ -198,6 +205,7 @@ export function TemplateManager({ initialTemplates }: { initialTemplates: Templa
         setTemplates((prev) => prev.map((t) => (t.id === result.id ? result : t)))
       }
       closeEditor()
+      router.refresh()
     } catch {
       setError('Failed to save template. Please try again.')
     } finally {
@@ -208,11 +216,13 @@ export function TemplateManager({ initialTemplates }: { initialTemplates: Templa
   async function handleDelete(id: string) {
     try {
       const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete')
+      if (!res.ok && res.status !== 404) throw new Error('Failed to delete')
       setTemplates((prev) => prev.filter((t) => t.id !== id))
       setDeleteConfirm(null)
       if (editing?.id === id) closeEditor()
+      router.refresh()
     } catch {
+      setDeleteConfirm(null)
       setError('Failed to delete template.')
     }
   }

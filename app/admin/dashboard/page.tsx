@@ -4,7 +4,11 @@ import { prisma } from '@/lib/prisma'
 import { ScheduleManager } from './ScheduleManager'
 import { StatsPanel } from './StatsPanel'
 import { getCopticDayDataBatch, getTemplateSuggestions } from '@/lib/coptic-api'
+import { AUTO_MATERIALIZE_KEY, isAutoMaterializeEnabled } from '@/lib/weekly-services-materialize'
 import { Suspense } from 'react'
+
+// Always render fresh so returning to the dashboard never shows a stale snapshot.
+export const dynamic = 'force-dynamic'
 
 export default async function AdminDashboardPage() {
   const session = await auth()
@@ -42,7 +46,7 @@ export default async function AdminDashboardPage() {
       orderBy: [{ dayOfWeek: 'asc' }, { sortOrder: 'asc' }],
     }),
     getCopticDayDataBatch(startStr, endStr).catch(() => ({} as Record<string, never>)),
-    prisma.appSetting.findUnique({ where: { key: 'autoFillWeeklyServices' } }),
+    prisma.appSetting.findUnique({ where: { key: AUTO_MATERIALIZE_KEY } }),
   ])
 
   // Serialize Date objects for client component
@@ -94,7 +98,8 @@ export default async function AdminDashboardPage() {
   )
 
   const isKirolous = session.user?.name === 'Kirolous'
-  const initialAutoFill = autoFillSetting?.value === 'true'
+  // Default ON: weekly services auto-populate unless explicitly turned off.
+  const initialAutoFill = isAutoMaterializeEnabled(autoFillSetting?.value)
 
   return (
     <div>

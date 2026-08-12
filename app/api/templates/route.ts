@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 
@@ -73,6 +74,8 @@ export async function POST(request: Request) {
       },
     })
 
+    revalidatePath('/admin/dashboard')
+    revalidatePath('/admin/templates')
     return NextResponse.json(template, { status: 201 })
   } catch (error) {
     console.error('Error creating template:', error)
