@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Bell, Check, X } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { loadNotifications } from '@/lib/portal/data/reports'
-import { dismissNotification, markAllNotificationsRead } from '@/lib/portal/actions/notifications'
+import { dismissNotificationForm, markAllNotificationsReadForm } from '@/lib/portal/actions/notifications'
 import { cn } from '@/lib/utils'
 
 /**
@@ -50,12 +50,7 @@ export async function NotificationBell() {
         <header className="flex items-center justify-between gap-3 border-b border-parch-200 bg-parch-100/60 px-3.5 py-2.5">
           <h2 className="font-serif text-[13px] font-semibold text-brand-950">Notifications</h2>
           {count > 0 && (
-            <form
-              action={async () => {
-                'use server'
-                await markAllNotificationsRead(items.map((n) => n.key))
-              }}
-            >
+            <form action={markAllNotificationsReadForm}>
               <button type="submit" className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand-800 hover:underline">
                 <Check className="h-3.5 w-3.5" aria-hidden /> Mark all read
               </button>
@@ -83,12 +78,8 @@ export async function NotificationBell() {
                   <span className="block text-[12.5px] font-semibold leading-snug text-brand-950">{n.title}</span>
                   {n.detail && <span className="mt-0.5 block text-[11px] text-parch-500">{n.detail}</span>}
                 </Link>
-                <form
-                  action={async () => {
-                    'use server'
-                    await dismissNotification(n.key)
-                  }}
-                >
+                <form action={dismissNotificationForm}>
+                  <input type="hidden" name="key" value={n.key} />
                   <button
                     type="submit"
                     className="grid h-6 w-6 place-items-center rounded-full text-parch-400 transition-colors hover:bg-parch-100 hover:text-brand-800"

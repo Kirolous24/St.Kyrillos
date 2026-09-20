@@ -8,7 +8,7 @@ import {
   Menu, X, LogOut, LayoutDashboard, Users, UserCog, GraduationCap, CalendarCheck,
   Trophy, Cake, ClipboardList, BookOpen, CalendarDays, Megaphone, MessageSquare,
   QrCode, Music, FileBarChart, Settings, ScrollText, Award, HeartHandshake,
-  BookMarked, Sparkles,
+  BookMarked, Sparkles, Library, LifeBuoy, Layers,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +24,7 @@ const NAV_ICONS = {
   exams: ClipboardList, lessons: BookOpen, agenda: CalendarDays, announcements: Megaphone,
   feed: MessageSquare, events: CalendarDays, qr: QrCode, hymns: Music, reports: FileBarChart,
   settings: Settings, audit: ScrollText, achievements: Award, readings: BookMarked, points: Sparkles,
+  curriculum: Library, help: LifeBuoy, stage: Layers,
 } as const
 
 export type NavIcon = keyof typeof NAV_ICONS

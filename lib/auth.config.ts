@@ -13,6 +13,9 @@ const STAFF_ONLY = [
   '/portal/servant-attendance',
   '/portal/follow-ups',
   '/portal/announcements',
+  '/portal/curriculum',
+  '/portal/my-stage',
+  '/portal/help',
 ]
 
 /** The activity log is the one /portal/admin page the pastor may also read. */
