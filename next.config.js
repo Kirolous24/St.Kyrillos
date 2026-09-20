@@ -9,7 +9,10 @@ const PORTAL_CSP = [
   // Next.js's App Router inlines hydration/streaming payloads as <script>
   // tags with no nonce wired up (see the root layout's JSON-LD tag too), so
   // this can't be tightened to a strict allowlist without a nonce pipeline.
-  "script-src 'self' 'unsafe-inline'",
+  // `next dev` compiles modules through eval(); without 'unsafe-eval' the
+  // portal renders but never hydrates, so every control is dead locally.
+  // Production builds need no eval, so it is added in development only.
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data:",

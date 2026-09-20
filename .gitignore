@@ -39,3 +39,6 @@ Thumbs.db
 
 # Prototype drops under review (not part of the app)
 _incoming/
+
+# local-only portal test credentials (real PINs — never commit)
+portal-preview-logins.txt

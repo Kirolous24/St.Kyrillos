@@ -17,7 +17,10 @@ import { freeLoginId, randomPin } from '../credentials'
 
 const optionalText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional()
 
-export const StudentFormSchema = z.object({
+// Not exported: Next.js requires every export of a "use server" module to be an
+// async function, and a Zod object throws at action-invocation time. The
+// inferred type below is erased at compile time, so exporting it is fine.
+const StudentFormSchema = z.object({
   firstName: z.string().trim().min(1, 'First name is required').max(60),
   lastName: z.string().trim().max(60).default(''),
   gender: z.enum(['male', 'female', '']).optional(),

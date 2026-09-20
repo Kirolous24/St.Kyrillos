@@ -20,7 +20,10 @@ async function requireAdmin(): Promise<PortalUser> {
 
 // ── Servants / staff ──────────────────────────────────────────────────────
 
-export const ServantFormSchema = z.object({
+// Not exported: Next.js requires every export of a "use server" module to be an
+// async function, and a Zod object throws at action-invocation time. The
+// inferred type below is erased at compile time, so exporting it is fine.
+const ServantFormSchema = z.object({
   displayName: z.string().trim().min(1, 'Name is required').max(80),
   role: z.enum(['SERVANT', 'ADMIN', 'PASTOR']),
   email: z.string().trim().max(120).optional(),

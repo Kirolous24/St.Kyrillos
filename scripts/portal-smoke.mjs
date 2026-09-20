@@ -46,12 +46,17 @@ class Jar {
   }
 }
 
+// Vercel preview deployments sit behind SSO. A Protection Bypass for Automation
+// secret lets this harness through while humans still hit the login wall.
+const BYPASS = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+const BYPASS_HEADERS = BYPASS ? { 'x-vercel-protection-bypass': BYPASS, 'x-vercel-set-bypass-cookie': 'true' } : {}
+
 async function get(jar, url, opts = {}) {
   const res = await fetch(new URL(url, BASE), {
     redirect: 'manual',
     ...opts,
     // Must come after ...opts: opts.headers would otherwise replace the jar.
-    headers: { cookie: jar.header(), ...(opts.headers || {}) },
+    headers: { cookie: jar.header(), ...BYPASS_HEADERS, ...(opts.headers || {}) },
   })
   jar.store(res)
   return res

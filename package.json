@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "npx tsx prisma/seed.ts"
+    "db:seed": "npx tsx prisma/seed.ts",
+    "smoke": "node scripts/portal-smoke.mjs",
+    "smoke:write": "node --env-file=.env scripts/portal-write-smoke.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
