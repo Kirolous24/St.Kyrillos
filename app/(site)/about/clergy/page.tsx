@@ -57,7 +57,7 @@ export default function ClergyPage() {
                   <div className="w-full md:w-80 flex-shrink-0">
                     <div className="relative h-80 md:h-full min-h-[400px] bg-gray-100">
                       <Image
-                        src="/images/clergy/fr-pachom.png"
+                        src="/images/clergy/fr-pachom.jpg"
                         alt={member.name}
                         fill
                         className="object-cover object-top"

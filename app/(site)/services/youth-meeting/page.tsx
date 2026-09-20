@@ -91,10 +91,10 @@ export default function YouthMeetingPage() {
         { src: '/images/youth3.jpeg', alt: 'Youth community', position: '50% 65%' },
         { src: '/images/youth4.jpeg', alt: 'Youth activities', position: '50% 65%' },
         { src: '/images/youth5.jpeg', alt: 'Youth meeting', position: 'top' },
-        { src: '/images/youth6.png', alt: 'Youth gathering' },
-        { src: '/images/youth7.png', alt: 'Youth fellowship' },
-        { src: '/images/youth8.png', alt: 'Youth community' },
-        { src: '/images/youth9.png', alt: 'Youth activities' },
+        { src: '/images/youth6.jpg', alt: 'Youth gathering' },
+        { src: '/images/youth7.jpg', alt: 'Youth fellowship' },
+        { src: '/images/youth8.jpg', alt: 'Youth community' },
+        { src: '/images/youth9.jpg', alt: 'Youth activities' },
       ]}
       carouselTitle="Youth Community in Action"
     />

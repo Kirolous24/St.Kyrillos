@@ -44,7 +44,7 @@ export const CLERGY = [
     id: "fr-pachom",
     name: "Fr. Pachom Ibrahim",
     title: "Parish Priest",
-    image: "/images/clergy/headshot.png", // Placeholder
+    image: "/images/clergy/fr-pachom.jpg",
     bio: `Fr. Pachom Ibrahim is the priest for St. Kyrillos the Sixth Coptic Orthodox Church located in Nashville, TN. H.H. Pope Tawadros, with the presence of his Eminence Metropolitan Youssef and other bishops, ordained him priest on October 10, 2015. He began his service in St. Mark Coptic Orthodox Church in Nashville, Tennessee. Then in 2016, his Eminence Metropolitan Youssef asked him to serve in St. Kyrillos the Sixth Coptic Orthodox Church. Fr. Pachom has been serving within the Diocese of the Southern United States since October 10, 2015. We pray that the Lord will continue blessing his service.`,
     contact: {
       email: "fr.pachom@stkyrillostn.org",
