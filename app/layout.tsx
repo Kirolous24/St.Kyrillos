@@ -1,8 +1,4 @@
 import type { Metadata } from 'next'
-import { Navbar } from '@/components/layout/Navbar'
-import { Footer } from '@/components/layout/Footer'
-import { BackToTop } from '@/components/ui/BackToTop'
-import { PageTransition } from '@/components/ui/PageTransition'
 import { CHURCH_INFO, SITE_URL, SOCIAL_LINKS } from '@/lib/constants'
 import './globals.css'
 
@@ -116,20 +112,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        {/* Announcement Banner - uncomment and customize when needed */}
-        {/* <AnnouncementBanner
-          message="Special Christmas Liturgy on January 7th at 7:00 AM"
-          link={{ href: '/schedule', text: 'View Schedule' }}
-          variant="info"
-        /> */}
-        <Navbar />
-        <main className="flex-1 pt-20">
-          <PageTransition>
-            {children}
-          </PageTransition>
-        </main>
-        <Footer />
-        <BackToTop />
+        {children}
       </body>
     </html>
   )

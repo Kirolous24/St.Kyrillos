@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
-const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET || 'stkyrillos-webhook-secret'
+const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET
 
 /**
  * POST — Manually force the livestream status.
@@ -11,7 +11,9 @@ const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET || 'stkyrillos-webhook
  */
 export async function POST(request: NextRequest) {
   const secret = request.nextUrl.searchParams.get('secret')
-  if (secret !== WEBHOOK_SECRET) {
+  // Refuse outright when no secret is configured — never fall back to a
+  // default that lives in a public repo.
+  if (!WEBHOOK_SECRET || secret !== WEBHOOK_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

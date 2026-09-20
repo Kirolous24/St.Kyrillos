@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Play, ExternalLink, Calendar, Clock, Users } from 'lucide-react'
 import { LIVESTREAM } from '@/lib/constants'
+import { createLivePoller } from '@/lib/live-poller'
 import { Button } from '@/components/ui/Button'
 
 interface LiveStatus {
@@ -63,53 +64,31 @@ export function LivestreamPlayer() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    let pollInterval: ReturnType<typeof setInterval> | null = null
-    let inactivityTimeout: ReturnType<typeof setTimeout> | null = null
-
-    function stopPolling() {
-      if (pollInterval) clearInterval(pollInterval)
-      if (inactivityTimeout) clearTimeout(inactivityTimeout)
-      pollInterval = null
-      inactivityTimeout = null
-      window.removeEventListener('mousemove', resetInactivity)
-      window.removeEventListener('click', resetInactivity)
-      window.removeEventListener('keypress', resetInactivity)
-    }
-
-    function resetInactivity() {
-      if (!pollInterval) return
-      if (inactivityTimeout) clearTimeout(inactivityTimeout)
-      inactivityTimeout = setTimeout(stopPolling, 30 * 60 * 1000) // stop after 30 min idle
-    }
-
-    async function checkStatus(): Promise<boolean> {
-      try {
-        const response = await fetch('/api/youtube-live')
-        const data = await response.json()
-        setLiveStatus(data)
+    // Poll every minute while the page is visible — including while LIVE, so
+    // the embed clears when the stream ends. Pauses when the tab is hidden.
+    // See lib/live-poller.ts for the rules and tests.
+    const poller = createLivePoller<LiveStatus>({
+      intervalMs: 60 * 1000,
+      fetchStatus: async () => {
+        const response = await fetch('/api/youtube-live', { cache: 'no-store' })
+        if (!response.ok) throw new Error('Failed to load livestream status')
+        return response.json()
+      },
+      onStatus: (status) => {
+        setLiveStatus({ hasUpcoming: false, ...status })
         setIsLoading(false)
-        if (data.isLive) stopPolling() // live = server cache holds it, no need to poll
-        return data.isLive
-      } catch {
-        setLiveStatus({ isLive: false, hasUpcoming: false, error: 'Failed to load livestream status' })
-        setIsLoading(false)
-        return false
-      }
-    }
+      },
+    })
 
-    async function init() {
-      const isLive = await checkStatus()
-      if (!isLive) {
-        pollInterval = setInterval(checkStatus, 60 * 1000) // poll every 1 min when not live
-        resetInactivity()
-        window.addEventListener('mousemove', resetInactivity)
-        window.addEventListener('click', resetInactivity)
-        window.addEventListener('keypress', resetInactivity)
-      }
-    }
+    const onVisibility = () => poller.setVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', onVisibility)
+    poller.setVisible(document.visibilityState === 'visible')
+    void poller.start()
 
-    init()
-    return () => stopPolling()
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      poller.stop()
+    }
   }, [])
 
   if (isLoading) {

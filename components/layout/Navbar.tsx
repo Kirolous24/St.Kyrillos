@@ -100,7 +100,7 @@ export function Navbar() {
                 <Link
                   href={item.href}
                   className={cn(
-                    'px-4 py-2 rounded-lg text-base font-medium transition-all duration-200 inline-flex items-center gap-1',
+                    'whitespace-nowrap rounded-lg px-3 py-2 text-base font-medium transition-all duration-200 inline-flex items-center gap-1 xl:px-4',
                     isActive(item.href)
                       ? 'text-primary-900 bg-primary-50'
                       : 'text-gray-700 hover:text-primary-900 hover:bg-primary-50'

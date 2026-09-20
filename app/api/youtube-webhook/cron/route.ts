@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { LIVESTREAM, SITE_URL } from '@/lib/constants'
+import { recordHubAttempt } from '@/lib/youtube-hub'
 
-const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET || 'stkyrillos-webhook-secret'
+const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET
 const PUBSUBHUBBUB_HUB = 'https://pubsubhubbub.appspot.com/subscribe'
 
 /**
@@ -23,9 +24,9 @@ export async function GET(request: NextRequest) {
       'hub.topic': topic,
       'hub.verify': 'async',
       'hub.mode': 'subscribe',
-      'hub.secret': WEBHOOK_SECRET,
       'hub.lease_seconds': '864000', // 10 days
     })
+    if (WEBHOOK_SECRET) formData.set('hub.secret', WEBHOOK_SECRET)
 
     const response = await fetch(PUBSUBHUBBUB_HUB, {
       method: 'POST',
@@ -36,12 +37,15 @@ export async function GET(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`[YouTube Cron] Hub returned ${response.status}: ${errorText}`)
+      await recordHubAttempt(`HTTP ${response.status}: ${errorText.trim()}`)
       return NextResponse.json({ error: `Hub error: ${response.status}` }, { status: 502 })
     }
 
+    await recordHubAttempt('ok')
     console.log('[YouTube Cron] Subscription renewal sent to hub')
     return NextResponse.json({ success: true, message: 'Subscription renewal sent' })
   } catch (error) {
+    await recordHubAttempt(`fetch failed: ${error instanceof Error ? error.message : String(error)}`)
     console.error('[YouTube Cron] Error:', error)
     return NextResponse.json({ error: 'Failed to renew' }, { status: 500 })
   }

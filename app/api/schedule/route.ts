@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
+import { isUniqueViolation } from '@/lib/prisma-errors'
 import { auth } from '@/lib/auth'
 import { logActivity, formatEventDetail } from '@/lib/activity-log'
 import { scheduleWindowUTC, dateStrToNoonUTC, isWithinWindow } from '@/lib/schedule-window'
@@ -82,6 +83,9 @@ export async function POST(request: Request) {
     await logActivity(session.user?.name ?? 'Unknown', 'created', formatEventDetail(event.title, date))
     return NextResponse.json(event, { status: 201 })
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      return NextResponse.json({ error: 'An identical event already exists at that time' }, { status: 409 })
+    }
     console.error('Error creating event:', error)
     return NextResponse.json({ error: 'Failed to create event' }, { status: 500 })
   }

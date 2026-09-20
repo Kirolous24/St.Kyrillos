@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { isUniqueViolation } from '@/lib/prisma-errors'
 import { auth } from '@/lib/auth'
 import { logActivity, formatEventDetail } from '@/lib/activity-log'
 import { dateStrToNoonUTC, isWithinWindow } from '@/lib/schedule-window'
@@ -59,6 +60,9 @@ export async function PUT(
   } catch (error) {
     if (isNotFound(error)) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
+    }
+    if (isUniqueViolation(error)) {
+      return NextResponse.json({ error: 'An identical event already exists at that time' }, { status: 409 })
     }
     console.error('Error updating event:', error)
     return NextResponse.json({ error: 'Failed to update event' }, { status: 500 })

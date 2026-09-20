@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
+import { isUniqueViolation } from '@/lib/prisma-errors'
 import { auth } from '@/lib/auth'
 import { logActivity } from '@/lib/activity-log'
 import { dateStrToNoonUTC, isWithinWindow } from '@/lib/schedule-window'
@@ -113,6 +114,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ created, count: created.length }, { status: 201 })
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      return NextResponse.json({ error: 'One of these events already exists at that time' }, { status: 409 })
+    }
     console.error('Error batch creating events:', error)
     return NextResponse.json({ error: 'Failed to create events' }, { status: 500 })
   }

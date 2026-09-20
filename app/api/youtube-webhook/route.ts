@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { LIVESTREAM } from '@/lib/constants'
+import { verifyHubSignature } from '@/lib/websub-signature'
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
+// When set, notifications must carry a valid X-Hub-Signature (HMAC-SHA1 of the
+// raw body with this secret). The same value is sent as hub.secret at subscribe
+// time. If unset, notifications are accepted unsigned (the video is still
+// verified against the YouTube API before anything is stored).
+const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET
 
 /**
  * GET — PubSubHubbub subscription verification.
@@ -58,6 +64,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.text()
     console.log('[YouTube Webhook] POST received, body length:', body.length)
+
+    if (WEBHOOK_SECRET) {
+      const signature = request.headers.get('x-hub-signature')
+      if (!verifyHubSignature(body, signature, WEBHOOK_SECRET)) {
+        // Per the WebSub spec, ignore the content but still answer 2xx so the
+        // hub doesn't retry a payload we will never accept.
+        console.warn('[YouTube Webhook] ⛔ Signature check failed — ignoring notification')
+        return new NextResponse('OK', { status: 200 })
+      }
+    }
 
     // Parse the Atom XML to extract video ID
     // YouTube sends: <yt:videoId>VIDEO_ID</yt:videoId>

@@ -1,8 +1,11 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
+import { authConfig } from './auth.config'
 import { checkRateLimit } from './rate-limit'
 import { prisma } from './prisma'
+import { attemptLogin, LOGIN_ID_RE, PIN_RE } from './portal/login'
+import { prismaLoginRepo } from './portal/login-repo'
 
 const adminUsers = [
   {
@@ -26,9 +29,11 @@ const adminUsers = [
 ]
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  trustHost: true,
+  ...authConfig,
   providers: [
+    // Website admin (schedule, templates). Users live in env vars.
     Credentials({
+      id: 'credentials',
       credentials: {
         username: { label: 'Username', type: 'text' },
         password: { label: 'Password', type: 'password' },
@@ -49,35 +54,52 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const isValid = await bcrypt.compare(password, user.passwordHash)
         if (!isValid) return null
 
-        return { id: user.id, name: user.name }
+        // Record last seen — fire and forget, don't block sign-in
+        prisma.userLastSeen
+          .upsert({
+            where: { userName: user.name },
+            update: { lastSeenAt: new Date() },
+            create: { userName: user.name, lastSeenAt: new Date() },
+          })
+          .catch(() => {})
+
+        return { id: `site:${user.id}`, name: user.name, kind: 'site' }
+      },
+    }),
+
+    // Sunday School portal: 4-digit ID + PIN, accounts in Postgres,
+    // hashed PINs and a server-side lockout (see lib/portal/login.ts).
+    Credentials({
+      id: 'portal',
+      credentials: {
+        loginId: { label: 'ID', type: 'text' },
+        pin: { label: 'PIN', type: 'password' },
+      },
+      async authorize(credentials) {
+        // Normalise once, here: attemptLogin trims too, so a limiter keyed on
+        // the raw value would hand every whitespace padding its own bucket.
+        const loginId = String(credentials?.loginId ?? '').trim()
+        const pin = String(credentials?.pin ?? '').trim()
+        if (!LOGIN_ID_RE.test(loginId) || !PIN_RE.test(pin)) return null
+
+        const rateCheck = checkRateLimit(`portal:${loginId}`)
+        if (!rateCheck.allowed) return null
+
+        const result = await attemptLogin(
+          prismaLoginRepo,
+          { loginId, pin },
+          { verify: (p, hash) => bcrypt.compare(p, hash) },
+        )
+        if (!result.ok) return null
+
+        return {
+          id: result.account.id,
+          name: result.account.displayName,
+          kind: 'portal',
+          role: result.account.role,
+          accountId: result.account.id,
+        }
       },
     }),
   ],
-  pages: {
-    signIn: '/admin/login',
-  },
-  session: {
-    strategy: 'jwt',
-    maxAge: 24 * 60 * 60, // 24 hours
-  },
-  callbacks: {
-    async jwt({ token, user, trigger }) {
-      if (trigger === 'signIn' && user?.name) {
-        // Record last seen — fire and forget, don't block sign-in
-        prisma.userLastSeen.upsert({
-          where: { userName: user.name },
-          update: { lastSeenAt: new Date() },
-          create: { userName: user.name, lastSeenAt: new Date() },
-        }).catch(() => {})
-      }
-      return token
-    },
-    authorized({ auth, request }) {
-      const isAdminRoute = request.nextUrl.pathname.startsWith('/admin')
-      const isLoginPage = request.nextUrl.pathname === '/admin/login'
-
-      if (isAdminRoute && !isLoginPage && !auth) return false
-      return true
-    },
-  },
 })

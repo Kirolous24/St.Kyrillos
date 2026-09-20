@@ -3,7 +3,7 @@
 // Update these values with actual church data
 // ============================================
 
-export const SITE_URL = 'https://stkyrillostn.org'
+export const SITE_URL = 'https://www.stkyrillostn.org'
 
 export const CHURCH_INFO = {
   name: "St. Kyrillos the Sixth",
@@ -144,6 +144,13 @@ export const NAV_ITEMS = [
     ],
   },
   {
+    // Points at /portal rather than /portal/login: a signed-in servant or
+    // student lands straight on their dashboard, and anyone else is sent to
+    // the sign-in page by the middleware.
+    label: "SS Portal",
+    href: "/portal",
+  },
+  {
     label: "Services",
     href: "/services",
   },
@@ -172,6 +179,7 @@ export const FOOTER_LINKS = {
     { label: "FAQs", href: "/about/faqs" },
     { label: "Give", href: "/give" },
     { label: "Resources", href: "/resources" },
+    { label: 'Sunday School Portal', href: '/portal/login' },
   ],
   memberLinks: [
     { label: "Join Our Church", href: "/members/join" },

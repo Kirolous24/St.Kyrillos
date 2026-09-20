@@ -11,8 +11,8 @@ datasource db {
 model ScheduleEvent {
   id              String   @id @default(cuid())
   date            DateTime // The specific date of this event (stored at noon UTC)
-  time            String   // Display format: "8:00 AM"
-  sortOrder       Int      // Minutes from midnight for chronological ordering
+  time            String // Display format: "8:00 AM"
+  sortOrder       Int // Minutes from midnight for chronological ordering
   durationMinutes Int      @default(60)
   title           String
   description     String?
@@ -20,6 +20,7 @@ model ScheduleEvent {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  @@unique([date, sortOrder, title])
   @@index([date])
 }
 
@@ -49,7 +50,7 @@ model TemplateDayEvent {
   dayId           String
   day             TemplateDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
   title           String
-  time            String      // 24-hr format "08:00"
+  time            String // 24-hr format "08:00"
   durationMinutes Int         @default(60)
   location        String
   description     String?
@@ -88,8 +89,8 @@ model LiturgicalEvent {
 model ActivityLog {
   id        String   @id @default(cuid())
   userName  String
-  action    String   // "created" | "updated" | "deleted" | "batch_created"
-  detail    String   // e.g. "Divine Liturgy on Sun Mar 22"
+  action    String // "created" | "updated" | "deleted" | "batch_created"
+  detail    String // e.g. "Divine Liturgy on Sun Mar 22"
   count     Int      @default(1) // >1 for batch operations
   createdAt DateTime @default(now())
 
@@ -104,14 +105,14 @@ model UserLastSeen {
 
 model WeeklyService {
   id              String   @id @default(cuid())
-  dayOfWeek       Int      // 0=Sunday, 5=Friday, 6=Saturday
+  dayOfWeek       Int // 0=Sunday, 5=Friday, 6=Saturday
   title           String
-  time            String   // 24-hr format "08:00"
+  time            String // 24-hr format "08:00"
   durationMinutes Int      @default(60)
   location        String
   description     String?
   enabled         Boolean  @default(true)
-  sortOrder       Int      // minutes from midnight, for ordering within the day
+  sortOrder       Int // minutes from midnight, for ordering within the day
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -134,9 +135,701 @@ model LivestreamStatus {
   updatedAt DateTime @updatedAt
 
   // PubSubHubbub subscription tracking
-  subscribedAt    DateTime?
-  leaseExpiresAt  DateTime?
+  subscribedAt   DateTime?
+  leaseExpiresAt DateTime?
 
   // Fallback polling: timestamp of last YouTube search.list call
-  lastSearchAt    DateTime?
+  lastSearchAt DateTime?
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sunday School portal
+// ───────────────────────────────────────────────────────────────────────────
+
+enum PortalRole {
+  STUDENT
+  SERVANT
+  ADMIN
+  PASTOR
+}
+
+enum Stage {
+  ELEMENTARY
+  MIDDLE_SCHOOL
+  HIGH_SCHOOL
+}
+
+enum ClassTitle {
+  COORDINATOR
+  ASSISTANT_COORDINATOR
+}
+
+enum AttendanceStatus {
+  PRESENT
+  EXCUSED
+  ABSENT
+}
+
+enum PointSource {
+  ATTENDANCE
+  MANUAL
+  QUIZ
+  UNDO
+  QR
+}
+
+enum CaseStatus {
+  OPEN
+  DONE
+}
+
+enum CaseOrigin {
+  AUTO
+  MANUAL
+}
+
+// One login per person. Students and servants get a profile row; admin and
+// pastor accounts are just an Account.
+model Account {
+  id             String     @id @default(cuid())
+  loginId        String     @unique // 4-digit ID typed at sign-in
+  pinHash        String
+  role           PortalRole
+  displayName    String
+  email          String?
+  phone          String?
+  photo          String? // small data-URL thumbnail
+  isActive       Boolean    @default(true)
+  failedAttempts Int        @default(0)
+  lockedUntil    DateTime?
+  lastLoginAt    DateTime?
+  legacyUid      String?    @unique // Firebase Auth uid from the prototype
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  student Student?
+  servant Servant?
+
+  attendanceMarked  AttendanceRecord[]  @relation("AttendanceMarkedBy")
+  pointsGiven       PointEntry[]        @relation("PointsCreatedBy")
+  activitiesCreated PointActivity[]     @relation("ActivityCreatedBy")
+  casesCreated      FollowUpCase[]      @relation("CaseCreatedBy")
+  casesResolved     FollowUpCase[]      @relation("CaseResolvedBy")
+  caseLogs          FollowUpLog[]       @relation("CaseLogBy")
+  servantMarked     ServantAttendance[] @relation("ServantAttendanceMarkedBy")
+  auditEntries      PortalAuditLog[]
+
+  examsCreated         Exam[]             @relation("ExamCreatedBy")
+  lessonsCreated       Lesson[]           @relation("LessonCreatedBy")
+  hymnsAdded           Hymn[]             @relation("HymnAddedBy")
+  feedPosts            FeedPost[]         @relation("FeedAuthor")
+  feedReactions        FeedReaction[]
+  announcementsCreated Announcement[]     @relation("AnnouncementCreatedBy")
+  eventsCreated        PortalEvent[]      @relation("EventCreatedBy")
+  qrTokensCreated      QrToken[]          @relation("QrTokenCreatedBy")
+  qrRedemptions        QrRedemption[]
+  notificationReads    NotificationRead[]
+
+  @@index([role])
+}
+
+model SchoolClass {
+  id                   String   @id // slug, e.g. "5th-6th-boys"
+  name                 String
+  stage                Stage
+  sortOrder            Int      @default(0)
+  description          String?
+  visitationThreshold  Int      @default(2) // consecutive Sunday-School absences before a case opens
+  photo                String? // small data-URL class photo
+  curriculumLinkedToId String?
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  students      Student[]
+  servants      ClassServant[]
+  attendance    AttendanceRecord[]
+  points        PointEntry[]
+  activities    PointActivity[]
+  followUps     FollowUpCase[]
+  exams         Exam[]
+  quizResults   QuizResult[]
+  lessons       Lesson[]
+  agendaWeeks   AgendaWeek[]
+  feedPosts     FeedPost[]
+  announcements Announcement[]
+  events        PortalEventClass[]
+
+  @@index([stage])
+}
+
+model Student {
+  id           String       @id @default(cuid())
+  accountId    String       @unique
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  classId      String?
+  class        SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  firstName    String
+  lastName     String
+  gender       String?
+  dob          DateTime?    @db.Date
+  grade        String?
+  address      String?
+  fatherName   String?
+  fatherPhone  String?
+  motherName   String?
+  motherPhone  String?
+  parentEmails String[]     @default([])
+  notes        String?
+  importNotes  String? // data-quality flags from the migration, cleared once reviewed
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  attendance AttendanceRecord[]
+  points     PointEntry[]
+  followUps  FollowUpCase[]
+
+  quizResults   QuizResult[]
+  bibleReadings BibleReadingLog[]
+  achievements  StudentAchievement[]
+
+  @@index([classId])
+  @@index([lastName, firstName])
+}
+
+model Servant {
+  id             String    @id @default(cuid())
+  accountId      String    @unique
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  birthday       DateTime? @db.Date
+  address        String?
+  stageOversight Stage?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  classes    ClassServant[]
+  attendance ServantAttendance[]
+
+  agendaLead   AgendaWeek[] @relation("AgendaLead")
+  agendaBackup AgendaWeek[] @relation("AgendaBackup")
+  agendaItems  AgendaItem[] @relation("AgendaItemServant")
+  lessonsOwned Lesson[]     @relation("LessonAssignedTo")
+}
+
+model ClassServant {
+  classId   String
+  class     SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  servantId String
+  servant   Servant     @relation(fields: [servantId], references: [id], onDelete: Cascade)
+  title     ClassTitle?
+  sortOrder Int         @default(0)
+
+  @@id([classId, servantId])
+  @@index([servantId])
+}
+
+// Points-bearing sessions a student can attend (Bible Study, Vespers, ...).
+model AttendanceSession {
+  key       String  @id
+  label     String
+  points    Int
+  icon      String?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+}
+
+model AttendanceRecord {
+  id         String           @id @default(cuid())
+  studentId  String
+  student    Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId    String
+  class      SchoolClass      @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date       DateTime         @db.Date
+  sessionKey String
+  status     AttendanceStatus
+  reason     String? // sick | travel | other
+  note       String?
+  // Nullable + SetNull so a servant who has taken attendance can still be
+  // deleted (and so end-of-year reset can run) without destroying the
+  // students' attendance history. Matches ServantAttendance.markedById.
+  markedById String?
+  markedBy   Account?         @relation("AttendanceMarkedBy", fields: [markedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  pointEntry PointEntry?
+
+  @@unique([studentId, date, sessionKey])
+  @@index([classId, date, sessionKey])
+  @@index([studentId, sessionKey, date])
+}
+
+// Custom point activities a class defines ("Homework", "Choir", ...).
+model PointActivity {
+  id          String       @id @default(cuid())
+  classId     String?
+  class       SchoolClass? @relation(fields: [classId], references: [id], onDelete: Cascade)
+  key         String
+  label       String
+  icon        String?
+  points      Int
+  isActive    Boolean      @default(true)
+  createdById String?
+  createdBy   Account?     @relation("ActivityCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+
+  @@unique([classId, key])
+}
+
+model PointEntry {
+  id                 String            @id @default(cuid())
+  studentId          String
+  student            Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId            String?
+  class              SchoolClass?      @relation(fields: [classId], references: [id], onDelete: SetNull)
+  points             Int // signed
+  source             PointSource
+  activityKey        String?
+  activityLabel      String
+  reason             String?
+  attendanceRecordId String?           @unique
+  attendanceRecord   AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: Cascade)
+  undoOfId           String?           @unique
+  undoOf             PointEntry?       @relation("PointUndo", fields: [undoOfId], references: [id], onDelete: SetNull)
+  undoneBy           PointEntry?       @relation("PointUndo")
+  undone             Boolean           @default(false)
+  createdById        String?
+  createdBy          Account?          @relation("PointsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+
+  @@index([studentId, createdAt(sort: Desc)])
+  @@index([classId, createdAt(sort: Desc)])
+}
+
+model FollowUpCase {
+  id                  String      @id @default(cuid())
+  studentId           String
+  student             Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId             String
+  class               SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  status              CaseStatus  @default(OPEN)
+  origin              CaseOrigin
+  title               String
+  details             String?
+  consecutiveAbsences Int         @default(0)
+  lastSeen            DateTime?   @db.Date
+  nextFollowUp        DateTime?   @db.Date
+  resolvedAt          DateTime?
+  resolvedById        String?
+  resolvedBy          Account?    @relation("CaseResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolveReason       String? // attending_again | moved | sick | family | lost_interest | other
+  resolveNote         String?
+  createdById         String?
+  createdBy           Account?    @relation("CaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  logs FollowUpLog[]
+
+  @@index([classId, status])
+  @@index([studentId, status])
+}
+
+model FollowUpLog {
+  id     String       @id @default(cuid())
+  caseId String
+  case   FollowUpCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  method String // call | text | whatsapp | email | visit | other
+  note   String?
+  result String?
+  byId   String?
+  by     Account?     @relation("CaseLogBy", fields: [byId], references: [id], onDelete: SetNull)
+  at     DateTime     @default(now())
+
+  @@index([caseId, at(sort: Desc)])
+}
+
+// Weekly servant activities (Fri Bible Study, Sat Vespers, Sun Liturgy, ...).
+model ServantActivity {
+  key       String  @id
+  label     String
+  dayOfWeek Int // 0=Sun ... 6=Sat
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+}
+
+model ServantAttendance {
+  id          String           @id @default(cuid())
+  servantId   String
+  servant     Servant          @relation(fields: [servantId], references: [id], onDelete: Cascade)
+  activityKey String
+  weekStart   DateTime         @db.Date // Monday
+  status      AttendanceStatus
+  reason      String?
+  markedById  String?
+  markedBy    Account?         @relation("ServantAttendanceMarkedBy", fields: [markedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([servantId, activityKey, weekStart])
+  @@index([weekStart])
+}
+
+model PortalAuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     Account? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorName String
+  action    String // e.g. "attendance.save", "points.add", "student.update"
+  entity    String
+  entityId  String?
+  detail    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([entity, entityId])
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sunday School portal — teaching, engagement and check-in
+// ───────────────────────────────────────────────────────────────────────────
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum LessonStatus {
+  PLANNED
+  TAUGHT
+}
+
+enum FeedTag {
+  LESSON
+  ANNOUNCEMENT
+  RESOURCE
+  EVENT
+}
+
+enum ReactionKind {
+  HEART
+  PRAY
+  LIKE
+}
+
+enum QrTokenKind {
+  STUDENT_ATTENDANCE
+  STUDENT_POINTS
+  SERVANT_MEETING
+}
+
+// A quiz/exam. Questions and their answer keys live in ExamQuestion and are
+// never sent to a student's browser; grading happens on the server.
+model Exam {
+  id                String       @id @default(cuid())
+  classId           String?
+  class             SchoolClass? @relation(fields: [classId], references: [id], onDelete: Cascade)
+  stage             Stage? // set when an exam targets a whole stage rather than one class
+  title             String
+  subject           String?
+  dueDate           DateTime?    @db.Date
+  pointsPerQuestion Int          @default(2)
+  bibleReading      String?
+  readingMessage    String?
+  status            ExamStatus   @default(PUBLISHED)
+  reopenedFor       String[]     @default([]) // student ids granted access after the due date
+  createdById       String?
+  createdBy         Account?     @relation("ExamCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  questions ExamQuestion[]
+  results   QuizResult[]
+
+  @@index([classId, dueDate])
+  @@index([status, dueDate])
+}
+
+model ExamQuestion {
+  id           String   @id @default(cuid())
+  examId       String
+  exam         Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  sortOrder    Int      @default(0)
+  text         String
+  options      String[]
+  correctIndex Int // answer key — server-side only
+
+  answers QuizAnswer[]
+
+  @@index([examId, sortOrder])
+}
+
+model QuizResult {
+  id            String       @id @default(cuid())
+  examId        String
+  exam          Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId       String?
+  class         SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  score         Int
+  total         Int
+  correctCount  Int
+  questionCount Int
+  percentage    Int
+  submittedAt   DateTime     @default(now())
+
+  answers QuizAnswer[]
+
+  @@unique([examId, studentId])
+  @@index([studentId, submittedAt(sort: Desc)])
+  @@index([classId, submittedAt(sort: Desc)])
+}
+
+model QuizAnswer {
+  id          String       @id @default(cuid())
+  resultId    String
+  result      QuizResult   @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  chosenIndex Int?
+  isCorrect   Boolean
+
+  @@unique([resultId, questionId])
+}
+
+model Lesson {
+  id           String       @id @default(cuid())
+  classId      String
+  class        SchoolClass  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title        String
+  date         DateTime?    @db.Date
+  topics       String[]     @default([])
+  notes        String?
+  links        Json? // [{ label, url }]
+  status       LessonStatus @default(PLANNED)
+  assignedToId String?
+  assignedTo   Servant?     @relation("LessonAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdById  String?
+  createdBy    Account?     @relation("LessonCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([classId, date])
+  @@index([assignedToId])
+}
+
+// "Schedule of the Year": one row per class per week, holding the ten fixed
+// agenda activities as AgendaItem children.
+model AgendaWeek {
+  id              String      @id @default(cuid())
+  classId         String
+  class           SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  weekStart       DateTime    @db.Date // Monday
+  slideLink       String?
+  notes           String?
+  leadServantId   String?
+  leadServant     Servant?    @relation("AgendaLead", fields: [leadServantId], references: [id], onDelete: SetNull)
+  backupServantId String?
+  backupServant   Servant?    @relation("AgendaBackup", fields: [backupServantId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items AgendaItem[]
+
+  @@unique([classId, weekStart])
+  @@index([weekStart])
+}
+
+model AgendaItem {
+  id          String     @id @default(cuid())
+  weekId      String
+  week        AgendaWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  activityKey String // agpeya | song | seasons | lesson | bibleStudy | coptic | ritual | verse | memorization | saint
+  topic       String?
+  servantId   String?
+  servant     Servant?   @relation("AgendaItemServant", fields: [servantId], references: [id], onDelete: SetNull)
+  sortOrder   Int        @default(0)
+
+  @@unique([weekId, activityKey])
+  @@index([servantId])
+}
+
+model Hymn {
+  id        String   @id @default(cuid())
+  title     String
+  lyrics    String?
+  audioUrl  String?
+  notes     String?
+  addedById String?
+  addedBy   Account? @relation("HymnAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([title])
+}
+
+model FeedPost {
+  id         String      @id @default(cuid())
+  classId    String
+  class      SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title      String
+  body       String?
+  imageUrl   String?
+  link       String?
+  linkLabel  String?
+  tag        FeedTag     @default(ANNOUNCEMENT)
+  pinned     Boolean     @default(false)
+  authorId   String?
+  author     Account?    @relation("FeedAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  authorName String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  reactions FeedReaction[]
+
+  @@index([classId, pinned, createdAt(sort: Desc)])
+}
+
+model FeedReaction {
+  id        String       @id @default(cuid())
+  postId    String
+  post      FeedPost     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind      ReactionKind
+  createdAt DateTime     @default(now())
+
+  @@unique([postId, accountId, kind])
+  @@index([postId])
+}
+
+// Church-wide when classId and stage are both null.
+model Announcement {
+  id          String       @id @default(cuid())
+  title       String
+  body        String
+  emoji       String?
+  date        DateTime?    @db.Date
+  sortOrder   Int          @default(0)
+  classId     String?
+  class       SchoolClass? @relation(fields: [classId], references: [id], onDelete: Cascade)
+  stage       Stage?
+  isActive    Boolean      @default(true)
+  createdById String?
+  createdBy   Account?     @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([classId, date(sort: Desc)])
+  @@index([isActive, date(sort: Desc)])
+}
+
+model PortalEvent {
+  id          String   @id @default(cuid())
+  title       String
+  date        DateTime @db.Date
+  time        String?
+  location    String?
+  link        String?
+  notes       String?
+  targetAll   Boolean  @default(false)
+  createdById String?
+  createdBy   Account? @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  classes PortalEventClass[]
+
+  @@index([date])
+}
+
+model PortalEventClass {
+  eventId String
+  event   PortalEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  classId String
+  class   SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, classId])
+  @@index([classId])
+}
+
+model BibleReadingLog {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, date])
+  @@index([date])
+}
+
+model StudentAchievement {
+  id        String   @id @default(cuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  badgeKey  String
+  awardedAt DateTime @default(now())
+
+  @@unique([studentId, badgeKey])
+  @@index([studentId])
+}
+
+// Short-lived scan codes: a group code students scan (attendance or points),
+// or a servants-meeting code. Redemption is one row per account per token.
+model QrToken {
+  token         String      @id
+  kind          QrTokenKind
+  classIds      String[]    @default([])
+  sessionKey    String? // student attendance session
+  activityKey   String? // point activity or servant activity
+  activityLabel String?
+  points        Int?
+  date          DateTime?   @db.Date
+  weekStart     DateTime?   @db.Date
+  title         String?
+  expiresAt     DateTime
+  createdById   String?
+  createdBy     Account?    @relation("QrTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+
+  redemptions QrRedemption[]
+
+  @@index([expiresAt])
+}
+
+model QrRedemption {
+  id        String   @id @default(cuid())
+  tokenId   String
+  token     QrToken  @relation(fields: [tokenId], references: [token], onDelete: Cascade)
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  at        DateTime @default(now())
+
+  @@unique([tokenId, accountId])
+  @@index([tokenId])
+}
+
+// Notifications are computed per request from live data; this records which
+// ones a person has already dismissed.
+model NotificationRead {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  key       String // stable key of the computed notification
+  readAt    DateTime @default(now())
+
+  @@unique([accountId, key])
+  @@index([accountId])
+}
+
+// Portal-wide key/value settings (church contact card, end-of-year bookkeeping,
+// feature toggles). Separate from the website's AppSetting.
+model PortalSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }

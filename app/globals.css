@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400&family=Cinzel:wght@400;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -451,4 +451,83 @@
 .section-divider::after {
   content: '';
   @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-1 bg-gradient-to-r from-transparent via-gold to-transparent;
+}
+
+/* ── Sunday School portal: print defaults for reports and rosters ────────── */
+@media print {
+  .portal-print-page {
+    background: #fff !important;
+  }
+  .portal-print-page * {
+    box-shadow: none !important;
+  }
+  .portal-print-page table {
+    page-break-inside: auto;
+  }
+  .portal-print-page tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  .portal-print-break {
+    page-break-after: always;
+  }
+  /* Shell's <main> padding and the centered/max-width content wrapper are
+     chrome, not content — drop them so a printed report fills the page
+     once the sidebar/top bar are print:hidden. */
+  main:has(.portal-print-page) {
+    padding: 0 !important;
+  }
+  main:has(.portal-print-page) > div {
+    margin: 0 !important;
+    max-width: none !important;
+  }
+}
+
+/* ── Sunday School portal: motion, ported from the prototype ─────────────── */
+@keyframes portalFadeSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.portal-enter { animation: portalFadeSlideIn .3s ease both; }
+
+@keyframes portalShimmer {
+  0%   { background-position: -240px 0; }
+  100% { background-position: 240px 0; }
+}
+.portal-sk {
+  background: linear-gradient(90deg, #EDEAE2 25%, #F6F4EF 37%, #EDEAE2 63%);
+  background-size: 420px 100%;
+  animation: portalShimmer 1.3s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* Someone who asked for less motion gets none of it. */
+@media (prefers-reduced-motion: reduce) {
+  .portal-enter { animation: none; }
+  .portal-sk { animation: none; }
+  .portal-hover-lift:hover { transform: none !important; }
+}
+
+/* ── Portal sign-in: the prototype's slow Ken Burns pan ─────────────────── */
+@keyframes portalKenBurns {
+  0%   { transform: scale(1) translate(0, 0); }
+  100% { transform: scale(1.12) translate(-1.5%, -1%); }
+}
+.portal-kenburns {
+  animation: portalKenBurns 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes portalSlideLeft {
+  from { opacity: 0; transform: translateX(-26px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.portal-slide-left { animation: portalSlideLeft .8s cubic-bezier(.22,.68,0,1) both; }
+@keyframes portalCardUp {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.portal-card-up { animation: portalCardUp .6s .1s cubic-bezier(.22,.68,0,1.05) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-kenburns, .portal-slide-left, .portal-card-up { animation: none !important; }
 }
