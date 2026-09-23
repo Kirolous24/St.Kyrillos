@@ -3,10 +3,13 @@ import { ClipboardList, Percent, Plus, Send, Upload } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { listExams, assignableClasses } from '@/lib/portal/data/exams'
+import { prisma } from '@/lib/prisma'
 import { todayInNewYork } from '@/lib/portal/dates'
+import { studentName } from '@/lib/portal/data/students'
 import { PageHeader, StatCard, LinkButton } from '@/components/portal/ui'
 import { ClassPicker } from '@/components/portal/ClassPicker'
 import { ExamsTable } from './ExamsFilter'
+import { QUIZ_PASS_PERCENT } from '@/lib/portal/exams'
 
 export const metadata = { title: 'Exams' }
 
@@ -22,6 +25,18 @@ export default async function ExamsPage({ searchParams }: { searchParams: { clas
   ])
   const canWrite = writable.length > 0
   const today = todayInNewYork()
+
+  // Roster for the bulk-reopen picker: the students of every class this user
+  // may write exams for. The action re-filters per exam, so a selection that
+  // spans two classes still grants each child only their own class's quizzes.
+  const rosterRows = canWrite
+    ? await prisma.student.findMany({
+        where: { classId: { in: writable.map((c) => c.id) } },
+        orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+        select: { id: true, firstName: true, lastName: true, classId: true },
+      })
+    : []
+  const roster = rosterRows.map((r) => ({ id: r.id, name: studentName(r), classId: r.classId }))
 
   const open = rows.filter((r) => r.status === 'PUBLISHED' && (!r.dueDate || r.dueDate >= today))
   const submissions = rows.reduce((n, r) => n + r.submittedCount, 0)
@@ -72,7 +87,7 @@ export default async function ExamsPage({ searchParams }: { searchParams: { clas
           label="Average score"
           value={average === null ? '—' : `${average}%`}
           hint="Mean of each exam's average"
-          tone={average !== null && average >= 60 ? 'good' : average === null ? 'default' : 'warn'}
+          tone={average !== null && average >= QUIZ_PASS_PERCENT ? 'good' : average === null ? 'default' : 'warn'}
           icon={<Percent className="h-5 w-5" aria-hidden />}
         />
       </div>
@@ -83,7 +98,7 @@ export default async function ExamsPage({ searchParams }: { searchParams: { clas
         </div>
       )}
 
-      <ExamsTable rows={rows} today={today} canWrite={canWrite} />
+      <ExamsTable rows={rows} today={today} canWrite={canWrite} roster={roster} />
     </>
   )
 }

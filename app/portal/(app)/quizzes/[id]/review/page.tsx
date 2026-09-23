@@ -4,7 +4,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { studentReview } from '@/lib/portal/data/exams'
 import { scoreBand, SCORE_BAND_LABEL, SCORE_BAND_TONE, type ScoreBand } from '@/lib/portal/exams'
 import { formatDateTime } from '@/lib/portal/format'
-import { Badge, Card, LinkButton, PageHeader, StatCard } from '@/components/portal/ui'
+import { Badge, Callout, Card, LinkButton, PageHeader, StatCard } from '@/components/portal/ui'
 import { PrintButton } from '@/components/portal/PrintButton'
 import { cn } from '@/lib/utils'
 
@@ -49,6 +49,23 @@ export default async function QuizReviewPage({ params }: { params: { id: string 
           </>
         }
       />
+
+      {/* F0702 — the prototype said "Quiz submitted!" the moment a paper went
+          in. Here the redirect lands on a page that looks identical whether the
+          student handed it in a second ago or last term, so nothing confirmed
+          the hand-in had actually taken and nothing named the points it earned.
+          Keyed off how long ago the paper was submitted rather than a query
+          parameter, so it works however the student arrived, and comparing two
+          absolute instants keeps church time out of it entirely. Not printed. */}
+      {Date.now() - result.submittedAt.getTime() < 60_000 && (
+        <div className="mb-4 print:hidden" data-quiz-submitted="">
+          <Callout tone="good" title="Quiz submitted!">
+            {result.score > 0
+              ? `${result.score} point${result.score === 1 ? '' : 's'} added to your total.`
+              : 'Your paper is in. Read the answers below before the next one.'}
+          </Callout>
+        </div>
+      )}
 
       {/* The prototype's result banner: a big score ring and a word of praise. */}
       <div className="mb-4">

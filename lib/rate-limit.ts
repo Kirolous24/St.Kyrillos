@@ -13,6 +13,44 @@ function sweep(now: number) {
   })
 }
 
+/** True once `identifier` has spent its budget. Pure: it never consumes one. */
+export function isRateLimited(identifier: string): boolean {
+  const record = attempts.get(identifier.slice(0, MAX_KEY_LEN))
+  if (!record || Date.now() > record.resetAt) return false
+  return record.count >= MAX_ATTEMPTS
+}
+
+/**
+ * Spend one unit of budget. Call this ONLY after a credential check has
+ * actually failed — counting the attempt itself would refuse the sixth
+ * sign-in of any window even when the PIN is correct.
+ */
+export function recordFailedAttempt(identifier: string): void {
+  const key = identifier.slice(0, MAX_KEY_LEN)
+  const now = Date.now()
+  const record = attempts.get(key)
+  if (!record || now > record.resetAt) {
+    if (attempts.size > SWEEP_AT) sweep(now)
+    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS })
+    return
+  }
+  record.count++
+}
+
+/**
+ * Release the budget. A successful sign-in calls this, and so does an admin
+ * PIN reset — otherwise the reset cannot help, because a locked-out caller
+ * never reaches the success path that would clear the counter.
+ */
+export function clearRateLimit(identifier: string): void {
+  attempts.delete(identifier.slice(0, MAX_KEY_LEN))
+}
+
+/**
+ * Check-and-consume in one call. Correct for endpoints where every request
+ * costs budget; NOT for sign-in, which must only charge failures — use
+ * `isRateLimited` + `recordFailedAttempt` + `clearRateLimit` there.
+ */
 export function checkRateLimit(identifier: string): { allowed: boolean; remaining: number } {
   const key = identifier.slice(0, MAX_KEY_LEN)
   const now = Date.now()

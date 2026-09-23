@@ -6,12 +6,14 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
-import { toUTCDate } from '../dates'
+import { formatDateOnly, toUTCDate } from '../dates'
 import { parseCsvRecords } from '../csv'
 import {
   AGENDA_ACTIVITIES,
   agendaActivityOrder,
   csvRowsToAgenda,
+  isLegacyAgendaCsv,
+  legacyAgendaCsvToRecords,
   normaliseWeekStart,
   resolveActivityKey,
   safeUrl,
@@ -19,7 +21,7 @@ import {
   TEACHING_WRITE,
   type AgendaActivityKey,
 } from '../agenda'
-import { classServants } from '../data/agenda'
+import { agendaServantOptions } from '../data/agenda'
 import { audit } from '../audit'
 
 const ItemSchema = z.object({
@@ -40,16 +42,21 @@ const WeekSchema = z.object({
 
 export type SaveAgendaWeekInput = z.infer<typeof WeekSchema>
 
-/** Only servants who serve the class may be named on its agenda. */
-async function servantIdsOn(classId: string): Promise<Set<string>> {
-  const rows = await prisma.classServant.findMany({ where: { classId }, select: { servantId: true } })
-  return new Set(rows.map((r) => r.servantId))
+/**
+ * Any active servant may be named on a class's agenda, not only its own team.
+ * The prototype grouped the dropdown 'This Class' / 'Other Classes' precisely
+ * so a borrowed servant could be recorded; scoping the allow-list to the class
+ * made that impossible and the server rejected the id even if it got there.
+ */
+async function assignableServantIds(classId: string): Promise<Set<string>> {
+  const { onClass, others } = await agendaServantOptions(classId)
+  return new Set([...onClass, ...others].map((s) => s.id))
 }
 
 function requireServant(allowed: Set<string>, id: string | undefined, what: string): string | null {
   const value = (id ?? '').trim()
   if (!value) return null
-  if (!allowed.has(value)) throw new PortalError(`The ${what} must be a servant on this class.`)
+  if (!allowed.has(value)) throw new PortalError(`The ${what} must be an active servant.`)
   return value
 }
 
@@ -114,7 +121,7 @@ export async function saveAgendaWeek(raw: SaveAgendaWeekInput): Promise<ActionRe
     const monday = normaliseWeekStart(input.weekStart)
     if (!monday) throw new PortalError('Pick a valid week.')
 
-    const allowed = await servantIdsOn(cls.id)
+    const allowed = await assignableServantIds(cls.id)
     const lead = requireServant(allowed, input.leadServantId, 'lead servant')
     const backup = requireServant(allowed, input.backupServantId, 'backup servant')
     const slideLink = input.slideLink ? safeUrl(input.slideLink) : null
@@ -180,7 +187,7 @@ export async function shareAgendaWeek(
     })
     if (!week) throw new PortalError(`${source.name} has no agenda saved for that week.`)
 
-    const allowed = await servantIdsOn(target.id)
+    const allowed = await assignableServantIds(target.id)
     const keep = (id: string | null) => (id && allowed.has(id) ? id : null)
     let carried = 0
     let dropped = 0
@@ -221,28 +228,79 @@ export async function shareAgendaWeek(
 const ImportSchema = z.object({
   classId: z.string().min(1),
   csv: z.string().min(1).max(500_000),
+  /** Report what the file would do, and write nothing. */
+  preview: z.boolean().optional(),
 })
+
+/** One week of an agenda import, and what it would do to what is already there. */
+export interface AgendaImportWeek {
+  weekStart: string
+  label: string
+  /** Activities the file fills in for this week. */
+  filled: number
+  /** Activities already filled in on the stored week. */
+  existingFilled: number
+  /** Already-filled activities this import would replace. */
+  willOverwrite: number
+  /** Already-filled activities the file leaves empty, which the write blanks. */
+  willBlank: number
+}
+
+export interface AgendaImportReport {
+  weeks: number
+  skippedRows: number
+  /**
+   * F0797 — which rows, and why. "12 rows skipped" told a servant nothing they
+   * could act on; this names the line and the column. Capped at 12, and the count
+   * above stays the true total so the list can never read as the whole story.
+   */
+  skippedDetail: Array<{ row: number; reason: string }>
+  unmatchedNames: string[]
+  preview: boolean
+  plan: AgendaImportWeek[]
+  /**
+   * F0216 — true when the file was recognised as one exported from the old
+   * Firebase app and pivoted before importing. Surfaced so the preview can say
+   * so: an admin who expected the file to fail should be told why it did not,
+   * and one whose file goes in wrong needs to know which reader ran.
+   */
+  legacyFormat: boolean
+}
 
 /**
  * Import the CSV this page exports. Servants are matched by display name
  * against the class's own servants; a name that does not match is left blank
  * rather than silently attached to the wrong person.
  */
-export async function importAgendaCsv(
-  raw: z.infer<typeof ImportSchema>,
-): Promise<ActionResult<{ weeks: number; skippedRows: number; unmatchedNames: string[] }>> {
+export async function importAgendaCsv(raw: z.infer<typeof ImportSchema>): Promise<ActionResult<AgendaImportReport>> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = ImportSchema.parse(raw)
     const cls = await assertClassAction(user, input.classId, TEACHING_WRITE)
 
-    const { weeks, skipped } = csvRowsToAgenda(parseCsvRecords(input.csv))
+    // F0216 — a schedule exported from the old Firebase app is a different file:
+    // one row per week, 26 columns, with the date in its own column and the ten
+    // activities spread across pairs of columns. It used to import as nothing at
+    // all, because its "Week" column reads "1st Week of SEP" and every row was
+    // skipped for having no date. It is pivoted into this portal's shape and then
+    // goes through exactly the same importer, so there is one set of rules about
+    // what a valid week is.
+    const parsed = parseCsvRecords(input.csv)
+    const legacyFormat = isLegacyAgendaCsv(parsed)
+    const rows = legacyFormat ? legacyAgendaCsvToRecords(parsed) : parsed
+
+    const { weeks, skipped, skippedRowDetail } = csvRowsToAgenda(rows)
     if (weeks.length === 0) {
-      throw new PortalError('No usable rows found. The file needs a "Week Start" and an "Activity" column.')
+      throw new PortalError(
+        legacyFormat
+          ? 'That looks like a schedule from the old app, but none of its rows had a usable date in the "Date" column.'
+          : 'No usable rows found. The file needs a "Week Start" and an "Activity" column.',
+      )
     }
     if (weeks.length > 60) throw new PortalError('That file covers more than 60 weeks. Split it up first.')
 
-    const servants = await classServants(cls.id)
+    const options = await agendaServantOptions(cls.id)
+    const servants = [...options.onClass, ...options.others]
     const byName = new Map(servants.map((s) => [s.name.trim().toLowerCase(), s.id]))
     const unmatched = new Set<string>()
     const match = (name: string | null): string | null => {
@@ -250,6 +308,54 @@ export async function importAgendaCsv(
       const id = byName.get(name.trim().toLowerCase())
       if (!id) unmatched.add(name.trim())
       return id ?? null
+    }
+
+    // What the file would do to weeks that already have content. `writeWeek`
+    // writes every activity so that clearing a field really clears it — which
+    // also means an import silently blanks anything the file leaves empty.
+    // Nobody was told, and an agenda planned for a term could vanish behind a
+    // partial spreadsheet.
+    const stored = await prisma.agendaWeek.findMany({
+      where: { classId: cls.id, weekStart: { in: weeks.map((w) => toUTCDate(w.weekStart)) } },
+      select: {
+        weekStart: true,
+        items: { select: { activityKey: true, topic: true, servantId: true } },
+      },
+    })
+    const storedByWeek = new Map(stored.map((w) => [formatDateOnly(w.weekStart), w.items]))
+
+    const plan: AgendaImportWeek[] = weeks.map((week) => {
+      const incoming = new Map<string, (typeof week.items)[number]>(week.items.map((i) => [String(i.activityKey), i]))
+      const existing = storedByWeek.get(week.weekStart) ?? []
+      const existingFilled = existing.filter((i) => i.topic || i.servantId)
+      let willOverwrite = 0
+      let willBlank = 0
+      for (const e of existingFilled) {
+        const next = incoming.get(e.activityKey)
+        if (next && (next.topic || next.servantName)) willOverwrite += 1
+        else willBlank += 1
+      }
+      return {
+        weekStart: week.weekStart,
+        label: weekLabel(week.weekStart),
+        filled: week.items.filter((i) => i.topic || i.servantName).length,
+        existingFilled: existingFilled.length,
+        willOverwrite,
+        willBlank,
+      }
+    })
+
+    if (input.preview) {
+      // Nothing written, so nothing logged and nothing invalidated.
+      return {
+        weeks: weeks.length,
+        skippedRows: skipped,
+        skippedDetail: skippedRowDetail.slice(0, 12),
+        unmatchedNames: Array.from(unmatched).slice(0, 12),
+        preview: true,
+        plan,
+        legacyFormat,
+      }
     }
 
     for (const week of weeks) {
@@ -270,9 +376,24 @@ export async function importAgendaCsv(
       )
     }
 
-    await audit(user, 'agenda.import', 'class', cls.id, `${cls.name}: imported ${weeks.length} week${weeks.length === 1 ? '' : 's'} of agenda`)
+    const overwritten = plan.reduce((n, w) => n + w.willOverwrite + w.willBlank, 0)
+    await audit(
+      user,
+      'agenda.import',
+      'class',
+      cls.id,
+      `${cls.name}: imported ${weeks.length} week${weeks.length === 1 ? '' : 's'} of agenda${overwritten > 0 ? `, replacing ${overwritten} filled activit${overwritten === 1 ? 'y' : 'ies'}` : ''}`,
+    )
     revalidateAgenda(cls.id)
-    return { weeks: weeks.length, skippedRows: skipped, unmatchedNames: Array.from(unmatched).slice(0, 12) }
+    return {
+      weeks: weeks.length,
+      skippedRows: skipped,
+      skippedDetail: skippedRowDetail.slice(0, 12),
+      unmatchedNames: Array.from(unmatched).slice(0, 12),
+      preview: false,
+      plan,
+      legacyFormat,
+    }
   })
 }
 
@@ -296,5 +417,59 @@ export async function clearAgendaWeek(raw: z.infer<typeof ClearSchema>): Promise
     await audit(user, 'agenda.clear', 'class', cls.id, `${cls.name}: cleared the agenda for ${weekLabel(monday)}`)
     revalidateAgenda(cls.id)
     return undefined
+  })
+}
+
+const ClearManySchema = z.object({
+  classId: z.string().min(1),
+  weekStarts: z.array(z.string().min(1)).min(1).max(60),
+})
+
+/**
+ * F0221 / F0490 / F0585 / F0586 — clear several weeks of the year plan at once.
+ *
+ * A servant who filled September against the wrong class, or imported a
+ * schedule a week out of step, had to open and clear each week one at a time.
+ * The old app had tick boxes on the year list and a "Clear Selected Weeks"
+ * button, and this is that.
+ *
+ * It deletes a servant's lesson planning, so the caller confirms with the count
+ * and the weeks in front of them. Weeks that were never filled are skipped
+ * rather than failing the batch — ticking an empty week is harmless, and an
+ * all-or-nothing batch would make the whole action fail on one stale tile.
+ */
+export async function clearAgendaWeeks(raw: z.infer<typeof ClearManySchema>): Promise<ActionResult<{ cleared: number; skipped: number }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = ClearManySchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, TEACHING_WRITE)
+
+    const mondays: string[] = []
+    for (const raw of Array.from(new Set(input.weekStarts))) {
+      const monday = normaliseWeekStart(raw)
+      if (!monday) throw new PortalError(`"${raw}" is not a valid week.`)
+      mondays.push(monday)
+    }
+
+    const weeks = await prisma.agendaWeek.findMany({
+      where: { classId: cls.id, weekStart: { in: mondays.map((m) => toUTCDate(m)) } },
+      select: { id: true, weekStart: true },
+    })
+    if (weeks.length === 0) throw new PortalError('None of those weeks has anything saved.')
+
+    await prisma.agendaWeek.deleteMany({ where: { id: { in: weeks.map((w) => w.id) } } })
+    const labels = weeks
+      .map((w) => weekLabel(formatDateOnly(w.weekStart)))
+      .slice(0, 12)
+      .join(', ')
+    await audit(
+      user,
+      'agenda.clearMany',
+      'class',
+      cls.id,
+      `${cls.name}: cleared ${weeks.length} week${weeks.length === 1 ? '' : 's'} — ${labels}${weeks.length > 12 ? `, and ${weeks.length - 12} more` : ''}`,
+    )
+    revalidateAgenda(cls.id)
+    return { cleared: weeks.length, skipped: mondays.length - weeks.length }
   })
 }

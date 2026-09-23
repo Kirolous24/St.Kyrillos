@@ -32,11 +32,16 @@ export interface ReadingSections {
   EPGospel: ReadingBook[] | null;
 }
 
-/** A concise reading reference (no verse text) for display */
+/** A reading reference, with the passage text when the source gave it. */
 export interface ReadingRef {
   section: string; // e.g. "Pauline", "Gospel (Liturgy)"
   bookName: string;
   reference: string; // e.g. "Ephesians 4:1-16"
+  /**
+   * The verses themselves, so a reading can be opened and read in place.
+   * Optional because anything already in the cache predates this field.
+   */
+  verses?: { num: number; text: string }[];
 }
 
 export interface SynaxariumEntry {
@@ -147,7 +152,15 @@ async function fetchReadingsRaw(
             first === last
               ? `${book.bookName} ${ch.chapterNum}:${first}`
               : `${book.bookName} ${ch.chapterNum}:${first}-${last}`;
-          readings.push({ section: label, bookName: book.bookName, reference: ref });
+          readings.push({
+            section: label,
+            bookName: book.bookName,
+            reference: ref,
+            // Carried through from the same response the reference is derived
+            // from — the exact Coptic pericope, with no second lookup and no
+            // new outbound dependency.
+            verses: verses.map((v: { num: number; text: string }) => ({ num: v.num, text: v.text })),
+          });
         }
       }
     }

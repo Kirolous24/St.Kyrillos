@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
-import { parseDateOnly, toUTCDate } from '../dates'
+import { parseDateOnly, toUTCDate, formatDateOnly } from '../dates'
 import { safeUrl, TEACHING_WRITE } from '../agenda'
 import { loadLessonForAction } from '../data/lessons'
 import { audit } from '../audit'
@@ -146,7 +146,64 @@ const CopySchema = z.object({
   fromClassId: z.string().min(1),
   toClassId: z.string().min(1),
   onlyPlanned: z.boolean().optional(),
+  /** Specific lessons to copy. Empty or absent means all of them. */
+  lessonIds: z.array(z.string().min(1)).max(300).optional(),
 })
+
+/** One candidate lesson, for the picker. */
+export interface CopyCandidate {
+  id: string
+  title: string
+  date: string | null
+  status: 'PLANNED' | 'TAUGHT'
+  topics: string[]
+  /** Already present in the target class, so copying it would be a duplicate. */
+  alreadyThere: boolean
+}
+
+/**
+ * The lessons another class could give this one, and which of them this class
+ * already has.
+ *
+ * Read access on the SOURCE is deliberately not required: the archive is open
+ * to every servant (lessons are teaching material, not student data), and it is
+ * write access on the *target* that decides whether anything may be copied.
+ */
+export async function listCopyCandidates(
+  fromClassId: string,
+  toClassId: string,
+): Promise<ActionResult<{ sourceName: string; lessons: CopyCandidate[] }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    if (fromClassId === toClassId) throw new PortalError('Pick a different class to copy from.')
+    const target = await assertClassAction(user, toClassId, TEACHING_WRITE)
+    const source = await prisma.schoolClass.findUnique({ where: { id: fromClassId }, select: { id: true, name: true } })
+    if (!source) throw new PortalError('That class does not exist.')
+
+    const [lessons, existing] = await Promise.all([
+      prisma.lesson.findMany({
+        where: { classId: source.id },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+        take: 300,
+        select: { id: true, title: true, date: true, status: true, topics: true },
+      }),
+      prisma.lesson.findMany({ where: { classId: target.id }, select: { title: true, date: true } }),
+    ])
+    const seen = new Set(existing.map((l) => `${l.title}|${l.date?.toISOString() ?? ''}`))
+
+    return {
+      sourceName: source.name,
+      lessons: lessons.map((l) => ({
+        id: l.id,
+        title: l.title,
+        date: l.date ? formatDateOnly(l.date) : null,
+        status: l.status as 'PLANNED' | 'TAUGHT',
+        topics: l.topics,
+        alreadyThere: seen.has(`${l.title}|${l.date?.toISOString() ?? ''}`),
+      })),
+    }
+  })
+}
 
 /**
  * Copy — never move. The prototype reassigned the source rows, which emptied
@@ -161,12 +218,24 @@ export async function copyLessonsFromClass(
     const input = CopySchema.parse(raw)
     if (input.fromClassId === input.toClassId) throw new PortalError('Pick a different class to copy from.')
 
-    // Read access on the source, write access on the target.
-    const source = await assertClassAction(user, input.fromClassId, 'class.read')
+    // Write access on the TARGET is the check that matters — that is what
+    // decides whether anything may be created. The source only has to exist:
+    // the lesson archive is open to every servant, so demanding class.read on
+    // it would refuse exactly the servant this feature is for.
     const target = await assertClassAction(user, input.toClassId, TEACHING_WRITE)
+    const source = await prisma.schoolClass.findUnique({
+      where: { id: input.fromClassId },
+      select: { id: true, name: true },
+    })
+    if (!source) throw new PortalError('That class does not exist.')
 
+    const picked = input.lessonIds ?? []
     const lessons = await prisma.lesson.findMany({
-      where: { classId: source.id, ...(input.onlyPlanned ? { status: 'PLANNED' as const } : {}) },
+      where: {
+        classId: source.id,
+        ...(picked.length > 0 ? { id: { in: picked } } : {}),
+        ...(input.onlyPlanned ? { status: 'PLANNED' as const } : {}),
+      },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
       take: 300,
       select: { title: true, date: true, topics: true, notes: true, links: true },

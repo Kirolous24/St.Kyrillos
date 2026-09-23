@@ -98,3 +98,21 @@ export async function setClassPhoto(classId: string, dataUrl: string): Promise<A
     return undefined
   })
 }
+
+/**
+ * F0839 — setClassPhoto shipped without a counterpart, so a class photo could
+ * be replaced but never cleared: an admin who uploaded the wrong picture had no
+ * way back. Same permission as setting it, since removing a photo is the milder
+ * of the two.
+ */
+export async function removeClassPhoto(classId: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const cls = await assertClassAction(user, classId, 'student.write')
+    await prisma.schoolClass.update({ where: { id: cls.id }, data: { photo: null } })
+    await audit(user, 'photo.removeClass', 'class', cls.id, `Removed the photo for ${cls.name}`)
+    revalidatePath(`/portal/classes/${cls.id}`)
+    revalidatePath('/portal/classes')
+    return undefined
+  })
+}

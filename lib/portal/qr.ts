@@ -224,18 +224,26 @@ export interface MarkServantInput {
 }
 
 /**
- * Who may write a ServantAttendance row: an admin, a servant marking
- * themselves, or a coordinator / stage overseer for a servant in their scope.
+ * Who may write a ServantAttendance row: an admin, or any servant — for
+ * themselves or for a colleague who is on screen.
+ *
+ * The prototype had no gate here at all: whoever ran the meeting marked the
+ * room. The port narrowed that to coordinators and stage overseers, which read
+ * as sensible least privilege but meant that if the person actually running
+ * Sunday was not flagged as a coordinator, nobody could record the team. The
+ * church asked for the open rule back.
+ *
+ * The scope check stays, and is now the only limit on a servant: they may mark
+ * the people their own grid shows them (their classes, or the stage they
+ * oversee), not any servant in the church. Marking yourself always works, even
+ * outside every scope, so a servant with no class can still record themselves.
  */
 export function canMarkServant(input: MarkServantInput): string | null {
   if (input.role === 'ADMIN') return null
   if (input.servantId && input.servantId === input.targetServantId) return null
   if (input.role !== 'SERVANT') return 'Only servants and admins can record servant attendance.'
-  if (!input.isCoordinator && !input.hasStageOversight) {
-    return 'Only a coordinator or stage overseer can mark other servants.'
-  }
   if (!input.scopeServantIds.includes(input.targetServantId)) {
-    return 'That servant is outside the classes you oversee.'
+    return 'That servant is outside the classes you serve.'
   }
   return null
 }

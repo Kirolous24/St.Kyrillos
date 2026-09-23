@@ -121,6 +121,22 @@ export function ExamActions({
           <button type="button" onClick={saveReopen} disabled={pending} className={buttonClass('primary', 'sm')}>
             <Unlock className="h-4 w-4" aria-hidden /> {pending ? 'Saving…' : 'Save reopened list'}
           </button>
+          {/* F0037 / F0488 — when a quiz is published late the whole class needs
+              reopening, and ticking thirty children one box at a time is the job
+              that gets abandoned half-done. Only `candidates` are ticked, so a
+              student who has already handed the paper in is never reopened by
+              accident. */}
+          {candidates.length > 0 && (
+            <button
+              type="button"
+              data-reopen-select-all=""
+              onClick={() => setPicked(new Set(candidates.map((r) => r.id)))}
+              disabled={picked.size === candidates.length}
+              className={cn(buttonClass('secondary', 'sm'), 'disabled:opacity-40')}
+            >
+              Select all {candidates.length}
+            </button>
+          )}
           {picked.size > 0 && (
             <button type="button" onClick={() => setPicked(new Set())} className={buttonClass('secondary', 'sm')}>
               Clear all

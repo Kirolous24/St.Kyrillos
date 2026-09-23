@@ -110,12 +110,32 @@ const SelfSchema = z.object({
   status: z.enum(['PRESENT', 'EXCUSED', 'ABSENT']),
 })
 
+/**
+ * The servant row the signed-in account records its own attendance against,
+ * creating one the first time if the account is staff without a profile.
+ *
+ * Every servant-attendance surface queried the Servant table, so an ADMIN or
+ * PASTOR who also serves on a Sunday had nowhere to record themselves — they
+ * never appeared as a row, and this action refused outright. The prototype
+ * keyed self check-in on the plain account id, so any signed-in person worked.
+ */
+async function myServantId(user: { accountId: string; role: string; servantId?: string }): Promise<string> {
+  if (user.servantId) return user.servantId
+  const existing = await prisma.servant.findUnique({ where: { accountId: user.accountId }, select: { id: true } })
+  if (existing) return existing.id
+  if (user.role !== 'ADMIN' && user.role !== 'PASTOR' && user.role !== 'SERVANT') {
+    throw new PortalError('Only servants record servant attendance.')
+  }
+  const created = await prisma.servant.create({ data: { accountId: user.accountId }, select: { id: true } })
+  return created.id
+}
+
 /** One-tap self check-in from the dashboard widget and My Attendance. */
 export async function markMyServantAttendance(raw: z.infer<typeof SelfSchema>): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = SelfSchema.parse(raw)
-    if (!user.servantId) throw new PortalError('Your account is not linked to a servant profile.')
+    const servantId = await myServantId(user)
 
     const activity = await prisma.servantActivity.findUnique({ where: { key: input.activityKey } })
     if (!activity || !activity.isActive) throw new PortalError('That servant activity no longer exists.')
@@ -124,12 +144,12 @@ export async function markMyServantAttendance(raw: z.infer<typeof SelfSchema>): 
     const week = toUTCDate(weekStart)
 
     await prisma.servantAttendance.upsert({
-      where: { servantId_activityKey_weekStart: { servantId: user.servantId, activityKey: activity.key, weekStart: week } },
-      create: { servantId: user.servantId, activityKey: activity.key, weekStart: week, status: input.status, markedById: user.accountId },
+      where: { servantId_activityKey_weekStart: { servantId, activityKey: activity.key, weekStart: week } },
+      create: { servantId, activityKey: activity.key, weekStart: week, status: input.status, markedById: user.accountId },
       update: { status: input.status, markedById: user.accountId },
     })
 
-    await audit(user, 'servant-attendance.self', 'servant', user.servantId, `${activity.label}, week of ${weekStart}: ${input.status.toLowerCase()}`)
+    await audit(user, 'servant-attendance.self', 'servant', servantId, `${activity.label}, week of ${weekStart}: ${input.status.toLowerCase()}`)
     revalidatePath('/portal/servant-attendance')
     revalidatePath('/portal/my-attendance')
     revalidatePath('/portal')

@@ -29,6 +29,7 @@ import {
   type QrKind,
 } from '../qr'
 import { qrSvgDataUrl } from '@/components/portal/QrImage'
+import { syncAutoFollowUps } from '../followup-sync'
 
 /**
  * QR check-in. Every code is a 128-bit CSPRNG token row in QrToken with a real
@@ -423,6 +424,23 @@ async function redeemStudent(accountId: string, studentId: string, name: string,
       outcome.detail = `You already checked in for ${session.label} on ${formatLongDate(date)}.`
     }
 
+    // A student who scans in is attending again, so an open case should close.
+    // The port synced cases only from the manual Save-attendance button, so a
+    // class checking in by group QR never had its follow-ups updated at all.
+    if (session.key === 'sunday' && !outcome.already) {
+      const cls = await prisma.schoolClass.findUnique({
+        where: { id: classId },
+        select: { visitationThreshold: true },
+      })
+      await syncAutoFollowUps({
+        classId,
+        studentIds: [student.id],
+        threshold: cls?.visitationThreshold ?? 2,
+        asOf: date,
+      })
+      revalidatePath('/portal/follow-ups')
+    }
+
     revalidatePath(`/portal/classes/${classId}/attendance`)
     return outcome
   }
@@ -514,6 +532,55 @@ const ScanSchema = z.object({
 })
 
 export type ScanStudentInput = z.infer<typeof ScanSchema>
+
+export interface ResolvedScan {
+  studentId: string
+  name: string
+  /** Already marked present / already has this activity today. */
+  already: boolean
+}
+
+/**
+ * Identify who a scanned card belongs to, and write nothing.
+ *
+ * The prototype queued scans and let the servant look over the list before
+ * committing; the port wrote on every scan with only an after-the-fact Undo, so
+ * a mis-scan at the door was already a row in the register. This is the
+ * resolution half on its own.
+ *
+ * It keeps `scanStudent`'s permission check exactly: without it, anyone could
+ * turn this into a way to test which IDs exist in a class.
+ */
+export async function resolveScan(raw: ScanStudentInput): Promise<ActionResult<ResolvedScan>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = ScanSchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, input.mode === 'ATTENDANCE' ? 'attendance.write' : 'points.write')
+
+    const loginId = parseStudentPayload(input.code)
+    if (!loginId) throw new PortalError('That is not a student card. Scan a portal QR card or type a 4-digit ID.')
+
+    const student = await prisma.student.findFirst({
+      where: { classId: cls.id, account: { loginId, isActive: true } },
+      select: { id: true, firstName: true, lastName: true },
+    })
+    if (!student) throw new PortalError(`No student with ID ${loginId} in ${cls.name}.`)
+
+    const date = parseDateOnly(input.date) ?? todayInNewYork()
+    let already = false
+    if (input.mode === 'ATTENDANCE' && input.sessionKey) {
+      const existing = await prisma.attendanceRecord.findUnique({
+        where: {
+          studentId_date_sessionKey: { studentId: student.id, date: toUTCDate(date), sessionKey: input.sessionKey },
+        },
+        select: { status: true },
+      })
+      already = existing?.status === 'PRESENT'
+    }
+
+    return { studentId: student.id, name: studentName(student), already }
+  })
+}
 
 export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<ScanOutcome>> {
   return runAction(async () => {

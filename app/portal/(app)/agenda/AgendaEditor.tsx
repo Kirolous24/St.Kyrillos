@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, Eraser, Save } from 'lucide-react'
+import { CalendarDays, Eraser, ExternalLink, Save } from 'lucide-react'
 import { clearAgendaWeek, saveAgendaWeek } from '@/lib/portal/actions/agenda'
 import type { ServantOption } from '@/lib/portal/data/agenda'
+import { AGPEYA_HOURS } from '@/lib/portal/agenda'
 import { Card, Callout, Field, buttonClass, inputClass, selectClass, textareaClass } from '@/components/portal/ui'
 import { formatDateTime } from '@/lib/portal/format'
 import { cn } from '@/lib/utils'
@@ -22,6 +23,8 @@ interface Props {
   weekStart: string
   weekLabel: string
   servants: ServantOption[]
+  /** Servants who do not serve this class — the prototype's 'Other Classes' group. */
+  otherServants?: ServantOption[]
   initial: {
     slideLink: string
     notes: string
@@ -32,7 +35,7 @@ interface Props {
   savedAt: string | null
 }
 
-export function AgendaEditor({ classId, className, weekStart, weekLabel, servants, initial, savedAt }: Props) {
+export function AgendaEditor({ classId, className, weekStart, weekLabel, servants, otherServants = [], initial, savedAt }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   // Keyed on the week so navigating to another week resets the form.
@@ -92,9 +95,20 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
   const servantSelect = (value: string, onChange: (v: string) => void, label: string, id?: string) => (
     <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={selectClass} aria-label={label}>
       <option value="">Unassigned</option>
-      {servants.map((s) => (
-        <option key={s.id} value={s.id}>{s.name}</option>
-      ))}
+      {servants.length > 0 && (
+        <optgroup label="This class">
+          {servants.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </optgroup>
+      )}
+      {otherServants.length > 0 && (
+        <optgroup label="Other classes">
+          {otherServants.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </optgroup>
+      )}
     </select>
   )
 
@@ -124,7 +138,10 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
           )}
           {servants.length === 0 && (
             <Callout tone="warn">
-              No servants are on {className} yet, so activities cannot be assigned to anyone.
+              No servants are on {className} yet
+              {otherServants.length > 0
+                ? ' — you can still assign someone from another class under “Other classes”.'
+                : ', so activities cannot be assigned to anyone.'}
             </Callout>
           )}
         </div>
@@ -140,14 +157,30 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
         </Field>
         <div className="sm:col-span-2">
           <Field label="Slide link" htmlFor="agenda-slides" hint="A http or https address">
-            <input
-              id="agenda-slides"
-              value={form.slideLink}
-              onChange={(e) => setForm({ ...form, slideLink: e.target.value })}
-              className={inputClass}
-              placeholder="https://docs.google.com/presentation/…"
-              inputMode="url"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                id="agenda-slides"
+                value={form.slideLink}
+                onChange={(e) => setForm({ ...form, slideLink: e.target.value })}
+                className={inputClass}
+                placeholder="https://docs.google.com/presentation/…"
+                inputMode="url"
+              />
+              {/* F0224 — "Open Slide" existed on the read-only views but not
+                  for the person editing, who is the one with the deck open in
+                  another tab. Only offered once the field holds a real http(s)
+                  address, so it cannot become a link to nowhere. */}
+              {/^https?:\/\//i.test(form.slideLink.trim()) && (
+                <a
+                  href={form.slideLink.trim()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(buttonClass('secondary'), 'shrink-0 whitespace-nowrap')}
+                >
+                  <ExternalLink className="h-[13px] w-[13px]" aria-hidden /> Open
+                </a>
+              )}
+            </div>
           </Field>
         </div>
       </div>
@@ -172,14 +205,39 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
                 >
                   {row.label}
                 </label>
-                <input
-                  id={`topic-${row.key}`}
-                  value={row.topic}
-                  onChange={(e) => setRow(idx, { topic: e.target.value })}
-                  className={inputClass}
-                  placeholder="Topic…"
-                  maxLength={200}
-                />
+                {/* F0588 / F0222 — the Agpeya row is a closed list of six
+                    hours, not free text. As a text box, "3rd" and "Third" and
+                    "3rd hour" became three different answers to one question,
+                    and nothing downstream could group them. A value already
+                    saved that is not one of the six is kept as an extra option
+                    rather than silently dropped on the next save. */}
+                {row.key === 'agpeya' ? (
+                  <select
+                    id={`topic-${row.key}`}
+                    value={row.topic}
+                    onChange={(e) => setRow(idx, { topic: e.target.value })}
+                    className={selectClass}
+                  >
+                    <option value="">Select hour…</option>
+                    {AGPEYA_HOURS.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                    {row.topic && !AGPEYA_HOURS.includes(row.topic as (typeof AGPEYA_HOURS)[number]) && (
+                      <option value={row.topic}>{row.topic}</option>
+                    )}
+                  </select>
+                ) : (
+                  <input
+                    id={`topic-${row.key}`}
+                    value={row.topic}
+                    onChange={(e) => setRow(idx, { topic: e.target.value })}
+                    className={inputClass}
+                    placeholder="Topic…"
+                    maxLength={200}
+                  />
+                )}
                 {servantSelect(row.servantId, (v) => setRow(idx, { servantId: v }), `Servant for ${row.label}`)}
               </li>
             ))}
@@ -204,10 +262,15 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
         <button type="button" onClick={save} disabled={pending} className={buttonClass('primary')}>
           <Save className="h-4 w-4" aria-hidden /> {pending ? 'Saving…' : 'Save week'}
         </button>
+        {/* F0221 — the resting label says which week. It used to read just
+            "Clear", which was unambiguous while it was the only clear on the
+            page; now that "Clear several weeks" sits alongside it, "Clear" on its
+            own is the wrong word to put next to a bulk delete. The confirm keeps
+            naming the week it is about to erase. */}
         {confirmClear ? (
           <>
             <button type="button" onClick={clear} disabled={pending} className={buttonClass('danger', 'sm')}>
-              Clear this week
+              Yes, clear {weekLabel}
             </button>
             <button type="button" onClick={() => setConfirmClear(false)} className={buttonClass('ghost', 'sm')}>
               Keep it
@@ -215,7 +278,7 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
           </>
         ) : (
           <button type="button" onClick={() => setConfirmClear(true)} disabled={pending} className={buttonClass('ghost', 'sm')}>
-            <Eraser className="h-4 w-4" aria-hidden /> Clear
+            <Eraser className="h-4 w-4" aria-hidden /> Clear this week
           </button>
         )}
         {savedAt && <span className="text-[11px] text-parch-500">Last saved {formatDateTime(new Date(savedAt))}</span>}

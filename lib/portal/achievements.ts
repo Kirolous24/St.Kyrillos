@@ -73,6 +73,16 @@ export interface AchievementStats {
   lifetimePoints: number
   /** Consecutive Sunday School sessions attended, most recent first. */
   attendanceStreak: number
+  /**
+   * F0734 / F0735 — distinct Sundays ever attended, all time.
+   *
+   * Separate from `attendanceStreak` on purpose: a streak resets the moment a
+   * child misses one Sunday, so every attendance badge the portal had rewarded
+   * turning up *without a gap*. A child who comes faithfully every other week
+   * all year earned nothing at all, which is the gap this closes. A count, not
+   * a slice, so it does not quietly cap at whatever window the query takes.
+   */
+  sundaysAttended: number
   /** QuizResult rows. */
   quizzesCompleted: number
   /** Best QuizResult.percentage, 0 when none. */
@@ -137,6 +147,27 @@ export const BADGES: readonly Badge[] = [
     requirement: 'Attend 8 Sundays in a row',
     target: 8,
     value: (s) => s.attendanceStreak,
+  },
+  /**
+   * F0734 / F0735 — the badge the old app had and this one did not.
+   *
+   * The old app's 'faithful' meant ten Sundays *altogether*; here it means three
+   * in a row, and every other attendance badge is a streak too. So the child who
+   * comes every other Sunday all year — often the one whose family drives
+   * furthest — could never earn a single attendance badge.
+   *
+   * Added as its own key rather than by re-pointing 'faithful' at a lifetime
+   * count. Changing what an existing key means would take the badge away from
+   * every child currently holding it, dated; the name and the picture here are
+   * decoration and can be changed freely, but this key must not be.
+   */
+  {
+    key: 'ten-sundays',
+    name: 'Ten Sundays',
+    emoji: '🗓️',
+    requirement: 'Come to 10 Sundays altogether',
+    target: 10,
+    value: (s) => s.sundaysAttended,
   },
   {
     key: 'word-student',

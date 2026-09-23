@@ -153,10 +153,21 @@ export function QuizTaker({
           </p>
         )}
         <p className="mb-3 text-[12.5px] text-parch-500">You can only hand this quiz in once.</p>
+        {/* F0036 / F0699 — the old system refused a hand-in until every question
+            was answered, which strands a child who cannot answer one with no way
+            to finish: guess, or abandon the quiz. A hand-in can never be undone,
+            so the real protection is the last question saying plainly what is
+            about to happen — the count goes on the button itself, not only in a
+            line of text above it that a child tapping Hand in has already read
+            past. */}
         {confirming ? (
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={hand_in} disabled={pending} className={buttonClass('primary')}>
-              {pending ? 'Submitting…' : 'Yes, hand it in'}
+              {pending
+                ? 'Submitting…'
+                : unanswered > 0
+                  ? `Yes, hand in with ${unanswered} blank`
+                  : 'Yes, hand it in'}
             </button>
             <button type="button" onClick={() => setConfirming(false)} disabled={pending} className={buttonClass('secondary')}>
               Keep working
@@ -164,7 +175,8 @@ export function QuizTaker({
           </div>
         ) : (
           <button type="button" onClick={() => setConfirming(true)} disabled={pending} className={buttonClass('primary')}>
-            <Send className="h-4 w-4" aria-hidden /> Hand in
+            <Send className="h-4 w-4" aria-hidden />{' '}
+            {unanswered > 0 ? `Hand in with ${unanswered} blank` : 'Hand in'}
           </button>
         )}
       </Card>

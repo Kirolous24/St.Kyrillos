@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { BookOpen, CalendarDays, Star, UserCheck } from 'lucide-react'
 import type { PortalUser } from '@/lib/portal/permissions'
 import { weekAssignmentsForServant } from '@/lib/portal/data/agenda'
-import { nextPlannedLesson } from '@/lib/portal/data/lessons'
+import { nextPlannedLessons } from '@/lib/portal/data/lessons'
 import { mondayOf, todayInNewYork } from '@/lib/portal/dates'
 import { weekLabel, type Assignment } from '@/lib/portal/agenda'
 import { formatLongDate } from '@/lib/portal/format'
@@ -26,12 +26,12 @@ export async function LessonsWidget({ user }: { user: PortalUser }): Promise<JSX
 
   const today = todayInNewYork()
   const monday = mondayOf(today)
-  const [assignments, lesson] = await Promise.all([
+  const [assignments, lessons] = await Promise.all([
     weekAssignmentsForServant(user.servantId, monday),
-    nextPlannedLesson(user.classIds, user.servantId, today),
+    nextPlannedLessons(user.classIds, user.servantId, today),
   ])
 
-  if (assignments.length === 0 && !lesson) return null
+  if (assignments.length === 0 && lessons.length === 0) return null
 
   return (
     <Card
@@ -81,22 +81,45 @@ export async function LessonsWidget({ user }: { user: PortalUser }): Promise<JSX
         <p className="px-[18px] py-2 text-[11px] text-parch-500">+{assignments.length - 6} more this week</p>
       )}
 
-      {lesson && (
-        <div className="border-t border-[#F0EEE8] px-[18px] py-3.5">
-          <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Next lesson</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/portal/lessons?class=${encodeURIComponent(lesson.classId)}`}
-              className="font-serif text-[14px] font-bold text-parch-900 hover:text-brand-800"
-            >
-              {lesson.title}
+      {/* The prototype listed the next three, not one (F0369): a servant
+          planning a week needs to see what follows the lesson in front of
+          them. "View all" goes to the lesson archive, as it did in the OG. */}
+      {lessons.length > 0 && (
+        <div className="border-t border-[#F0EEE8]">
+          <div className="flex items-center justify-between px-[18px] pb-1 pt-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">
+              {lessons.length === 1 ? 'Next lesson' : 'Upcoming lessons'}
+            </p>
+            {/* F0093 — the prototype's View-all on this block went to
+                Curriculum Resources, not the lesson archive: a servant reading
+                "what am I teaching next" wants the material, and every lesson
+                title below already links into the archive. Checked the
+                destination first — /portal/curriculum calls notFound() for
+                STUDENT only, and this widget returns null for anyone without a
+                servant record, so it cannot become a 404. */}
+            <Link href="/portal/curriculum" className="text-[11px] font-bold text-brand-800 hover:underline">
+              Curriculum
             </Link>
-            {lesson.assignedToId === user.servantId && <Badge tone="gold">Yours</Badge>}
           </div>
-          <p className="text-[12px] text-parch-500">
-            {lesson.className}
-            {lesson.date ? ` · ${formatLongDate(lesson.date)}` : ''}
-          </p>
+          <ul className="pb-2">
+            {lessons.map((lesson) => (
+              <li key={lesson.id} className="px-[18px] py-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/portal/lessons?class=${encodeURIComponent(lesson.classId)}`}
+                    className="font-serif text-[14px] font-bold text-parch-900 hover:text-brand-800"
+                  >
+                    {lesson.title}
+                  </Link>
+                  {lesson.assignedToId === user.servantId && <Badge tone="gold">Yours</Badge>}
+                </div>
+                <p className="text-[12px] text-parch-500">
+                  {lesson.className}
+                  {lesson.date ? ` · ${formatLongDate(lesson.date)}` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </Card>

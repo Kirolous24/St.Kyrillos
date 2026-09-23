@@ -11,8 +11,10 @@ import {
   SCORE_BAND_LABEL,
   SCORE_BAND_TONE,
   type ExamStudentStatus,
+  dashboardExams,
 } from '@/lib/portal/exams'
 import { Badge, Card, LinkButton, ProgressBar } from '@/components/portal/ui'
+import { cn } from '@/lib/utils'
 
 /**
  * Dashboard column: a student's pending quizzes and next deadline, or a
@@ -56,18 +58,45 @@ async function studentCard(user: PortalUser): Promise<JSX.Element | null> {
           <p className="mt-1 text-[12px] text-parch-500">
             quiz{pending.length === 1 ? '' : 'zes'} waiting for you
           </p>
-          {next && (
+          {/* F0091 — the next deadline was one gold pill that read the same
+              whether a quiz was due tomorrow or in three weeks. A child scans
+              this card; the prototype gave the number the room and the colour
+              so "2 DAYS" in amber lands without reading a sentence. The three
+              tiers are the OG's own (due today / within two days / later);
+              daysUntilDue already does the arithmetic in church time. */}
+          {next && days !== null && (
+            <div
+              className={cn(
+                'mt-2.5 flex items-center gap-3 rounded-[12px] border-[1.5px] px-3 py-2.5',
+                days <= 0
+                  ? 'border-[#F09595] bg-[#FCEBEB] text-[#791F1F]'
+                  : days <= 2
+                    ? 'border-[#FAC775] bg-[#FAEEDA] text-[#633806]'
+                    : 'border-[#C0DD97] bg-[#EAF3DE] text-[#27500A]',
+              )}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[1px]">
+                  <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Next exam
+                </p>
+                <p className="mt-0.5 truncate text-[13px] font-bold text-parch-900">{next.title}</p>
+                <p className="mt-0.5 text-[12px] font-bold">
+                  {days <= 0 ? 'Due today!' : days === 1 ? '1 day left' : `${days} days left`}
+                </p>
+              </div>
+              {/* data-next-exam-days is a test hook: "2" on its own is not a
+                  string a page check can tell from any other number here. */}
+              <div className="shrink-0 text-center" data-next-exam-days={days}>
+                <p className="font-serif text-[40px] font-bold leading-none">{Math.max(days, 0)}</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.5px]">{days === 1 ? 'Day' : 'Days'}</p>
+              </div>
+            </div>
+          )}
+          {next && days === null && (
             <p className="mt-2.5 flex items-center gap-1.5 rounded-[10px] bg-brand-wash px-2.5 py-1.5 text-[12px] font-bold text-brand-gold-dark">
               <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">
-                {days === null
-                  ? next.title
-                  : days <= 0
-                    ? `"${next.title}" is due today`
-                    : days === 1
-                      ? `"${next.title}" is due tomorrow`
-                      : `"${next.title}" — ${days} days left`}
-              </span>
+              <span className="min-w-0 truncate">{next.title}</span>
             </p>
           )}
           <ul className="mt-2.5">
@@ -109,16 +138,23 @@ async function studentCard(user: PortalUser): Promise<JSX.Element | null> {
 async function staffCard(user: PortalUser): Promise<JSX.Element | null> {
   const today = todayInNewYork()
   const rows = await listExams(user, null)
-  const open = rows
-    .filter((r) => r.status === 'PUBLISHED' && (!r.dueDate || r.dueDate >= today))
-    .sort((a, b) => {
-      if (!a.dueDate) return 1
-      if (!b.dueDate) return -1
-      return a.dueDate < b.dueDate ? -1 : 1
-    })
+  /**
+   * F0094 — the prototype's widget was "Recent Exams"; the port made it "Open
+   * exams" and filtered on `dueDate >= today`, which quietly excluded the most
+   * common case there is: a servant types up last Sunday's quiz on the Tuesday
+   * after and dates it to the Sunday. That exam is born past due, so it never
+   * appeared on the dashboard at all — the one surface that was supposed to say
+   * "this exists now".
+   *
+   * A just-written exam therefore shows for two days whatever its due date says,
+   * and is marked so nobody reads it as still open for submissions.
+   */
+  const { stillOpen, shown: open } = dashboardExams(rows, today, new Date())
   if (open.length === 0) return null
 
-  const waiting = open.reduce((n, r) => n + Math.max(0, r.studentCount - r.submittedCount), 0)
+  // Counts only what is actually still open, so the headline number cannot be
+  // inflated by an exam whose due date has already passed.
+  const waiting = stillOpen.reduce((n, r) => n + Math.max(0, r.studentCount - r.submittedCount), 0)
 
   return (
     <Card
@@ -128,7 +164,7 @@ async function staffCard(user: PortalUser): Promise<JSX.Element | null> {
     >
       <div className="flex items-baseline gap-2">
         <span className="text-[30px] font-bold leading-none tracking-[-0.5px] text-brand-800 tabular-nums">
-          {open.length}
+          {stillOpen.length}
         </span>
         <span className="text-[12px] text-parch-500">
           open · {waiting} paper{waiting === 1 ? '' : 's'} still to come in
@@ -146,6 +182,13 @@ async function staffCard(user: PortalUser): Promise<JSX.Element | null> {
                 <p className="truncate text-[11px] text-parch-500">
                   {r.className}
                   {r.dueDate ? ` · due ${formatMonthDay(r.dueDate)}` : ' · no due date'}
+                  {/* F0094 — says why a past-due exam is on this list, so it is
+                      never read as still taking submissions. */}
+                  {r.dueDate && r.dueDate < today && (
+                    <Badge tone="neutral" data-fresh-exam={r.id}>
+                      just added
+                    </Badge>
+                  )}
                 </p>
                 {r.studentCount > 0 && (
                   <span className="mt-1 block w-full max-w-[140px]">

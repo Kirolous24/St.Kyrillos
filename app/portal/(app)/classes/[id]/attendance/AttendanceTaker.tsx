@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Check, X, Save } from 'lucide-react'
+import { Check, X, Save, Pencil } from 'lucide-react'
 import { saveAttendance } from '@/lib/portal/actions/attendance'
+import { attendanceChanges } from '@/lib/portal/attendance-rules'
 import { Avatar, buttonClass, inputClass, Card } from '@/components/portal/ui'
 import { formatShortDate, formatDateTime } from '@/lib/portal/format'
 import { cn } from '@/lib/utils'
@@ -14,6 +16,8 @@ type Reason = 'sick' | 'travel' | 'other'
 interface Props {
   classId: string
   date: string
+  /** Today in the church's timezone — caps the date picker, as the OG did. */
+  today: string
   sessionKey: string
   sessions: Array<{ key: string; label: string; points: number }>
   students: Array<{ id: string; name: string; photo: string | null }>
@@ -46,6 +50,10 @@ export function AttendanceTaker(props: Props) {
   }, [props.students, props.existing])
 
   const [marks, setMarks] = useState(initial)
+  const [confirming, setConfirming] = useState(false)
+  // createPortal needs document, absent during the server render.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
   const hasExisting = props.existing.length > 0
   const session = props.sessions.find((s) => s.key === props.sessionKey)
 
@@ -59,17 +67,43 @@ export function AttendanceTaker(props: Props) {
     return { p, e, a }
   }, [marks])
 
-  /** What this save would change against what is already stored. */
-  const diff = useMemo(() => {
-    const before = new Map(props.existing.map((e) => [e.studentId, e.status]))
-    let added = 0, changed = 0, cleared = 0
+  /**
+   * What this save would change, and who gains or loses points by it — the
+   * prototype's confirm step. Computed by the unit-tested rule rather than
+   * counted inline, because taking a student off PRESENT reverses the points
+   * they were given and that has to be named before it happens.
+   */
+  /**
+   * Has the servant actually touched the register?
+   *
+   * Not the same question as "does this differ from what is stored": with
+   * nothing stored, every student starts ABSENT, and saving that really would
+   * create rows and mark the day held — a change by any measure. But it is also
+   * the state of a page nobody has touched, so gating on the stored diff put a
+   * confirm dialog in front of an untouched screen.
+   */
+  const dirty = useMemo(() => {
     for (const [id, m] of Array.from(marks.entries())) {
-      const was = before.get(id)
-      if (was === undefined) { if (m.status !== 'ABSENT') added++ }
-      else if (was !== m.status) { if (m.status === 'ABSENT') cleared++; else changed++ }
+      const was = initial.get(id)
+      if (!was || was.status !== m.status || (was.reason ?? null) !== (m.reason ?? null)) return true
     }
-    return { added, changed, cleared, total: added + changed + cleared }
-  }, [marks, props.existing])
+    return false
+  }, [marks, initial])
+
+  const diff = useMemo(
+    () =>
+      attendanceChanges({
+        marks: Array.from(marks.entries()).map(([studentId, m]) => ({
+          studentId,
+          name: props.students.find((s) => s.id === studentId)?.name ?? '',
+          status: m.status,
+          reason: m.reason,
+        })),
+        existing: props.existing.map((e) => ({ studentId: e.studentId, status: e.status, reason: e.reason })),
+        sessionPoints: session?.points ?? 0,
+      }),
+    [marks, props.existing, props.students, session?.points],
+  )
 
   function navigate(date: string, sessionKey: string) {
     router.push(`/portal/classes/${props.classId}/attendance?date=${date}&session=${sessionKey}`)
@@ -103,6 +137,18 @@ export function AttendanceTaker(props: Props) {
 
   function save() {
     setMessage(null)
+    setConfirming(false)
+    /**
+     * F0577 — the confirm panel names the points this save hands out, and then
+     * the message that replaces it dropped them: a servant who pressed Save had
+     * no record of what the register just awarded, and taking someone off
+     * present takes points back. Read here, before the write, because
+     * router.refresh() rebuilds `diff` against the rows that were just saved and
+     * it is zero by the time the message is set.
+     */
+    const gained = diff.gains.length
+    const lost = diff.losses.length
+    const net = diff.netPoints
     startTransition(async () => {
       const result = await saveAttendance({
         classId: props.classId,
@@ -118,7 +164,16 @@ export function AttendanceTaker(props: Props) {
         result.data?.opened ? `${result.data.opened} follow-up case${result.data.opened > 1 ? 's' : ''} opened` : null,
         result.data?.closed ? `${result.data.closed} follow-up case${result.data.closed > 1 ? 's' : ''} closed` : null,
       ].filter(Boolean).join(', ')
-      setMessage({ kind: 'ok', text: `Saved ${counts.p} present, ${counts.e} excused, ${counts.a} absent.${extra ? ` ${extra}.` : ''}` })
+      const points =
+        net === 0
+          ? ''
+          : net > 0
+            ? ` +${net} pts for ${gained} student${gained === 1 ? '' : 's'}.`
+            : ` ${net} pts from ${lost} student${lost === 1 ? '' : 's'}.`
+      setMessage({
+        kind: 'ok',
+        text: `Saved ${counts.p} present, ${counts.e} excused, ${counts.a} absent.${points}${extra ? ` ${extra}.` : ''}`,
+      })
       router.refresh()
     })
   }
@@ -158,6 +213,7 @@ export function AttendanceTaker(props: Props) {
             <input
               type="date"
               value={props.date}
+              max={props.today}
               onChange={(e) => e.target.value && navigate(e.target.value, props.sessionKey)}
               className={cn(inputClass, 'max-w-[190px]')}
             />
@@ -207,7 +263,35 @@ export function AttendanceTaker(props: Props) {
           {props.students.map((s) => {
             const m = marks.get(s.id)!
             return (
-              <li key={s.id} className={cn('overflow-hidden rounded-[12px] border-[1.5px] transition-colors', CARD_STYLE[m.status])}>
+              <li key={s.id} className={cn('relative overflow-hidden rounded-[12px] border-[1.5px] transition-colors', CARD_STYLE[m.status])}>
+                {/* F0207 — reaching Excused cost three taps on the same card, so
+                    a servant told "he is away sick" either tapped past it twice
+                    or gave up and left the child marked absent. The pencil goes
+                    straight to Excused and opens the reasons; pressing it again
+                    puts the child back to Absent, so it is never a one-way door.
+                    A real 28px button, not an icon on the card's own hit area. */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMarks((prev) => {
+                      const next = new Map(prev)
+                      const cur = prev.get(s.id)!
+                      next.set(
+                        s.id,
+                        cur.status === 'EXCUSED'
+                          ? { status: 'ABSENT', reason: null }
+                          : { status: 'EXCUSED', reason: cur.reason ?? 'other' },
+                      )
+                      return next
+                    })
+                  }
+                  aria-pressed={m.status === 'EXCUSED'}
+                  aria-label={`${m.status === 'EXCUSED' ? 'Stop excusing' : 'Excuse'} ${s.name}`}
+                  title={m.status === 'EXCUSED' ? 'Not excused after all' : 'Excuse — pick a reason'}
+                  className="absolute right-1 top-1 z-10 grid h-7 w-7 place-items-center rounded-[8px] border border-parch-200 bg-parch-50/90 text-parch-600 transition-colors hover:border-[#D97706] hover:text-[#8B5A0F] print:hidden"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden />
+                </button>
                 <button
                   type="button"
                   onClick={() => cycle(s.id)}
@@ -287,22 +371,105 @@ export function AttendanceTaker(props: Props) {
             <p role="status" className={cn('text-[12.5px] font-semibold', message.kind === 'ok' ? 'text-[#15803D]' : 'text-[#B91C1C]')}>
               {message.text}
             </p>
-          ) : diff.total > 0 ? (
+          ) : dirty && diff.changed > 0 ? (
             <p className="text-[12px] text-parch-600">
-              <span className="font-bold text-brand-800">{diff.total} change{diff.total === 1 ? '' : 's'}</span> to save
-              {diff.added > 0 && ` · ${diff.added} new`}
-              {diff.changed > 0 && ` · ${diff.changed} changed`}
-              {diff.cleared > 0 && ` · ${diff.cleared} back to absent`}
+              <span className="font-bold text-brand-800">{diff.changed} change{diff.changed === 1 ? '' : 's'}</span> to save
+              {diff.gains.length > 0 && ` · ${diff.gains.length} present`}
+              {diff.losses.length > 0 && ` · ${diff.losses.length} losing points`}
+              {diff.netPoints !== 0 && ` · ${diff.netPoints > 0 ? '+' : ''}${diff.netPoints} pts`}
             </p>
           ) : (
             <p className="text-[12px] text-parch-500">Tap a card to cycle Absent → Present → Excused.</p>
           )}
         </div>
-        <button type="button" onClick={save} disabled={pending} className={cn(buttonClass('primary'), 'min-h-[40px]')}>
+        {/* Nothing to save is said plainly rather than left to a no-op press. */}
+        <button
+          type="button"
+          onClick={() =>
+            !dirty || diff.changed === 0
+              ? setMessage({ kind: 'ok', text: 'Nothing has changed, so there is nothing to save.' })
+              : setConfirming(true)
+          }
+          disabled={pending}
+          className={cn(buttonClass('primary'), 'min-h-[40px]')}
+        >
           <Save className="h-[13px] w-[13px]" />
           {pending ? 'Saving…' : hasExisting ? 'Update attendance' : 'Save attendance'}
         </button>
       </div>
+
+      {/* Through a portal into <body>: a fixed overlay inside the page content
+          is positioned against .portal-enter's transform, which once left the
+          follow-up composer's own controls unclickable. */}
+      {confirming && mounted && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm attendance"
+          className="fixed inset-0 z-[500] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirming(false) }}
+        >
+          <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-[18px] border-[1.5px] border-brand-gold bg-parch-50 p-4 shadow-panel sm:rounded-[18px]">
+            <h2 className="mb-1 font-serif text-[16px] font-bold text-parch-900">
+              Save {formatShortDate(props.date)}?
+            </h2>
+            <p className="mb-3 text-[12px] text-parch-500">
+              {session?.label ?? props.sessionKey} · {diff.changed} change{diff.changed === 1 ? '' : 's'}
+            </p>
+
+            {diff.createsEmptyRegister && (
+              <div className="mb-3 rounded-[10px] border border-[#FCA5A5] bg-[#FEF2F2] p-2.5 text-[12px] text-[#7F1D1D]">
+                <strong>Everyone is marked absent.</strong> This records the day as held and counts against
+                every student. If you have not taken the register yet, cancel.
+              </div>
+            )}
+
+            {diff.gains.length > 0 && (
+              <div className="mb-2.5">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">
+                  Gaining {session?.points ?? 0} pt{(session?.points ?? 0) === 1 ? '' : 's'}
+                </p>
+                <p className="text-[12.5px] text-[#15803D]">{diff.gains.map((g) => g.name).join(', ')}</p>
+              </div>
+            )}
+
+            {diff.losses.length > 0 && (
+              <div className="mb-2.5">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Losing points</p>
+                <ul className="space-y-0.5 text-[12.5px] text-[#B91C1C]">
+                  {diff.losses.map((l) => (
+                    <li key={l.studentId}>
+                      {l.name} <span className="tabular-nums">({l.delta})</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-[11px] text-parch-500">
+                  Taking a student off present reverses the points that save gave them.
+                </p>
+              </div>
+            )}
+
+            {diff.reasonOnly.length > 0 && (
+              <div className="mb-2.5">
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">
+                  Changed, no points either way
+                </p>
+                <p className="text-[12.5px] text-parch-600">{diff.reasonOnly.map((r) => r.name).join(', ')}</p>
+              </div>
+            )}
+
+            <div className="mt-3.5 flex justify-end gap-2">
+              <button type="button" onClick={() => setConfirming(false)} className={buttonClass('secondary')}>
+                Cancel
+              </button>
+              <button type="button" onClick={save} disabled={pending} className={buttonClass('primary')}>
+                <Save className="h-[13px] w-[13px]" /> {pending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

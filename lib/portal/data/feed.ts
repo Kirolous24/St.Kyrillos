@@ -140,6 +140,25 @@ export async function listClassFeed(classId: string, accountId: string, take = 4
   return posts.map((p) => toView(p as PostRow, accountId))
 }
 
+/**
+ * The class's feed together with how many posts exist in total (F0276).
+ *
+ * The list stops at `take` and said nothing, so a class past that many posts had
+ * older ones that were simply unreachable and unmentioned. The count lets the
+ * page say so rather than quietly ending.
+ */
+export async function listClassFeedPage(
+  classId: string,
+  accountId: string,
+  take = 40,
+): Promise<{ posts: FeedPostView[]; total: number }> {
+  const [posts, total] = await Promise.all([
+    listClassFeed(classId, accountId, take),
+    prisma.feedPost.count({ where: { classId } }),
+  ])
+  return { posts, total }
+}
+
 /** Newest posts across several classes — used by the dashboard widget. */
 export async function countRecentPosts(classIds: string[], since: Date): Promise<number> {
   if (classIds.length === 0) return 0

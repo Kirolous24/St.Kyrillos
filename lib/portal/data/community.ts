@@ -11,6 +11,7 @@ import {
   type AchievementResult,
   type AchievementStats,
 } from '../achievements'
+import { readingMonthDays, readingMonthLabel } from '../readings'
 import { listVisibleClasses } from './classes'
 import { studentName } from './students'
 
@@ -55,6 +56,36 @@ export function assertCanTarget(user: PortalUser, classIds: string[], targetAll:
   }
 }
 
+/**
+ * F0313 — the same rule, widened by one step for a servant who oversees a stage.
+ *
+ * An event is already visible to everybody whichever classes it names, so the
+ * class list on an event is a label rather than a gate: letting a stage
+ * coordinator put her own stage's classes on it gives her the reach her role
+ * implies and changes nothing about who can see what. Editing still belongs to
+ * whoever created the event, and "the whole Sunday School" still speaks for the
+ * church, so it stays with the admin and Fr. Pachom.
+ *
+ * Async because the stage a class belongs to is not on PortalUser; only the ids
+ * the caller actually named are looked up.
+ */
+export async function assertCanTargetIncludingStage(
+  user: PortalUser,
+  classIds: string[],
+  targetAll: boolean,
+): Promise<void> {
+  if (canTargetClasses(user, classIds, targetAll)) return
+  if (user.role === 'SERVANT' && user.stageOversight && !targetAll && classIds.length > 0) {
+    const inStage = await prisma.schoolClass.findMany({
+      where: { id: { in: classIds }, stage: user.stageOversight },
+      select: { id: true },
+    })
+    const allowed = new Set([...user.classIds, ...inStage.map((c) => c.id)])
+    if (classIds.every((id) => allowed.has(id))) return
+  }
+  assertCanTarget(user, classIds, targetAll)
+}
+
 /* ── Shared input helpers ─────────────────────────────────────────────────── */
 
 /**
@@ -94,6 +125,20 @@ export interface EventView {
   classIds: string[]
   classNames: string[]
   createdByName: string
+  /**
+   * F0315 — the poster's photo. The card drew their initials in a grey circle
+   * while the account's photo sat one join away: on a church-wide feed the
+   * face is how a servant recognises who put the trip up, and initials of two
+   * people who share them say nothing at all.
+   */
+  createdByPhoto: string | null
+  /**
+   * F0657 — the classes the poster serves. "Posted by Marina" says who; "Posted
+   * by Marina · Grade 3" says why they are the one telling you, which on a
+   * church-wide feed is most of what a parent or another servant wants to know.
+   * Capped at two names so one servant on five classes cannot take the row over.
+   */
+  createdByClasses: string[]
   canManage: boolean
 }
 
@@ -107,7 +152,13 @@ const EVENT_SELECT = {
   notes: true,
   targetAll: true,
   classes: { select: { classId: true, class: { select: { name: true } } } },
-  createdBy: { select: { displayName: true } },
+  createdBy: {
+    select: {
+      displayName: true,
+      photo: true,
+      servant: { select: { classes: { select: { class: { select: { name: true, sortOrder: true } } } } } },
+    },
+  },
 } as const
 
 type EventRow = {
@@ -120,7 +171,11 @@ type EventRow = {
   notes: string | null
   targetAll: boolean
   classes: Array<{ classId: string; class: { name: string } }>
-  createdBy: { displayName: string } | null
+  createdBy: {
+    displayName: string
+    photo: string | null
+    servant: { classes: Array<{ class: { name: string; sortOrder: number } }> } | null
+  } | null
 }
 
 function toEventView(row: EventRow, user: PortalUser): EventView {
@@ -137,15 +192,28 @@ function toEventView(row: EventRow, user: PortalUser): EventView {
     classIds,
     classNames: row.classes.map((c) => c.class.name),
     createdByName: row.createdBy?.displayName ?? 'Sunday School',
+    createdByPhoto: row.createdBy?.photo ?? null,
+    createdByClasses: (row.createdBy?.servant?.classes ?? [])
+      .slice()
+      .sort((a, b) => a.class.sortOrder - b.class.sortOrder)
+      .map((c) => c.class.name),
     canManage: canTargetClasses(user, classIds, row.targetAll),
   }
 }
 
+/**
+ * Every event, for every role.
+ *
+ * The prototype showed the whole Sunday School calendar to everyone; the port
+ * filtered it to the viewer's own classes, so a servant or child had no way to
+ * know another class was meeting — and the church confirmed they want the open
+ * calendar back. Targeting still decides who an event is *for*, and so who may
+ * edit it (see mayModifyEvent and canTargetClasses); it no longer decides who
+ * may see that it exists.
+ */
 export async function listEvents(user: PortalUser, today: string) {
   const scope = await communityScope(user)
-  const targeted = scope.seesEverything
-    ? {}
-    : { OR: [{ targetAll: true }, { classes: { some: { classId: { in: scope.classIds } } } }] }
+  const targeted = {}
 
   const [upcoming, past] = await Promise.all([
     prisma.portalEvent.findMany({
@@ -170,12 +238,10 @@ export async function listEvents(user: PortalUser, today: string) {
 }
 
 export async function nextEventFor(user: PortalUser, today: string): Promise<EventView | null> {
-  const scope = await communityScope(user)
-  const targeted = scope.seesEverything
-    ? {}
-    : { OR: [{ targetAll: true }, { classes: { some: { classId: { in: scope.classIds } } } }] }
+  // Same open calendar as listEvents: the dashboard's "next event" must not
+  // disagree with the events page about what exists.
   const row = await prisma.portalEvent.findFirst({
-    where: { ...targeted, date: { gte: toUTCDate(today) } },
+    where: { date: { gte: toUTCDate(today) } },
     orderBy: [{ date: 'asc' }, { title: 'asc' }],
     select: EVENT_SELECT,
   })
@@ -234,6 +300,22 @@ export function canManageAnnouncement(user: PortalUser, classId: string | null):
   return !!classId && user.classIds.includes(classId)
 }
 
+/**
+ * F0285 — the one stage a servant may speak to, if any.
+ *
+ * A servant who looks after a whole age group but teaches no single class could
+ * not post a notice at all: every target on the form is a class, and she has
+ * none. What she is given is exactly the reach her role's name implies — her own
+ * stage, and nothing wider. Posting into each of a stage's dozen classes
+ * individually was the other way to reach the same children, and it would be the
+ * first crack in the rule the whole portal is built on: overseeing an age group
+ * lets you see, not change.
+ */
+export function announceableStage(user: PortalUser): PortalUser['stageOversight'] {
+  if (user.role !== 'SERVANT') return null
+  return user.stageOversight ?? null
+}
+
 function toAnnouncementView(row: AnnouncementRow, user: PortalUser): AnnouncementView {
   return {
     id: row.id,
@@ -247,7 +329,11 @@ function toAnnouncementView(row: AnnouncementRow, user: PortalUser): Announcemen
     className: row.class?.name ?? null,
     stage: row.stage,
     createdByName: row.createdBy?.displayName ?? 'Sunday School',
-    canManage: canManageAnnouncement(user, row.classId),
+    // F0285 — a stage coordinator manages her own stage's notices; they carry
+    // no class, so the class rule alone would hide her own Edit button.
+    canManage:
+      canManageAnnouncement(user, row.classId) ||
+      (!!row.stage && row.stage === announceableStage(user)),
   }
 }
 
@@ -283,19 +369,6 @@ export async function listAnnouncements(user: PortalUser) {
   return { scope, announcements: rows.map((r) => toAnnouncementView(r as AnnouncementRow, user)) }
 }
 
-export async function latestAnnouncementFor(user: PortalUser): Promise<AnnouncementView | null> {
-  const scope = await communityScope(user)
-  const row = await prisma.announcement.findFirst({
-    where: {
-      isActive: true,
-      OR: [{ classId: null, stage: null }, { classId: { in: scope.classIds } }, { stage: { in: scope.stages } }],
-    },
-    orderBy: [{ sortOrder: 'asc' }, { date: 'desc' }, { createdAt: 'desc' }],
-    select: ANNOUNCEMENT_SELECT,
-  })
-  return row ? toAnnouncementView(row as AnnouncementRow, user) : null
-}
-
 /* ── Daily Coptic readings ────────────────────────────────────────────────── */
 
 // CopticDayCache.readings / synaxarium / feasts are Json columns written by the
@@ -307,6 +380,12 @@ const ReadingRefSchema = z.object({
   section: z.string().trim().min(1),
   bookName: z.string().trim().optional(),
   reference: z.string().trim().min(1),
+  // Optional: rows cached before the passage text was carried through have
+  // none, and a reading without its text still renders as a reference.
+  verses: z
+    .array(z.object({ num: z.number().int().min(0), text: z.string().trim().min(1) }))
+    .max(200)
+    .optional(),
 })
 const SynaxariumSchema = z.object({
   name: z.string().trim().min(1),
@@ -334,7 +413,10 @@ export interface DailyReadings {
   seasonDay: string | null
   isFasting: boolean
   /** Grouped by section, in the order the cache returned them. */
-  sections: Array<{ section: string; entries: Array<{ bookName?: string; reference: string }> }>
+  sections: Array<{
+    section: string
+    entries: Array<{ bookName?: string; reference: string; verses?: Array<{ num: number; text: string }> }>
+  }>
   synaxarium: Array<{ name: string; url?: string }>
   feasts: Array<{ name: string; type?: string }>
   /** False when nothing is cached for the day — the page shows a friendly note. */
@@ -368,7 +450,7 @@ export async function loadDailyReadings(date: string): Promise<DailyReadings> {
   const sections: DailyReadings['sections'] = []
   for (const ref of refs) {
     const bucket = sections.find((s) => s.section === ref.section)
-    const entry = { bookName: ref.bookName, reference: ref.reference }
+    const entry = { bookName: ref.bookName, reference: ref.reference, verses: ref.verses }
     if (bucket) bucket.entries.push(entry)
     else sections.push({ section: ref.section, entries: [entry] })
   }
@@ -395,8 +477,16 @@ export interface ReadingState {
   checkedInToday: boolean
   streak: number
   totalDays: number
-  /** Oldest → newest, 30 entries ending today. */
-  grid: Array<{ date: string; read: boolean }>
+  /**
+   * F0329 / F0754 — the days of the current calendar month, 1st to last, oldest
+   * first. It was a rolling 30 days ending today, so a child on the 3rd saw 27
+   * squares belonging to last month. `future` marks days that have not happened
+   * yet, so a month grid does not tell a child on the 2nd that they have already
+   * missed 29 days.
+   */
+  grid: Array<{ date: string; read: boolean; future: boolean }>
+  /** "September 2026", for the heading above the grid. */
+  monthLabel: string
 }
 
 export async function readingStateFor(studentId: string, today: string): Promise<ReadingState> {
@@ -410,16 +500,17 @@ export async function readingStateFor(studentId: string, today: string): Promise
   ])
   const dates = logs.map((l) => formatDateOnly(l.date))
   const seen = new Set(dates)
-  const grid: ReadingState['grid'] = []
-  for (let i = 29; i >= 0; i--) {
-    const day = addDays(today, -i)
-    grid.push({ date: day, read: seen.has(day) })
-  }
+  const grid: ReadingState['grid'] = readingMonthDays(today).map((d) => ({
+    date: d.date,
+    read: seen.has(d.date),
+    future: d.future,
+  }))
   return {
     checkedInToday: seen.has(today),
     streak: readingStreak(dates, today),
     totalDays,
     grid,
+    monthLabel: readingMonthLabel(today),
   }
 }
 
@@ -470,7 +561,7 @@ export interface AchievementsPayload extends AchievementResult {
  * is what keeps "earned on" stable once a streak later lapses.
  */
 export async function loadAchievements(studentId: string, today: string): Promise<AchievementsPayload> {
-  const [pointSum, sundays, quizzes, bestQuiz, readingLogs, readingDays, student, existing] = await Promise.all([
+  const [pointSum, sundays, sundaysAttended, quizzes, bestQuiz, readingLogs, readingDays, student, existing] = await Promise.all([
     prisma.pointEntry.aggregate({ where: { studentId }, _sum: { points: true } }),
     prisma.attendanceRecord.findMany({
       where: { studentId, sessionKey: 'sunday' },
@@ -478,6 +569,9 @@ export async function loadAchievements(studentId: string, today: string): Promis
       take: 60,
       select: { date: true, status: true },
     }),
+    // F0734 — distinct Sundays ever attended. Counted rather than taken from the
+    // 60-row slice above, which exists for the streak and would cap this.
+    prisma.attendanceRecord.count({ where: { studentId, sessionKey: 'sunday', status: 'PRESENT' } }),
     prisma.quizResult.count({ where: { studentId } }),
     prisma.quizResult.aggregate({ where: { studentId }, _max: { percentage: true } }),
     prisma.bibleReadingLog.findMany({
@@ -495,6 +589,7 @@ export async function loadAchievements(studentId: string, today: string): Promis
   const stats: AchievementStats = {
     lifetimePoints: pointSum._sum.points ?? 0,
     attendanceStreak: presentStreak(sundays.map((s) => ({ date: formatDateOnly(s.date), status: s.status }))),
+    sundaysAttended,
     quizzesCompleted: quizzes,
     bestQuizPercentage: bestQuiz._max.percentage ?? 0,
     readingStreak: readingStreak(readingLogs.map((l) => formatDateOnly(l.date)), today),

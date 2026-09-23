@@ -8,6 +8,7 @@ import {
   daysUntilBirthday,
   formatDateOnly,
   newYorkDayStart,
+  weekdayName,
 } from '@/lib/portal/dates'
 
 describe('parseDateOnly', () => {
@@ -99,5 +100,29 @@ describe('newYorkDayStart', () => {
     const sepEnd = newYorkDayStart('2026-10-01')
     const vespers = new Date('2026-10-01T00:30:00.000Z') // 20:30 on 30 Sep in New York
     expect(vespers.getTime() < sepEnd.getTime()).toBe(true)
+  })
+})
+
+/**
+ * F0316 — the day is derived from the date rather than asked for separately, so
+ * an event can never say "14 March" and "Tuesday" when 14 March is a Saturday.
+ */
+describe('weekdayName', () => {
+  it('names the day a date falls on', () => {
+    expect(weekdayName('2026-09-23')).toBe('Wednesday')
+    expect(weekdayName('2026-09-20')).toBe('Sunday')
+    expect(weekdayName('2026-09-26')).toBe('Saturday')
+  })
+
+  it('is not moved by a browser behind UTC', () => {
+    // Parsed at noon, so a negative offset cannot roll the answer back a day.
+    expect(weekdayName('2026-01-01')).toBe('Thursday')
+    expect(weekdayName('2026-03-01')).toBe('Sunday')
+  })
+
+  it('returns null for anything that is not a date', () => {
+    expect(weekdayName('')).toBeNull()
+    expect(weekdayName('not a date')).toBeNull()
+    expect(weekdayName('2026-13-45')).toBeNull()
   })
 })

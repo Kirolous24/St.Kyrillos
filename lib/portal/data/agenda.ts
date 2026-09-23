@@ -8,6 +8,7 @@ import {
   buildWeekGrid,
   normaliseWeekStart,
   weekLabel,
+  agendaWeekName,
   type AgendaGrid,
   type Assignment,
   type AgendaWeekDraft,
@@ -32,6 +33,33 @@ export async function classServants(classId: string): Promise<ServantOption[]> {
     .filter((r) => r.servant.account.isActive)
     .map((r) => ({ id: r.servant.id, name: r.servant.account.displayName }))
     .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * Servants offered in the agenda's assignment dropdowns, split the way the
+ * prototype's optgroups were: this class's own team first, then everyone else.
+ * Borrowing a servant from another class is ordinary on a Sunday, and the port
+ * offered no way to record it — the option simply never appeared.
+ */
+export interface AgendaServantOptions {
+  onClass: ServantOption[]
+  others: ServantOption[]
+}
+
+export async function agendaServantOptions(classId: string): Promise<AgendaServantOptions> {
+  const [assigned, all] = await Promise.all([
+    prisma.classServant.findMany({ where: { classId }, select: { servantId: true } }),
+    prisma.servant.findMany({ select: { id: true, account: { select: { displayName: true, isActive: true } } } }),
+  ])
+  const onClassIds = new Set(assigned.map((r) => r.servantId))
+  const active = all
+    .filter((s) => s.account.isActive)
+    .map((s) => ({ id: s.id, name: s.account.displayName }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  return {
+    onClass: active.filter((s) => onClassIds.has(s.id)),
+    others: active.filter((s) => !onClassIds.has(s.id)),
+  }
 }
 
 /* ── One week ─────────────────────────────────────────────────────────────── */
@@ -126,10 +154,32 @@ export async function loadAgendaWeek(classId: string, weekStart: string): Promis
 export interface AgendaWeekSummary {
   weekStart: string
   label: string
+  /** "2nd Week of SEP" — how the church names it — or null outside this year. */
+  ordinal: string | null
   filledCount: number
   leadServantName: string | null
   backupServantName: string | null
   hasSlides: boolean
+  /**
+   * F0262 — the URL itself, not just `hasSlides`. The archive knew a week had
+   * slides and threw the link away, so reaching them meant opening the week: the
+   * prototype put "Open Slides" straight on the archive row, which is where a
+   * servant looking for last month's deck actually is.
+   */
+  slideLink: string | null
+  /**
+   * F0256 — the topics themselves, not only inside the search blob. A hit used
+   * to say "2nd Week of SEP · 6 filled" and nothing about what was in it, so a
+   * servant searching "St. Moses" was told a week matched and had to open it to
+   * find out where. Capped at three: the strip is one line on a phone.
+   */
+  topics: string[]
+  /**
+   * Everything this week can be searched by, lowercased: the prototype's
+   * "Search lessons, saints, verses…" ran over the saved topics, not the
+   * dates (OG L8614).
+   */
+  searchText: string
 }
 
 /** Past and future weeks the class has saved, newest first. */
@@ -146,14 +196,32 @@ export async function listAgendaWeeks(classId: string, take = 60): Promise<Agend
       items: { select: { topic: true, servantId: true } },
     },
   })
-  return weeks.map((w) => ({
-    weekStart: formatDateOnly(w.weekStart),
-    label: weekLabel(formatDateOnly(w.weekStart)),
-    filledCount: w.items.filter((i) => (i.topic ?? '').trim() !== '' || i.servantId).length,
-    leadServantName: w.leadServant?.account.displayName ?? null,
-    backupServantName: w.backupServant?.account.displayName ?? null,
-    hasSlides: !!w.slideLink,
-  }))
+  const today = todayInNewYork()
+  return weeks.map((w) => {
+    const weekStart = formatDateOnly(w.weekStart)
+    const ordinal = agendaWeekName(weekStart, today)
+    const topics = w.items.map((i) => (i.topic ?? '').trim()).filter(Boolean)
+    return {
+      weekStart,
+      label: weekLabel(weekStart),
+      ordinal,
+      filledCount: w.items.filter((i) => (i.topic ?? '').trim() !== '' || i.servantId).length,
+      leadServantName: w.leadServant?.account.displayName ?? null,
+      backupServantName: w.backupServant?.account.displayName ?? null,
+      hasSlides: !!w.slideLink,
+      slideLink: w.slideLink,
+      topics,
+      searchText: [
+        ...topics,
+        ordinal ?? '',
+        weekLabel(weekStart),
+        w.leadServant?.account.displayName ?? '',
+        w.backupServant?.account.displayName ?? '',
+      ]
+        .join(' ')
+        .toLowerCase(),
+    }
+  })
 }
 
 /* ── CSV export ───────────────────────────────────────────────────────────── */

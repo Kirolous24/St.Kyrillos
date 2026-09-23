@@ -24,6 +24,8 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
   const [creds, setCreds] = useState<{ loginId: string; pin: string } | null>(null)
+  // F0851 — see the share row under the new credentials below.
+  const [copied, setCopied] = useState(false)
   const [form, setForm] = useState<ServantFormInput>({
     displayName: initial?.displayName ?? '',
     role: initial?.role ?? 'SERVANT',
@@ -35,6 +37,45 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props
     classes: initial?.classes ?? [],
     isActive: initial?.isActive ?? true,
   })
+
+  /**
+   * F0851 — what an admin actually has to send a new servant. The PIN is shown
+   * once and never again, so without this they read eight digits off a screen
+   * and retype them into a message; one wrong digit and the servant meets a
+   * login screen on a Sunday morning and the PIN has to be reset again.
+   */
+  const shareText = creds
+    ? `St. Kyrillos Sunday School portal\n${typeof window === 'undefined' ? '' : `${window.location.origin}/portal/login\n`}ID: ${creds.loginId}\nPIN: ${creds.pin}`
+    : ''
+  const shareRow = creds ? (
+    <div className="mt-3.5 flex flex-wrap gap-2">
+      <button
+        type="button"
+        className={cn(buttonClass('secondary'), 'min-h-[40px]')}
+        onClick={() => {
+          void navigator.clipboard
+            ?.writeText(shareText)
+            .then(() => {
+              setError('')
+              setCopied(true)
+            })
+            .catch(() => setError('This browser would not let the portal copy. Write the ID and PIN down instead.'))
+        }}
+      >
+        {copied ? 'Copied — paste it to them' : 'Copy ID and PIN'}
+      </button>
+      {/* Only when an address was actually typed in above, so the button can
+          never open a blank compose window. */}
+      {form.email && (
+        <a
+          href={`mailto:${encodeURIComponent(form.email)}?subject=${encodeURIComponent('Your Sunday School portal sign-in')}&body=${encodeURIComponent(shareText)}`}
+          className={cn(buttonClass('secondary'), 'min-h-[40px]')}
+        >
+          Email it to {form.displayName || 'them'}
+        </a>
+      )}
+    </div>
+  ) : null
   const set = (k: keyof ServantFormInput) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value })
 
   function toggleClass(classId: string) {
@@ -112,7 +153,15 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props
       </Card>
 
       <Card title="Classes" icon={<GraduationCap className="h-[15px] w-[15px]" />}>
-        {classes.length === 0 ? (
+        {/* F0551 — a pastor reads every class and is enrolled in none, so a grid
+            of class checkboxes invited an admin to tick something that means
+            nothing for that role and would then show the pastor on a roster as
+            though he served there. The prototype hid this card for Pastor. */}
+        {form.role === 'PASTOR' ? (
+          <p className="text-[12.5px] text-parch-500">
+            A pastor is not assigned to classes — the role already reads every class.
+          </p>
+        ) : classes.length === 0 ? (
           <p className="text-[12.5px] text-parch-500">No active classes yet.</p>
         ) : (
           <ul className={cn(GRID2, 'gap-y-2')}>

@@ -9,12 +9,16 @@ declare module 'next-auth' {
       kind: SessionKind
       role?: PortalRoleName
       accountId?: string
+      /** F0047 — epoch ms of the sign-in, used to cap a child's session. */
+      signedInAt?: number
     }
   }
   interface User {
     kind?: SessionKind
     role?: PortalRoleName
     accountId?: string
+    /** F0047 — epoch ms of the sign-in, used to cap a child's session. */
+    signedInAt?: number
   }
 }
 
@@ -23,5 +27,7 @@ declare module '@auth/core/jwt' {
     kind?: SessionKind
     role?: PortalRoleName
     accountId?: string
+    /** F0047 — epoch ms of the sign-in, used to cap a child's session. */
+    signedInAt?: number
   }
 }

@@ -129,6 +129,14 @@ export interface ExamListRow {
   studentCount: number
   averagePercentage: number | null
   reopenedCount: number
+  /**
+   * F0094 — when the exam was written. The dashboard widget filters to exams
+   * that are open *and* not past due, so a servant who typed up last Sunday's
+   * quiz on the Tuesday after — dating it to the Sunday — never saw it on the
+   * dashboard at all: it was born past due. The row had no createdAt to notice
+   * that with.
+   */
+  createdAt: Date
 }
 
 export async function listExams(user: PortalUser, classId?: string | null): Promise<ExamListRow[]> {
@@ -137,7 +145,7 @@ export async function listExams(user: PortalUser, classId?: string | null): Prom
 
   const exams = await prisma.exam.findMany({
     where,
-    orderBy: [{ dueDate: 'desc' }, { createdAt: 'desc' }],
+    orderBy: [{ dueDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
     take: 200,
     select: {
       id: true,
@@ -148,6 +156,7 @@ export async function listExams(user: PortalUser, classId?: string | null): Prom
       classId: true,
       stage: true,
       reopenedFor: true,
+      createdAt: true,
       class: { select: { name: true } },
       _count: { select: { questions: true, results: true } },
     },
@@ -179,6 +188,7 @@ export async function listExams(user: PortalUser, classId?: string | null): Prom
     studentCount: e.classId ? rosterById.get(e.classId) ?? 0 : 0,
     averagePercentage: avgById.get(e.id) == null ? null : Math.round(avgById.get(e.id)!),
     reopenedCount: e.reopenedFor.length,
+    createdAt: e.createdAt,
   }))
 }
 
@@ -315,6 +325,14 @@ export interface StudentExamRow {
   questionCount: number
   pointsPerQuestion: number
   bibleReading: string | null
+  /**
+   * F0698 — the servant's note that goes with the reading. It was stored and
+   * shown only after opening the quiz, so the one sentence written to make a
+   * child want to read the passage was invisible from the card that offers it.
+   */
+  readingMessage: string | null
+  /** When the quiz was written — the dashboard's "new in the last 48 hours". */
+  createdAt: Date
   result: { score: number; total: number; percentage: number; submittedAt: Date } | null
 }
 
@@ -333,7 +351,7 @@ export async function studentExams(studentId: string): Promise<{ today: string; 
 
   const exams = await prisma.exam.findMany({
     where: { AND: [{ OR: or }, { status: { not: 'DRAFT' } }] },
-    orderBy: [{ dueDate: 'desc' }, { createdAt: 'desc' }],
+    orderBy: [{ dueDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
     take: 100,
     select: {
       id: true,
@@ -344,6 +362,8 @@ export async function studentExams(studentId: string): Promise<{ today: string; 
       reopenedFor: true,
       pointsPerQuestion: true,
       bibleReading: true,
+      readingMessage: true,
+      createdAt: true,
       _count: { select: { questions: true } },
       results: {
         where: { studentId },
@@ -364,6 +384,8 @@ export async function studentExams(studentId: string): Promise<{ today: string; 
       questionCount: e._count.questions,
       pointsPerQuestion: e.pointsPerQuestion,
       bibleReading: e.bibleReading,
+      readingMessage: e.readingMessage,
+      createdAt: e.createdAt,
       result: e.results[0] ?? null,
     })),
   }

@@ -53,9 +53,45 @@ const serverErrors = []
 page.on('response', (r) => { if (r.status() >= 500) serverErrors.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`) })
 
 const go = async (p) => { await page.goto(BASE + p, { waitUntil: 'networkidle' }); await page.waitForTimeout(400) }
-const save = async (label) => {
-  await page.locator('button[type="submit"]', { hasText: label }).click()
-  await page.waitForTimeout(2500)
+/**
+ * Submit a form and wait for the write to have actually happened.
+ *
+ * A fixed 2.5s was not enough on a cold `next dev`: the server action's route
+ * compiles on first use, so the check read the database before the write landed
+ * and reported a failure that a warm re-run did not reproduce. Waiting for the
+ * button to stop being busy, and for the page to settle, makes the timing the
+ * app's rather than a guess. `verify` is an optional predicate polled until it
+ * is true, for the writes whose effect is only visible in the database.
+ */
+const save = async (label, verify) => {
+  const button = page.locator('button[type="submit"]', { hasText: label })
+  await button.click()
+  // The action is in flight while the button is disabled; give the transition a
+  // moment to start before waiting for it to finish.
+  await page.waitForTimeout(250)
+  await button.evaluate((el) => el).catch(() => {})
+  await page
+    .waitForFunction(
+      (text) => {
+        const btns = Array.from(document.querySelectorAll('button[type="submit"]'))
+        const b = btns.find((x) => (x.textContent || '').includes(text))
+        return !b || !b.disabled
+      },
+      label,
+      { timeout: 30000 },
+    )
+    .catch(() => {})
+  await page.waitForLoadState('networkidle').catch(() => {})
+  if (verify) {
+    const deadline = Date.now() + 30000
+    // eslint-disable-next-line no-await-in-loop
+    while (Date.now() < deadline && !(await verify())) await page.waitForTimeout(500)
+  } else {
+    // No predicate to wait on, so keep the original settle. Trusting the
+    // button-enabled heuristic alone here shortened this from 2.5s to 0.5s and
+    // broke three checks that had nothing wrong with them.
+    await page.waitForTimeout(2500)
+  }
 }
 const toggleClass = async (name) => {
   await page.locator('label:has(input[type="checkbox"])', { hasText: name }).first().locator('input[type="checkbox"]').click()
@@ -76,7 +112,13 @@ async function cleanup() {
   for (const a of accounts) await prisma.account.delete({ where: { id: a.id } }).catch(() => {})
   const students = await prisma.student.findMany({ where: { firstName: { startsWith: TAG } }, select: { accountId: true } })
   for (const s of students) await prisma.account.delete({ where: { id: s.accountId } }).catch(() => {})
-  return accounts.length + students.length
+  // The composer check below publishes a real post; it is swept by title.
+  const posts = await prisma.feedPost.findMany({ where: { title: { startsWith: TAG } }, select: { id: true } })
+  for (const p of posts) {
+    await prisma.feedReaction.deleteMany({ where: { postId: p.id } }).catch(() => {})
+    await prisma.feedPost.delete({ where: { id: p.id } }).catch(() => {})
+  }
+  return accounts.length + students.length + posts.length
 }
 
 /* ── scenarios ──────────────────────────────────────────────────────────── */
@@ -93,7 +135,9 @@ try {
   await go('/portal/admin/servants/new')
   await page.locator('#displayName').fill(`${TAG} Servant`)
   await toggleClass(c1.name)
-  await save('Create account')
+  await save('Create account', async () =>
+    (await prisma.account.count({ where: { displayName: `${TAG} Servant` } })) > 0,
+  )
   const servantAcct = await prisma.account.findFirst({
     where: { displayName: `${TAG} Servant` },
     select: { id: true, pinHash: true, servant: { select: { id: true, classes: { select: { classId: true } } } } },
@@ -167,6 +211,42 @@ try {
       const gone = await prisma.account.findUnique({ where: { id: servantAcct.id }, select: { id: true } })
       check('deleteServant removes the account', gone === null)
     } else check('deleteServant removes the account', false, 'no delete button on the servant form')
+  }
+
+  /* ---- the class feed composer (F0505) ---- */
+  // Publishing used to resolve in silence: the form shut and the page refreshed,
+  // which looks exactly like a form that threw away what you typed, so a servant
+  // posting "no class this Sunday" posts it twice to be sure. Asserted on
+  // role="status" — there is no element with that role anywhere on this page in
+  // the unfixed build, so this cannot pass by accident.
+  if (c1) {
+    console.log('\nclass feed')
+    await go(`/portal/feed?class=${encodeURIComponent(c1.id)}`)
+    const openComposer = page.locator('button', { hasText: 'Write a post' }).first()
+    if (await openComposer.count()) {
+      await openComposer.click()
+      await page.waitForTimeout(400)
+      const title = `${TAG} composer confirmation`
+      await page.locator('#post-title').fill(title)
+      await page.locator('#post-body').fill('Written by the write-smoke run; removed on cleanup.')
+      await save('Post to the class', async () =>
+        (await prisma.feedPost.count({ where: { title } })) === 1)
+      check('createPost writes the post', (await prisma.feedPost.count({ where: { title } })) === 1)
+      const status = page.locator('[role="status"]')
+      check('and says so instead of resolving in silence', await status.count() >= 1,
+        `${await status.count()} status elements`)
+      if (await status.count()) {
+        const said = (await status.first().innerText()).toLowerCase()
+        check('naming what happened, not just flashing', said.includes('posted'), said.slice(0, 60))
+      }
+      // Reopening the composer must clear the notice, or it reads as a second post.
+      await page.locator('button', { hasText: 'Write a post' }).first().click()
+      await page.waitForTimeout(400)
+      check('reopening the composer clears the last confirmation',
+        await page.locator('[role="status"]').count() === 0)
+    } else {
+      check('the class feed offers a composer to an admin', false, 'no "Write a post" button')
+    }
   }
 
   check('no 5xx responses during writes', serverErrors.length === 0, serverErrors.join(', '))

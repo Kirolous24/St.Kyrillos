@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { BookOpen, CalendarClock, CheckCircle2, ClipboardList, Lock, Percent, XCircle } from 'lucide-react'
+import { BookOpen, CalendarClock, CheckCircle2, ChevronDown, ClipboardList, Lock, Percent, XCircle } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { studentExams, type StudentExamRow } from '@/lib/portal/data/exams'
 import {
@@ -14,6 +14,8 @@ import {
 } from '@/lib/portal/exams'
 import { formatLongDate } from '@/lib/portal/format'
 import { Badge, Card, EmptyState, LinkButton, PageHeader, SectionTitle, StatCard } from '@/components/portal/ui'
+import { PortalChart } from '@/components/portal/PortalChart'
+import { cn } from '@/lib/utils'
 
 export const metadata = { title: 'Quizzes' }
 
@@ -58,6 +60,15 @@ export default async function QuizzesPage() {
   const average = scored.length
     ? Math.round(scored.reduce((n, r) => n + (r.result?.percentage ?? 0), 0) / scored.length)
     : null
+  // The student's own score trend — the prototype's private chart. Oldest
+  // first, because a trend line reads left to right. Placed here rather than
+  // on My Stage, which 404s for a student: it is a stage-coordinator page.
+  const myTrend = scored
+    .filter((r) => r.result)
+    .sort((a, b) => (a.result!.submittedAt < b.result!.submittedAt ? -1 : 1))
+    .slice(-8)
+    .map((r) => ({ label: r.title.length > 16 ? `${r.title.slice(0, 15)}…` : r.title, value: r.result!.percentage }))
+
   const next = grouped.available
     .filter((r) => r.dueDate)
     .sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1))[0]
@@ -69,6 +80,49 @@ export default async function QuizzesPage() {
         icon={<ClipboardList className="h-[18px] w-[18px]" aria-hidden />}
         subtitle={`${rows.length} quiz${rows.length === 1 ? '' : 'zes'} · finish the open ones before they close`}
       />
+
+      {/* F0032 — the prototype put four counts in a chip row under the header,
+          each hidden at zero. The three tiles that replaced it dropped Upcoming
+          altogether and demoted Missed to a hint under Completed, so a student
+          could not see that two quizzes were coming, or that one had been
+          missed, without reading to the bottom of the page. All four buckets
+          are already computed above. */}
+      {rows.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(
+            [
+              ['Done', grouped.completed.length, 'border-[#86EFAC] bg-[#DCFCE7] text-[#166534]'],
+              ['Available', grouped.available.length, 'border-[#FCD34D] bg-[#FFFBEB] text-[#92400E]'],
+              ['Missed', grouped.missed.length, 'border-[#FCA5A5] bg-[#FEE2E2] text-[#991B1B]'],
+              ['Upcoming', grouped.upcoming.length, 'border-[#C7D2FE] bg-[#EEF2FF] text-[#4338CA]'],
+            ] as const
+          )
+            .filter(([, count]) => count > 0)
+            .map(([label, count, skin]) => (
+              <span
+                key={label}
+                data-quiz-chip={label}
+                className={cn('rounded-[20px] border px-3 py-1 text-[11.5px] font-bold', skin)}
+              >
+                {count} {label}
+              </span>
+            ))}
+        </div>
+      )}
+
+      {myTrend.length >= 2 && (
+        <Card className="mb-5" title="How you have been doing" icon={<ClipboardList className="h-4 w-4" aria-hidden />}>
+          <PortalChart
+            kind="line"
+            colour="#C89B3C"
+            points={myTrend}
+            label="Your score"
+            caption="Your last few quizzes, oldest first. Only quizzes you have handed in appear here."
+            suffix="%"
+            maxY={100}
+          />
+        </Card>
+      )}
 
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <StatCard
@@ -114,13 +168,39 @@ export default async function QuizzesPage() {
         {grouped.completed.length === 0 ? (
           <EmptyState title="No finished quizzes yet" hint="Your score and a full review land here once you hand one in." />
         ) : (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {grouped.completed.map((q) => (
-              <li key={q.id}>
-                <CompletedCard row={q} />
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {grouped.completed.slice(0, 4).map((q) => (
+                <li key={q.id}>
+                  <CompletedCard row={q} />
+                </li>
+              ))}
+            </ul>
+            {/* F0703 — this is the one group that only ever grows: by March a
+                student scrolls past thirty finished papers to reach anything
+                else on the page. The count is in the summary, so nothing is
+                hidden without saying how much. Available now and Missed are
+                deliberately left uncapped — a quiz still to do, or one that
+                needs a servant to reopen it, must not be behind a disclosure. */}
+            {grouped.completed.length > 4 && (
+              <details className="mt-3">
+                <summary
+                  data-completed-more=""
+                  className="inline-flex cursor-pointer list-none items-center gap-1 text-[12px] font-bold text-brand-800 hover:underline [&::-webkit-details-marker]:hidden"
+                >
+                  Show {grouped.completed.length - 4} more
+                  <span aria-hidden>▾</span>
+                </summary>
+                <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {grouped.completed.slice(4).map((q) => (
+                    <li key={q.id}>
+                      <CompletedCard row={q} />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         )}
       </section>
 
@@ -163,10 +243,45 @@ function AvailableCard({ row, today, reopened }: { row: StudentExamRow; today: s
       </div>
 
       {row.bibleReading && (
-        <p className="flex items-center gap-1.5 border-b border-[#EFE4C8] bg-brand-wash px-4 py-2.5 text-[12px] font-bold text-[#8B5A0F]">
-          <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span className="truncate">Reading: {row.bibleReading}</span>
-        </p>
+        /* F0698 — the reading's own message was stored and then shown only after
+           the child opened the quiz, so the sentence a servant wrote to make them
+           want to read the passage never reached the card that offers it. It
+           opens rather than always showing: a long note would otherwise push the
+           Start button off a phone screen, and a truncated one with no way to
+           expand is the thing this finding is about. */
+        <div className="border-b border-[#EFE4C8] bg-brand-wash px-4 py-2.5">
+          {/* F0324 — the reading may now be up to 2000 characters, so the summary
+              line truncates but the opened panel prints it in full. A reading
+              that is only ever truncated, with nothing that opens, is the same
+              silent clipping this pair of findings is about. */}
+          {row.readingMessage || row.bibleReading.length > 48 ? (
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12px] font-bold text-[#8B5A0F]">
+                <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="truncate">Reading: {row.bibleReading}</span>
+                <ChevronDown
+                  aria-hidden
+                  className="ml-auto h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180"
+                />
+              </summary>
+              {row.bibleReading.length > 48 && (
+                <p className="mt-1.5 whitespace-pre-line text-[11.5px] font-semibold leading-[1.6] text-[#8B5A0F]">
+                  {row.bibleReading}
+                </p>
+              )}
+              {row.readingMessage && (
+                <p className="mt-1.5 whitespace-pre-line text-[11.5px] leading-[1.6] text-[#7A5210]">
+                  {row.readingMessage}
+                </p>
+              )}
+            </details>
+          ) : (
+            <p className="flex items-center gap-1.5 text-[12px] font-bold text-[#8B5A0F]">
+              <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="truncate">Reading: {row.bibleReading}</span>
+            </p>
+          )}
+        </div>
       )}
 
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 px-4 py-3.5">

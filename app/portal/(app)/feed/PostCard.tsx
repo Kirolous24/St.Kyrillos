@@ -2,10 +2,12 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { BookOpen, ExternalLink, Link2, Megaphone, PartyPopper, Pencil, Pin, PinOff, Trash2 } from 'lucide-react'
+import Image from 'next/image'
+import { BookOpen, ExternalLink, Link2, Megaphone, PartyPopper, Pencil, Pin, PinOff, Play, Trash2 } from 'lucide-react'
 import { deletePost, togglePin, toggleReaction } from '@/lib/portal/actions/feed'
 import { REACTIONS, FEED_TAGS, FEED_TAG_TONE, type FeedTagKey, type FeedPostView } from '@/lib/portal/data/feed'
 import { formatDateTime } from '@/lib/portal/format'
+import { youtubeId, youtubeThumbnail } from '@/lib/portal/links'
 import { Card, Badge, Avatar } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 import { FeedComposer } from './FeedComposer'
@@ -18,7 +20,27 @@ const TAG_ICON: Record<FeedTagKey, typeof BookOpen> = {
   EVENT: PartyPopper,
 }
 
-/** "12m ago" / "3h ago" / "Yesterday", exactly as the prototype's feed read. */
+/**
+ * Church time on both sides of the comparison, not the server's. On the evening
+ * of 31 December the server clock is already in the new year while the church
+ * is not, and a post would sprout a year label hours early.
+ */
+const CHURCH_YEAR = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric' })
+const CHURCH_DATE_WITH_YEAR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+})
+
+/**
+ * "12m ago" / "3h ago" / "Yesterday", exactly as the prototype's feed read.
+ *
+ * F0284 — anything older than a day used to fall through to formatDateTime,
+ * which prints month, day and time and no year at all: a lesson posted in
+ * September 2024 read "Sep 20, 9:15 AM" and sat in the feed looking like last
+ * week's. A post from any other year now says which year it came from.
+ */
 function relativeTime(iso: string): string {
   const then = new Date(iso)
   const mins = Math.floor((Date.now() - then.getTime()) / 60_000)
@@ -29,6 +51,7 @@ function relativeTime(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`
   const days = Math.floor(hrs / 24)
   if (days === 1) return 'Yesterday'
+  if (CHURCH_YEAR.format(then) !== CHURCH_YEAR.format(new Date())) return CHURCH_DATE_WITH_YEAR.format(then)
   return formatDateTime(then)
 }
 
@@ -54,7 +77,23 @@ export function PostCard({ post, classId, canManage }: { post: FeedPostView; cla
 
   return (
     <Card
-      className={cn(post.pinned && 'border-brand-gold/60 shadow-panel')}
+      /* F0277 — the prototype's 3px coloured left edge, keyed to the tag: green
+         lesson, blue announcement, amber resource, purple event. Scrolling a
+         class feed, the bar is what tells a student "this one is a lesson"
+         before a word is read; the small badge up in the byline only says so
+         afterwards. Card's own gold left edge is overridden here — the pinned
+         classes come first deliberately, so twMerge keeps the tag colour on a
+         pinned post instead of dropping it. */
+      className={cn(
+        post.pinned && 'border-brand-gold/60 shadow-panel',
+        'border-l-[3px]',
+        {
+          LESSON: 'border-l-[#1D9E75]',
+          ANNOUNCEMENT: 'border-l-[#2F6FB0]',
+          RESOURCE: 'border-l-[#C89B3C]',
+          EVENT: 'border-l-[#7C5CBF]',
+        }[post.tag],
+      )}
       bodyClassName="p-0"
     >
       <article>
@@ -108,17 +147,59 @@ export function PostCard({ post, classId, canManage }: { post: FeedPostView; cla
               {post.body && (
                 <p className="mt-1.5 whitespace-pre-line text-[12.5px] leading-[1.65] text-parch-700">{post.body}</p>
               )}
-              {post.link && (
-                <a
-                  href={post.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2.5 inline-flex min-h-[40px] items-center gap-1.5 rounded-[10px] border border-parch-200 bg-parch-100 px-3.5 text-[12px] font-bold text-brand-800 transition-colors hover:border-brand-gold/60 hover:bg-brand-wash"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                  {post.linkLabel || 'Open link'}
-                </a>
-              )}
+              {/* F0272 / F0503 — every link was the same grey "Open link" pill,
+                  so a child scrolling the feed could not tell which post held
+                  the hymn recording the servant had talked about without
+                  opening each one. A YouTube link now opens as the video's own
+                  still with a play badge, the way the prototype drew it.
+                  The pill stays underneath in both cases on purpose: the link
+                  is then never only a picture, which keeps it reachable if the
+                  still fails to load or the reader is using a screen reader. */}
+              {post.link &&
+                (() => {
+                  // Captured so TypeScript keeps the narrowing inside the IIFE.
+                  const link = post.link
+                  const ytId = youtubeId(link)
+                  return (
+                    <>
+                      {ytId && (
+                        <a
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-youtube={ytId}
+                          aria-label={`Watch on YouTube: ${post.linkLabel || post.title}`}
+                          className="group relative mt-2.5 block w-[280px] max-w-full overflow-hidden rounded-[10px] border border-parch-200"
+                        >
+                          <Image
+                            src={youtubeThumbnail(ytId)}
+                            alt=""
+                            width={480}
+                            height={360}
+                            className="block h-[158px] w-full object-cover"
+                          />
+                          <span
+                            aria-hidden
+                            className="absolute inset-0 grid place-items-center bg-black/25 transition-colors group-hover:bg-black/10"
+                          >
+                            <span className="grid h-[46px] w-[46px] place-items-center rounded-full bg-[#FF0000] shadow-[0_3px_12px_rgba(0,0,0,.4)]">
+                              <Play className="h-[18px] w-[18px] translate-x-[1px] fill-white text-white" />
+                            </span>
+                          </span>
+                        </a>
+                      )}
+                      <a
+                        href={link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2.5 inline-flex min-h-[40px] items-center gap-1.5 rounded-[10px] border border-parch-200 bg-parch-100 px-3.5 text-[12px] font-bold text-brand-800 transition-colors hover:border-brand-gold/60 hover:bg-brand-wash"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                        {post.linkLabel || (ytId ? 'Watch on YouTube' : 'Open link')}
+                      </a>
+                    </>
+                  )
+                })()}
             </>
           )}
         </div>
@@ -127,6 +208,16 @@ export function PostCard({ post, classId, canManage }: { post: FeedPostView; cla
           {REACTIONS.map((r) => {
             const mine = post.mine.includes(r.kind)
             const count = post.counts[r.kind]
+            /* F0286 — each reaction lights up in its own colour again: red
+               heart, gold prayer, green thumb, the prototype's own values. All
+               three shared one gold state, so a student glancing back at a post
+               could not tell which of the three they had already pressed
+               without stopping to read the counts. */
+            const active = {
+              HEART: 'border-[#E24B4A] bg-[#FFF0F0] font-bold text-[#E24B4A]',
+              PRAY: 'border-[#C89B3C] bg-[#FEF3E0] font-bold text-[#C89B3C]',
+              LIKE: 'border-[#1D9E75] bg-[#EDFAF5] font-bold text-[#1D9E75]',
+            }[r.kind]
             return (
               <button
                 key={r.kind}
@@ -138,7 +229,7 @@ export function PostCard({ post, classId, canManage }: { post: FeedPostView; cla
                 className={cn(
                   'inline-flex min-h-[40px] items-center gap-1.5 rounded-[20px] border px-3 text-[12px] transition-colors disabled:opacity-60',
                   mine
-                    ? 'border-brand-gold bg-brand-wash font-bold text-brand-gold-dark'
+                    ? active
                     : 'border-parch-200 bg-parch-50 font-semibold text-parch-500 hover:border-brand-gold/50 hover:text-brand-800',
                 )}
               >

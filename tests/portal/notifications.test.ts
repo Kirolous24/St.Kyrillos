@@ -6,6 +6,7 @@ import {
   STREAK_ALERT,
   type NotificationFacts,
 } from '@/lib/portal/notifications'
+import { withNavBadges } from '@/lib/portal/nav'
 
 // A Saturday, so "this week" is the Monday of 2026-09-14.
 const TODAY = '2026-09-19'
@@ -59,9 +60,29 @@ describe('buildNotifications — student', () => {
     expect(ANNOUNCEMENT_FRESH_DAYS).toBe(5)
   })
 
-  it('greets the student on their own birthday only', () => {
-    expect(keys({ ...base, ownBirthday: '2012-09-19' }, 'STUDENT')).toEqual([`birthday:self:${TODAY}`])
-    expect(keys({ ...base, ownBirthday: '2012-09-20' }, 'STUDENT')).toEqual([])
+  // F0785 — the greeting used to fire on the exact day, so a child whose
+  // birthday fell midweek got it on a day nobody from church sees them and it
+  // was gone by the Sunday they came in. It now covers the whole Mon-Sun week
+  // the birthday falls in, keyed to that Monday so dismissing it silences the
+  // week rather than only until tomorrow. TODAY is Saturday 2026-09-19.
+  it('greets the student for the whole church week their birthday falls in', () => {
+    const WEEK = '2026-09-14'
+    // On the day itself.
+    expect(keys({ ...base, ownBirthday: '2012-09-19' }, 'STUDENT')).toEqual([`birthday:self:${WEEK}`])
+    // Wednesday, already passed — the case the old exact-day rule dropped.
+    expect(keys({ ...base, ownBirthday: '2012-09-16' }, 'STUDENT')).toEqual([`birthday:self:${WEEK}`])
+    // Sunday, the last day of the same week.
+    expect(keys({ ...base, ownBirthday: '2012-09-20' }, 'STUDENT')).toEqual([`birthday:self:${WEEK}`])
+    // Outside the week on either side.
+    expect(keys({ ...base, ownBirthday: '2012-09-22' }, 'STUDENT')).toEqual([])
+    expect(keys({ ...base, ownBirthday: '2012-09-13' }, 'STUDENT')).toEqual([])
+  })
+
+  it('says whether the birthday is today or elsewhere in the week', () => {
+    const on = buildNotifications('STUDENT', { ...base, ownBirthday: '2012-09-19' })
+    const earlier = buildNotifications('STUDENT', { ...base, ownBirthday: '2012-09-16' })
+    expect(on[0]!.title).toBe('Happy birthday!')
+    expect(earlier[0]!.title).toBe('Happy birthday this week!')
   })
 
   it('ignores servant and admin facts entirely', () => {
@@ -76,28 +97,39 @@ describe('buildNotifications — student', () => {
 })
 
 describe('buildNotifications — servant', () => {
-  it('summarises the birthdays falling in the next week', () => {
+  // F0786 — the window is the church's own Mon-Sun week, not seven days
+  // rolling from today, so the bell and /portal/birthdays can never name
+  // different children. TODAY is Saturday 2026-09-19, so the week runs
+  // Mon 2026-09-14 to Sun 2026-09-20. Each fixture below is chosen to fail
+  // under the old rolling rule: Mina's birthday has already passed this week
+  // (the rolling window started today and missed her), and Tuesday's child
+  // falls in next week (the rolling window wrongly pulled him in).
+  it('counts every birthday in the church Mon-Sun week, including one already passed', () => {
     const items = buildNotifications('SERVANT', {
       ...base,
       birthdays: [
-        { id: 'a', name: 'Mina', dob: '2013-09-20' },
-        { id: 'b', name: 'Sara', dob: '2014-09-25' },
-        { id: 'c', name: 'Far away', dob: '2014-12-01' },
+        { id: 'a', name: 'Mina', dob: '2013-09-14' }, // Monday — already gone, still this week
+        { id: 'b', name: 'Sara', dob: '2014-09-20' }, // Sunday — last day of the week
+        { id: 'c', name: 'Next week', dob: '2014-09-22' }, // Tuesday — the following week
+        { id: 'd', name: 'Far away', dob: '2014-12-01' },
       ],
     })
     expect(items).toHaveLength(1)
     expect(items[0]!.key).toBe('birthdays:2026-09-14')
     expect(items[0]!.title).toBe('2 birthdays this week')
     expect(items[0]!.detail).toBe('Mina, Sara')
+    expect(items[0]!.count).toBe(2)
     expect(items[0]!.href).toBe('/portal/birthdays')
   })
 
   it('names only the first four and counts the rest', () => {
     const items = buildNotifications('SERVANT', {
       ...base,
-      birthdays: ['A', 'B', 'C', 'D', 'E'].map((name, i) => ({ id: name, name, dob: `2013-09-2${i}` })),
+      // Mon 14th through Fri 18th — five children inside the one week.
+      birthdays: ['A', 'B', 'C', 'D', 'E'].map((name, i) => ({ id: name, name, dob: `2013-09-1${4 + i}` })),
     })
     expect(items[0]!.detail).toBe('A, B, C, D, +1 more')
+    expect(items[0]!.count).toBe(5)
   })
 
   it('raises a streak of three or more missed Sundays, worst first', () => {
@@ -194,5 +226,44 @@ describe('ordering and dismissal', () => {
     expect(unreadNotifications(items, ['cases:open:2']).map((n) => n.key)).toEqual(['classes-without-servants:1'])
     expect(unreadNotifications(items, items.map((n) => n.key))).toEqual([])
     expect(unreadNotifications(items, [])).toHaveLength(2)
+  })
+})
+
+describe('withNavBadges', () => {
+  const nav = [
+    { href: '/portal', label: 'Home' },
+    { href: '/portal/follow-ups', label: 'Follow-ups' },
+    { href: '/portal/birthdays', label: 'Birthdays' },
+    { href: '/portal/quizzes', label: 'Quizzes' },
+  ]
+
+  it('badges the destination each notification points at', () => {
+    const out = withNavBadges(nav, [{ href: '/portal/follow-ups', count: 12 }])
+    expect(out.find((i) => i.href === '/portal/follow-ups')?.badge).toBe(12)
+  })
+
+  it('counts what a notification stands for, not the notifications', () => {
+    // One alert about twelve children must read 12, not 1.
+    const out = withNavBadges(nav, [{ href: '/portal/follow-ups', count: 12 }])
+    expect(out.find((i) => i.href === '/portal/follow-ups')?.badge).not.toBe(1)
+  })
+
+  it('treats a notification with no count as one thing', () => {
+    const out = withNavBadges(nav, [{ href: '/portal/quizzes' }, { href: '/portal/quizzes' }])
+    expect(out.find((i) => i.href === '/portal/quizzes')?.badge).toBe(2)
+  })
+
+  it('leaves every other item untouched', () => {
+    const out = withNavBadges(nav, [{ href: '/portal/follow-ups', count: 3 }])
+    expect(out.filter((i) => i.badge !== undefined)).toHaveLength(1)
+  })
+
+  it('cannot badge a destination the nav does not have', () => {
+    const out = withNavBadges(nav, [{ href: '/portal/nowhere', count: 9 }])
+    expect(out.some((i) => i.badge !== undefined)).toBe(false)
+  })
+
+  it('returns the list unchanged when there is nothing to report', () => {
+    expect(withNavBadges(nav, [])).toEqual(nav)
   })
 })

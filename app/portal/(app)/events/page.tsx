@@ -1,9 +1,11 @@
-import { Clock, ExternalLink, MapPin, Share2, Mail, Users } from 'lucide-react'
+import Image from 'next/image'
+import { Clock, ExternalLink, MapPin, Share2, Mail, Users, Play } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listEvents, type EventView } from '@/lib/portal/data/community'
 import { todayInNewYork } from '@/lib/portal/dates'
-import { formatLongDate, formatShortDate, initials } from '@/lib/portal/format'
+import { formatLongDate, formatShortDate, initials, formatTimeOfDay } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
+import { youtubeId, youtubeThumbnail } from '@/lib/portal/links'
 import { PageHeader, EmptyState, SectionTitle } from '@/components/portal/ui'
 import { EventManager } from './EventManager'
 
@@ -16,7 +18,7 @@ const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 function shareText(event: EventView): string {
   return [
     event.title,
-    `${formatLongDate(event.date)}${event.time ? ` · ${event.time}` : ''}`,
+    `${formatLongDate(event.date)}${event.time ? ` · ${formatTimeOfDay(event.time)}` : ''}`,
     event.location ? `Where: ${event.location}` : null,
     event.notes,
     event.link,
@@ -86,14 +88,38 @@ function EventRow({
       <div className="min-w-0 flex-1 p-[18px]">
         {/* Who posted it. */}
         <div className="mb-3.5 flex items-center gap-2 border-b border-[#F0EEE8] pb-3.5">
-          <span
-            aria-hidden
-            className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full text-[10px] font-extrabold text-white"
-            style={{ background: accent }}
-          >
-            {initials(event.createdByName)}
+          {/* F0315 — the poster's face when there is one, their initials when
+              there is not. Initials alone say nothing on a church-wide feed
+              where two servants can share them. */}
+          {event.createdByPhoto ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={event.createdByPhoto}
+              alt=""
+              className="h-[26px] w-[26px] shrink-0 rounded-full object-cover"
+              style={{ boxShadow: `0 0 0 1.5px ${accent}` }}
+            />
+          ) : (
+            <span
+              aria-hidden
+              className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full text-[10px] font-extrabold text-white"
+              style={{ background: accent }}
+            >
+              {initials(event.createdByName)}
+            </span>
+          )}
+          <span className="truncate text-[11.5px] text-parch-500">
+            {event.createdByName}
+            {/* F0657 — who they are to the church, not just their name. Two at
+                most: a servant on five classes would otherwise take the row. */}
+            {event.createdByClasses.length > 0 && (
+              <span className="text-parch-400">
+                {' · '}
+                {event.createdByClasses.slice(0, 2).join(', ')}
+                {event.createdByClasses.length > 2 ? ` +${event.createdByClasses.length - 2}` : ''}
+              </span>
+            )}
           </span>
-          <span className="truncate text-[11.5px] text-parch-500">{event.createdByName}</span>
         </div>
 
         <h3 className="font-serif text-[15px] font-bold leading-snug text-parch-900">{event.title}</h3>
@@ -103,7 +129,7 @@ function EventRow({
             <div className="flex items-center gap-1.5 text-[12.5px] text-parch-500">
               <dt className="sr-only">Time</dt>
               <Clock className="h-3.5 w-3.5 shrink-0 text-brand-gold-dark" aria-hidden />
-              <dd>{event.time}</dd>
+              <dd>{formatTimeOfDay(event.time)}</dd>
             </div>
           )}
           {event.location && (
@@ -125,18 +151,7 @@ function EventRow({
           </p>
         )}
 
-        {event.link && (
-          <p className="mt-2">
-            <a
-              href={event.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-[10px] border border-parch-200 bg-parch-100 px-3.5 text-[12px] font-bold text-brand-800 transition-colors hover:border-brand-gold/60 hover:bg-brand-wash"
-            >
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Details
-            </a>
-          </p>
-        )}
+        {event.link && <LinkPreview href={event.link} />}
 
         {event.notes && (
           <p className="mt-2.5 whitespace-pre-line rounded-[8px] bg-parch-100 px-[11px] py-2 text-[12px] leading-[1.6] text-parch-600">
@@ -186,15 +201,83 @@ function EventRow({
   )
 }
 
+/**
+ * F0768 — a YouTube link on an event card rendered as the same grey "Details"
+ * pill as a sign-up form, so the clip a servant posted for the retreat looked
+ * like paperwork and nobody opened it. The prototype showed the thumbnail with
+ * a play button (OG :15040-15046).
+ *
+ * The thumbnail goes through next/image deliberately: the portal's CSP is
+ * `img-src 'self' data:` (next.config.js), so a bare <img> pointed at
+ * img.youtube.com renders an empty box — and proxying it keeps every child's
+ * IP address out of Google's logs. The id pattern is anchored to the YouTube
+ * hosts rather than the prototype's bare `v=`, which would have put a broken
+ * thumbnail on any unrelated link that happened to carry that parameter.
+ */
+function LinkPreview({ href }: { href: string }) {
+  // Shared with the class feed so a /live/ link cannot preview on one surface
+  // and not the other, which is what two separate copies of this regex did.
+  const ytId = youtubeId(href)
+
+  if (!ytId) {
+    return (
+      <p className="mt-2">
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-[40px] items-center gap-1.5 rounded-[10px] border border-parch-200 bg-parch-100 px-3.5 text-[12px] font-bold text-brand-800 transition-colors hover:border-brand-gold/60 hover:bg-brand-wash"
+        >
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Details
+        </a>
+      </p>
+    )
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-link-preview="youtube"
+      className="group relative mt-2 block w-[280px] max-w-full overflow-hidden rounded-[10px]"
+    >
+      <Image
+        src={youtubeThumbnail(ytId)}
+        alt=""
+        width={480}
+        height={360}
+        className="h-[158px] w-full object-cover"
+      />
+      <span aria-hidden className="absolute inset-0 grid place-items-center bg-black/25 transition-colors group-hover:bg-black/10">
+        <span className="grid h-[46px] w-[46px] place-items-center rounded-full bg-[#FF0000] shadow-[0_3px_12px_rgba(0,0,0,.4)]">
+          <Play className="h-[18px] w-[18px] translate-x-[1px] fill-white text-white" />
+        </span>
+      </span>
+      <span className="absolute bottom-2 left-2 rounded-[8px] bg-black/70 px-[7px] py-[2px] text-[11px] font-bold text-white">
+        Watch on YouTube
+      </span>
+    </a>
+  )
+}
+
 export default async function EventsPage() {
   const user = await requirePortalUser()
   const today = todayInNewYork()
   const { scope, upcoming, past } = await listEvents(user, today)
 
   const canTargetAll = user.role === 'ADMIN' || user.role === 'PASTOR'
-  // A servant may only address the classes they actually serve, even though
-  // they can read the ones they oversee.
-  const targetable = canTargetAll ? scope.classes : scope.classes.filter((c) => user.classIds.includes(c.id))
+  // A servant addresses the classes they serve — and, F0313, the classes in the
+  // stage they oversee. An event is visible to everybody whichever classes it
+  // names, so this is the label widening rather than the audience; a coordinator
+  // who teaches no single class previously had no target at all and could not
+  // add an event. "The whole Sunday School" still belongs to the admin and
+  // Fr. Pachom.
+  const targetable = canTargetAll
+    ? scope.classes
+    : scope.classes.filter(
+        (c) => user.classIds.includes(c.id) || (!!user.stageOversight && c.stage === user.stageOversight),
+      )
   const canCreate = canTargetAll || (user.role === 'SERVANT' && targetable.length > 0)
 
   return (
@@ -202,8 +285,19 @@ export default async function EventsPage() {
       <PageHeader
         title="Events"
         subtitle="Retreats, trips and services coming up for your classes."
-        actions={canCreate ? <EventManager classes={targetable} canTargetAll={canTargetAll} /> : undefined}
       />
+
+      {/* F0312 — EventManager was passed as the header's `actions`, and
+          PageHeader renders actions *inside* the dark maroon banner. Opening
+          "Add event" therefore drew the whole form — labels, inputs,
+          checkboxes — on the burgundy ground, unreadable. The trigger and the
+          form are one component with one piece of state, so the component
+          moves out of the banner rather than being split in two. */}
+      {canCreate && (
+        <div className="mb-5">
+          <EventManager classes={targetable} canTargetAll={canTargetAll} />
+        </div>
+      )}
 
       {upcoming.length === 0 ? (
         <EmptyState
@@ -218,10 +312,18 @@ export default async function EventsPage() {
         </div>
       )}
 
+      {/* F0311 — the prototype listed today, then what is coming, then what has
+          been, in one column (OG :15082-15085). The port shut the past behind a
+          closed accordion, so "when was the last retreat?" had a click in front
+          of it that nothing on screen suggested. Open by default, still
+          collapsible — which is better than the prototype, not a copy of it.
+          The query stops at the 25 most recent (lib/portal/data/community.ts:168)
+          and the summary now says so instead of reading as the whole history. */}
       {past.length > 0 && (
-        <details className="group mt-8">
+        <details open className="group mt-8">
           <summary className="cursor-pointer list-none rounded-[10px] border border-parch-200 bg-parch-50 px-4 py-3 text-[12px] font-bold text-parch-600 transition-colors hover:border-brand-gold/50 hover:text-brand-800">
             {past.length} past event{past.length === 1 ? '' : 's'} · {formatShortDate(past[0].date)} and earlier
+            {past.length >= 25 ? ' · most recent 25 only' : ''}
           </summary>
           <div className="mt-4 space-y-4">
             <SectionTitle hint="Already happened">Past events</SectionTitle>

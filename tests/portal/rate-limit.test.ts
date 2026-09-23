@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { checkRateLimit, isRateLimited, recordFailedAttempt, clearRateLimit } from '@/lib/rate-limit'
 
 // The limiter keeps one Map for the life of the process, so every test here
 // uses its own key prefix rather than resetting shared state.
@@ -31,5 +31,47 @@ describe('checkRateLimit', () => {
     // The first key kept its count: four more are allowed, the sixth is not.
     expect(Array.from({ length: 4 }, () => checkRateLimit(k).allowed)).toEqual([true, true, true, true])
     expect(checkRateLimit(k).allowed).toBe(false)
+  })
+})
+
+// A sign-in that SUCCEEDS must not spend the account's budget. The limiter is
+// consulted before the PIN is verified, so if the check itself counts, the
+// sixth sign-in of any 15 minutes is refused even when the PIN is correct —
+// and an admin PIN reset cannot clear it, because the caller never reaches
+// the success path. Failures count; successes release.
+describe('failure-only limiting', () => {
+  it('isRateLimited does not consume budget, so repeated success never locks', () => {
+    const k = key('success')
+    for (let i = 0; i < 20; i++) {
+      expect(isRateLimited(k)).toBe(false)
+      clearRateLimit(k) // what a successful sign-in does
+    }
+    expect(isRateLimited(k)).toBe(false)
+  })
+
+  it('locks after five recorded failures', () => {
+    const k = key('failures')
+    for (let i = 0; i < 5; i++) {
+      expect(isRateLimited(k)).toBe(false)
+      recordFailedAttempt(k)
+    }
+    expect(isRateLimited(k)).toBe(true)
+  })
+
+  it('a correct PIN after four failures still gets in, and clears the counter', () => {
+    const k = key('recover')
+    for (let i = 0; i < 4; i++) recordFailedAttempt(k)
+    expect(isRateLimited(k)).toBe(false)
+    clearRateLimit(k)
+    for (let i = 0; i < 4; i++) recordFailedAttempt(k)
+    expect(isRateLimited(k)).toBe(false)
+  })
+
+  it('clearRateLimit lets an admin PIN reset unlock a locked-out account', () => {
+    const k = key('adminreset')
+    for (let i = 0; i < 5; i++) recordFailedAttempt(k)
+    expect(isRateLimited(k)).toBe(true)
+    clearRateLimit(k)
+    expect(isRateLimited(k)).toBe(false)
   })
 })

@@ -5,8 +5,12 @@ import { servantAttendanceReport } from '@/lib/portal/data/servant-attendance'
 import { addDays, mondayOf, parseDateOnly, todayInNewYork } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { rateBand, RATE_BAND_LABEL, RATE_BAND_TONE } from '@/lib/portal/qr'
+import { monthRange, schoolYearMonths } from '@/lib/portal/reports'
+import { ServantWeekMatrix } from './WeekMatrix'
 import { PageHeader, Card, StatCard, TableWrap, Th, Td, Badge, EmptyState, ProgressBar } from '@/components/portal/ui'
 import { PrintButton } from '@/components/portal/PrintButton'
+import { ServantAttendanceTabs } from '../Tabs'
+import { PortalChart } from '@/components/portal/PortalChart'
 
 export const metadata = { title: 'Servant attendance report' }
 
@@ -52,15 +56,17 @@ export default async function ServantAttendanceReportPage({
         actions={<PrintButton label="Print report" />}
       />
 
+      <ServantAttendanceTabs active="report" weekStart={toWeek} />
+
       {/* range chips, in the prototype's month-chip shape */}
-      <div className="mb-5 flex flex-wrap gap-2 print:hidden">
+      <div className="mb-3 flex flex-wrap gap-2 print:hidden">
         {RANGES.map((n) => (
           <a
             key={n}
             href={`/portal/servant-attendance/report?to=${toWeek}&weeks=${n}`}
-            aria-current={n === weeks ? 'page' : undefined}
+            aria-current={!searchParams.from && n === weeks ? 'page' : undefined}
             className={`rounded-[10px] px-3.5 py-2 text-[12px] font-bold transition-all ${
-              n === weeks
+              !searchParams.from && n === weeks
                 ? 'bg-[linear-gradient(120deg,#6F1D1B_0%,#7A2A2A_50%,#C89B3C_100%)] text-white shadow-[0_4px_12px_rgba(90,31,31,.28)]'
                 : 'border border-parch-200 bg-parch-100 text-parch-600 hover:border-brand-gold/50 hover:text-brand-800'
             }`}
@@ -68,6 +74,34 @@ export default async function ServantAttendanceReportPage({
             Last {n} weeks
           </a>
         ))}
+      </div>
+
+      {/* F0295 — the twelve school-year months, as the prototype had them. With
+          only "Last N weeks" the furthest anyone could look back was 26 weeks,
+          so last October was unreachable without hand-editing ?from= and ?to=
+          in the address bar — and October is exactly the month somebody asks
+          about in March, when a servant's attendance comes up. September-first,
+          because that is how the church counts a year. */}
+      <div className="mb-5 flex w-full flex-wrap gap-1.5 print:hidden">
+        {schoolYearMonths(todayInNewYork()).map((m) => {
+          const range = monthRange(m.key)
+          const active = searchParams.from === range.from && searchParams.to === range.to
+          return (
+            <a
+              key={m.key}
+              href={`/portal/servant-attendance/report?from=${range.from}&to=${range.to}`}
+              aria-label={m.label}
+              aria-current={active ? 'page' : undefined}
+              className={`rounded-[20px] border px-2.5 py-1 text-[11px] font-bold tracking-[0.5px] transition-colors ${
+                active
+                  ? 'border-brand-gold bg-brand-wash text-brand-800'
+                  : 'border-parch-200 text-parch-600 hover:border-brand-gold hover:text-brand-800'
+              }`}
+            >
+              {m.abbr}
+            </a>
+          )
+        })}
       </div>
 
       {rows.length === 0 || report.weeks.length === 0 ? (
@@ -125,6 +159,30 @@ export default async function ServantAttendanceReportPage({
                   )
                 })}
               </ul>
+            </Card>
+          </div>
+
+          {report.perActivity.filter((a) => a.rate !== null).length >= 2 && (
+            <div className="mb-4">
+              <Card title="Attendance by activity" icon={<BarChart3 className="h-4 w-4" aria-hidden />}>
+                <PortalChart
+                  kind="bar"
+                  points={report.perActivity
+                    .filter((a) => a.rate !== null)
+                    .map((a) => ({ label: a.label, value: a.rate }))}
+                  label="Attendance"
+                  caption="Share of the weeks each activity was held that servants in view attended. An excused week is left out rather than counted against them."
+                  suffix="%"
+                  maxY={100}
+                />
+              </Card>
+            </div>
+          )}
+
+          {/* Which week was missed, not just how many — the prototype's grid. */}
+          <div className="mb-4">
+            <Card title="Week by week">
+              <ServantWeekMatrix report={report} />
             </Card>
           </div>
 

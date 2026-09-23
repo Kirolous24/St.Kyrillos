@@ -1,14 +1,15 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ClipboardList, History, Phone, Mail, Users } from 'lucide-react'
+import { ClipboardList, History, Phone, Mail, Users, MessageCircle } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
+import { resolveReasonLabel, contactMethodLabel } from '@/lib/portal/followups'
 import { requireClassAccess } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
 import { can } from '@/lib/portal/permissions'
 import { formatDateOnly } from '@/lib/portal/dates'
 import { formatDateTime, formatLongDate } from '@/lib/portal/format'
-import { formatPhone } from '@/lib/portal/phones'
+import { formatPhone, waLink } from '@/lib/portal/phones'
 import { PageHeader, Card, Badge, Callout, EmptyState } from '@/components/portal/ui'
 import { CaseActions } from './CaseActions'
 
@@ -72,7 +73,7 @@ export default async function CasePage({ params }: { params: { id: string } }) {
                 {c.status === 'DONE' && (
                   <Callout
                     tone="good"
-                    title={`Resolved${c.resolveReason ? ` \u00b7 ${c.resolveReason.replace('_', ' ')}` : ''}`}
+                    title={`Resolved${c.resolveReason ? ` \u00b7 ${resolveReasonLabel(c.resolveReason)}` : ''}`}
                   >
                     {c.resolvedAt ? formatDateTime(c.resolvedAt) : ''}
                     {c.resolvedBy ? ` · ${c.resolvedBy.displayName}` : ''}
@@ -92,7 +93,9 @@ export default async function CasePage({ params }: { params: { id: string } }) {
                   <li key={l.id} className="relative">
                     <span aria-hidden className="absolute -left-[26px] top-1 h-3 w-3 rounded-full bg-brand-gold ring-2 ring-parch-50" />
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone="brand"><span className="capitalize">{l.method}</span></Badge>
+                      {/* Named, not capitalised: "Whatsapp" and "Resolved" are database values
+                          wearing a capital letter. */}
+                      <Badge tone={l.method === 'resolved' ? 'good' : 'brand'}>{contactMethodLabel(l.method)}</Badge>
                       {l.result && <Badge tone={l.result === 'reached' || l.result === 'will_come' ? 'good' : 'neutral'}><span className="capitalize">{l.result.replace('_', ' ')}</span></Badge>}
                     </div>
                     {l.note && <p className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-parch-800">{l.note}</p>}
@@ -113,6 +116,13 @@ export default async function CasePage({ params }: { params: { id: string } }) {
               <p className="px-[18px] py-4 text-[12.5px] text-parch-500">No contact details on file.</p>
             ) : (
               <dl>
+                {/* F0100 — the row on the list has had a one-tap WhatsApp since
+                    Wave 7, but the case page — the one a pastor opens to read
+                    the history before reaching out — offered only tel:. Most
+                    families here answer WhatsApp and not a call from a number
+                    they do not know, so the fastest way to reach them was the
+                    one place this page did not offer. waLink handles the missing
+                    country code; numbers are stored without one. */}
                 {(s.fatherName || s.fatherPhone) && (
                   <Row
                     label="Father"
@@ -126,6 +136,21 @@ export default async function CasePage({ params }: { params: { id: string } }) {
                               <Phone className="h-3.5 w-3.5" aria-hidden />
                               {formatPhone(s.fatherPhone)}
                             </a>
+                            {waLink(s.fatherPhone) && (
+                              <>
+                                {' '}
+                                <a
+                                  className="inline-flex items-center gap-1 font-bold text-[#16A34A] hover:text-brand-gold-dark"
+                                  href={waLink(s.fatherPhone)!}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`WhatsApp ${s.fatherName ?? "the student's father"}`}
+                                >
+                                  <MessageCircle className="h-3.5 w-3.5" aria-hidden />
+                                  WhatsApp
+                                </a>
+                              </>
+                            )}
                           </>
                         )}
                       </>
@@ -145,6 +170,21 @@ export default async function CasePage({ params }: { params: { id: string } }) {
                               <Phone className="h-3.5 w-3.5" aria-hidden />
                               {formatPhone(s.motherPhone)}
                             </a>
+                            {waLink(s.motherPhone) && (
+                              <>
+                                {' '}
+                                <a
+                                  className="inline-flex items-center gap-1 font-bold text-[#16A34A] hover:text-brand-gold-dark"
+                                  href={waLink(s.motherPhone)!}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`WhatsApp ${s.motherName ?? "the student's mother"}`}
+                                >
+                                  <MessageCircle className="h-3.5 w-3.5" aria-hidden />
+                                  WhatsApp
+                                </a>
+                              </>
+                            )}
                           </>
                         )}
                       </>

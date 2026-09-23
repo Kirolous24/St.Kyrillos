@@ -255,11 +255,22 @@ describe('canMarkServant', () => {
   it('lets a stage overseer mark a servant in scope', () => {
     expect(canMarkServant({ ...base, role: 'SERVANT', servantId: 'svc1', isCoordinator: false, hasStageOversight: true })).toBeNull()
   })
-  it('refuses a plain servant marking someone else', () => {
+  // The prototype had no gate at all: whoever ran the meeting marked the room.
+  // The church asked for that back, so a plain servant may mark a colleague —
+  // the only limit is that the colleague is on their own grid.
+  it('lets a plain servant mark a colleague in scope', () => {
     expect(canMarkServant({ ...base, role: 'SERVANT', servantId: 'svc1', isCoordinator: false, hasStageOversight: false }))
-      .toMatch(/coordinator or stage overseer/i)
+      .toBeNull()
   })
-  it('refuses a coordinator reaching outside their scope', () => {
+  it('still refuses any servant reaching outside their own scope', () => {
+    expect(canMarkServant({
+      ...base,
+      role: 'SERVANT',
+      servantId: 'svc1',
+      targetServantId: 'svc99',
+      isCoordinator: false,
+      hasStageOversight: false,
+    })).toMatch(/outside the classes/i)
     expect(canMarkServant({
       ...base,
       role: 'SERVANT',

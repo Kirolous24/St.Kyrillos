@@ -6,11 +6,11 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
-import { parseDateOnly, toUTCDate, formatDateOnly } from '../dates'
-import { absenceStreakAgainst, decideFollowUp } from '../attendance-rules'
+import { parseDateOnly, toUTCDate, todayInNewYork } from '../dates'
+import { isFutureDate } from '../attendance-rules'
+import { syncAutoFollowUps } from '../followup-sync'
 import { awardAttendancePoints, reverseAttendancePoints } from '../attendance-award'
 import { audit } from '../audit'
-import { studentName } from '../data/students'
 
 const MarkSchema = z.object({
   studentId: z.string().min(1),
@@ -35,6 +35,9 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
 
     const date = parseDateOnly(input.date)
     if (!date) throw new PortalError('Pick a valid date.')
+    if (isFutureDate(date, todayInNewYork())) {
+      throw new PortalError('You cannot take attendance for a day that has not happened yet.')
+    }
     const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
     if (!session || !session.isActive) throw new PortalError('Unknown session.')
 
@@ -95,62 +98,19 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
       { timeout: 60_000, maxWait: 10_000 },
     )
 
-    // Follow-up rule only watches the Sunday School session.
+    // Follow-up rule only watches the Sunday School session. Shared with the
+    // QR check-in path so both stay in step (see lib/portal/followup-sync.ts).
     let opened = 0
     let closed = 0
     if (session.key === 'sunday') {
-      const studentIds = marks.map((m) => m.studentId)
-      const [history, heldDates, openAuto, names] = await Promise.all([
-        prisma.attendanceRecord.findMany({
-          where: { studentId: { in: studentIds }, sessionKey: 'sunday' },
-          select: { studentId: true, date: true, status: true },
-        }),
-        // Class-wide: a Sunday the class held but this student has no row for
-        // (everyone else checked in by group QR) still counts against them.
-        prisma.attendanceRecord.findMany({
-          where: { classId: cls.id, sessionKey: 'sunday' },
-          distinct: ['date'],
-          select: { date: true },
-        }),
-        prisma.followUpCase.findMany({
-          where: { studentId: { in: studentIds }, status: 'OPEN', origin: 'AUTO' },
-          select: { id: true, studentId: true },
-        }),
-        prisma.student.findMany({ where: { id: { in: studentIds } }, select: { id: true, firstName: true, lastName: true } }),
-      ])
-      const openByStudent = new Map(openAuto.map((c) => [c.studentId, c.id]))
-      const nameById = new Map(names.map((n) => [n.id, studentName(n)]))
-
-      const held = heldDates.map((h) => formatDateOnly(h.date))
-      for (const id of studentIds) {
-        const rows = history.filter((h) => h.studentId === id).map((h) => ({ date: formatDateOnly(h.date), status: h.status }))
-        const streak = absenceStreakAgainst(held, rows)
-        const openId = openByStudent.get(id)
-        const decision = decideFollowUp({ streak, threshold: cls.visitationThreshold, hasOpenAutoCase: !!openId })
-        if (decision === 'open') {
-          const lastSeen = rows.filter((r) => r.status === 'PRESENT').sort((a, b) => (a.date < b.date ? 1 : -1))[0]?.date
-          await prisma.followUpCase.create({
-            data: {
-              studentId: id,
-              classId: cls.id,
-              origin: 'AUTO',
-              title: `Missed ${streak} Sunday${streak > 1 ? 's' : ''} in a row`,
-              consecutiveAbsences: streak,
-              lastSeen: lastSeen ? toUTCDate(lastSeen) : null,
-            },
-          })
-          opened++
-        } else if (decision === 'close' && openId) {
-          await prisma.followUpCase.update({
-            where: { id: openId },
-            data: { status: 'DONE', resolvedAt: new Date(), resolveReason: 'attending_again', resolveNote: `Back on ${date}` },
-          })
-          closed++
-        } else if (openId && streak > 0) {
-          await prisma.followUpCase.update({ where: { id: openId }, data: { consecutiveAbsences: streak } })
-        }
-      }
-      void nameById
+      const synced = await syncAutoFollowUps({
+        classId: cls.id,
+        studentIds: marks.map((m) => m.studentId),
+        threshold: cls.visitationThreshold,
+        asOf: date,
+      })
+      opened = synced.opened
+      closed = synced.closed
     }
 
     const present = marks.filter((m) => m.status === 'PRESENT').length
@@ -161,5 +121,74 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
     revalidatePath(`/portal/classes/${cls.id}/attendance`)
     revalidatePath('/portal/follow-ups')
     return { saved: marks.length, opened, closed }
+  })
+}
+
+const RemoveSchema = z.object({
+  classId: z.string().min(1),
+  date: z.string(),
+  sessionKey: z.string().min(1),
+})
+
+/**
+ * Delete a whole register — every mark for one class, on one date, for one
+ * session.
+ *
+ * A register saved on the wrong date could not be undone. `saveAttendance` only
+ * ever upserts, and a session counts as *held* the moment any row exists for
+ * it, so one mis-dated save permanently added an occasion every student in the
+ * class was then measured against. Marking everyone absent does not help: those
+ * rows are what make the date count. The prototype simply removed the rows
+ * (OG L13111-13121).
+ *
+ * The attendance points ride on `PointEntry.attendanceRecordId`, which cascades
+ * on delete, so the points awarded for that day go with it. Follow-up cases are
+ * recomputed afterwards, because removing a held Sunday changes every streak
+ * that was scored against it.
+ */
+export async function removeAttendanceSession(
+  raw: z.infer<typeof RemoveSchema>,
+): Promise<ActionResult<{ removed: number; opened: number; closed: number }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = RemoveSchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, 'attendance.write')
+
+    const date = parseDateOnly(input.date)
+    if (!date) throw new PortalError('Pick a valid date.')
+    const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
+    if (!session) throw new PortalError('Unknown session.')
+
+    const day = toUTCDate(date)
+    const existing = await prisma.attendanceRecord.count({
+      where: { classId: cls.id, date: day, sessionKey: session.key },
+    })
+    if (existing === 0) throw new PortalError('There is nothing recorded for that day.')
+
+    const { count } = await prisma.attendanceRecord.deleteMany({
+      where: { classId: cls.id, date: day, sessionKey: session.key },
+    })
+
+    const students = await prisma.student.findMany({ where: { classId: cls.id }, select: { id: true } })
+    const { opened, closed } = await syncAutoFollowUps({
+      classId: cls.id,
+      studentIds: students.map((s) => s.id),
+      threshold: cls.visitationThreshold,
+      asOf: todayInNewYork(),
+    })
+
+    await audit(
+      user,
+      'attendance.remove',
+      'class',
+      cls.id,
+      `${cls.name}: removed ${count} mark${count === 1 ? '' : 's'} for ${session.label} on ${input.date}`,
+    )
+    revalidatePath(`/portal/classes/${cls.id}`)
+    revalidatePath(`/portal/classes/${cls.id}/attendance`)
+    revalidatePath('/portal/reports')
+    revalidatePath('/portal/follow-ups')
+    revalidatePath('/portal')
+    return { removed: count, opened, closed }
   })
 }

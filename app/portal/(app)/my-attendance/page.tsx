@@ -1,7 +1,7 @@
 import { Flame, CalendarCheck, Percent, QrCode, Star } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
-import { loadMyServantHistory } from '@/lib/portal/data/servant-attendance'
+import { loadMyServantHistory, listServantActivities } from '@/lib/portal/data/servant-attendance'
 import { addDays, formatDateOnly, mondayOf, todayInNewYork, toUTCDate } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import {
@@ -13,6 +13,7 @@ import {
   type SessionWeekRow,
 } from '@/lib/portal/qr'
 import { PageHeader, Card, StatCard, Badge, EmptyState, ProgressBar, TableWrap, Th, Td, Callout, LinkButton } from '@/components/portal/ui'
+import { SelfCheckIn } from './SelfCheckIn'
 
 export const metadata = { title: 'My Attendance' }
 
@@ -91,8 +92,39 @@ export default async function MyAttendancePage() {
   const today = todayInNewYork()
   const fromWeek = addDays(mondayOf(today), -7 * (WEEKS_BACK - 1))
 
+  const thisWeek = mondayOf(today)
+
   if (user.studentId) return <StudentAttendance studentId={user.studentId} fromWeek={fromWeek} />
-  if (user.servantId) return <ServantAttendance servantId={user.servantId} fromWeek={fromWeek} />
+
+  // The session only carries servantId for accounts whose profile existed when
+  // they signed in, so look it up as well — an admin who just self-marked has
+  // a Servant row but a stale token.
+  const servantId =
+    user.servantId ??
+    (await prisma.servant.findUnique({ where: { accountId: user.accountId }, select: { id: true } }))?.id ??
+    null
+  if (servantId) return <ServantAttendance servantId={servantId} fromWeek={fromWeek} thisWeek={thisWeek} />
+
+  // Staff with no Servant profile at all — a pure ADMIN who also serves on a
+  // Sunday. They had no way to record themselves anywhere in the portal; the
+  // profile is created the first time they mark a week.
+  if (user.role === 'ADMIN' || user.role === 'PASTOR' || user.role === 'SERVANT') {
+    const activities = await listServantActivities()
+    return (
+      <>
+        <PageHeader
+          eyebrow="Attendance"
+          icon={<CalendarCheck className="h-5 w-5" aria-hidden />}
+          title="My Attendance"
+          subtitle="Nothing recorded yet — mark your first week below."
+        />
+        <SelfCheckIn
+          weekStart={thisWeek}
+          activities={activities.map((a) => ({ key: a.key, label: a.label, status: null }))}
+        />
+      </>
+    )
+  }
 
   return (
     <>
@@ -107,8 +139,20 @@ export default async function MyAttendancePage() {
 
 /* ── Servant ──────────────────────────────────────────────────────────────── */
 
-async function ServantAttendance({ servantId, fromWeek }: { servantId: string; fromWeek: string }) {
-  const { overall, byWeek } = await loadMyServantHistory(servantId, fromWeek)
+async function ServantAttendance({ servantId, fromWeek, thisWeek }: { servantId: string; fromWeek: string; thisWeek: string }) {
+  const [{ overall, byWeek }, allActivities] = await Promise.all([
+    loadMyServantHistory(servantId, fromWeek),
+    listServantActivities(),
+  ])
+  // Every active activity is offered for the current week, not only the ones
+  // somebody has already recorded — otherwise the first person to mark a week
+  // has nothing to click.
+  const currentCells = byWeek.find((w) => w.week === thisWeek)?.cells ?? []
+  const selfActivities = allActivities.map((a) => ({
+    key: a.key,
+    label: a.label,
+    status: (currentCells.find((c) => c.key === a.key)?.status ?? null) as 'PRESENT' | 'EXCUSED' | 'ABSENT' | null,
+  }))
   const streak = presentStreak(byWeek.map((w) => ({ week: w.week, attended: w.cells.some((c) => c.status === 'PRESENT') })))
   const band = rateBand(overall.rate)
 
@@ -157,8 +201,12 @@ async function ServantAttendance({ servantId, fromWeek }: { servantId: string; f
 
       <StreakBanner streak={streak} unit="Week streak" />
 
+      <div className="mb-4">
+        <SelfCheckIn weekStart={thisWeek} activities={selfActivities} />
+      </div>
+
       {byWeek.length === 0 ? (
-        <EmptyState title="No weeks recorded yet" hint="Once a coordinator records a week, it shows up here." />
+        <EmptyState title="No weeks recorded yet" hint="Mark yourself above, or wait for a coordinator to record the week." />
       ) : (
         <>
           {perActivity.length > 0 && (
@@ -287,13 +335,24 @@ async function StudentAttendance({ studentId, fromWeek }: { studentId: string; f
         actions={<LinkButton href="/portal/my-qr" variant="secondary"><QrCode className="h-4 w-4" aria-hidden /> My QR code</LinkButton>}
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Attendance rate"
           value={overall.rate === null ? '—' : `${overall.rate}%`}
           tone="brand"
           icon={<Percent className="h-6 w-6" aria-hidden />}
           hint={`${overall.attended} of ${overall.held} held`}
+        />
+        {/* F0715 — the raw count was hint text under the percentage. A child
+            reads "how many times have I been?" before "what is my rate?", and a
+            percentage with nothing behind it is the number a parent argues
+            with. Same figure as the hint beside it, by construction. */}
+        <StatCard
+          label="Present"
+          value={overall.attended}
+          icon={<CalendarCheck className="h-6 w-6" aria-hidden />}
+          accent="#16A34A"
+          hint={`of ${overall.held} held`}
         />
         <StatCard
           label="Sundays in a row"
@@ -307,6 +366,20 @@ async function StudentAttendance({ studentId, fromWeek }: { studentId: string; f
           value={RATE_BAND_LABEL[band]}
           tone={band === 'excellent' ? 'good' : band === 'can-do-better' ? 'warn' : band === 'none' ? 'default' : 'bad'}
           icon={<Star className="h-6 w-6" aria-hidden />}
+        />
+        {/* F0716 — the only points figure on this page was "+N pts" buried in a
+            per-session hint, so the child who shows up every week had no answer
+            to "what has coming earned me?". Summed from the same per-session
+            rows the cards below are built from — each present week is worth its
+            session's points, which is exactly what the QR and manual save paths
+            award (actions/qr.ts:412-419) — rather than a second query that
+            could disagree with the tiles beside it. */}
+        <StatCard
+          label="Points earned"
+          value={bySession.reduce((n, s) => n + s.attended * s.points, 0)}
+          hint="From attendance, over this period"
+          icon={<Star className="h-6 w-6" aria-hidden />}
+          accent="#D97706"
         />
       </div>
 

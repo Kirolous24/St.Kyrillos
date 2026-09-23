@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, Users, KeyRound } from 'lucide-react'
-import { createStudent, updateStudent, type StudentFormInput } from '@/lib/portal/actions/students'
+import { createStudent, updateStudent, moveStudent, type StudentFormInput } from '@/lib/portal/actions/students'
 import { Field, inputClass, selectClass, textareaClass, buttonClass, Card, Callout } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -13,16 +13,24 @@ interface Props {
   studentId?: string
   initial?: Partial<StudentFormInput>
   backHref: string
+  /**
+   * Admins only. The prototype showed a Class field as the second row of the
+   * Edit Student form (es-class-fld, hidden for servants); the port pulled it
+   * out onto a separate list page, so an admin fixing a child's details and
+   * their class had to do it in two places.
+   */
+  classes?: Array<{ id: string; name: string }>
 }
 
 /** The prototype's .grid2 — two equal columns, collapsing to one on a phone. */
 const GRID2 = 'grid grid-cols-1 gap-x-4 sm:grid-cols-2'
 
-export function StudentForm({ mode, classId, studentId, initial, backHref }: Props) {
+export function StudentForm({ mode, classId, studentId, initial, backHref, classes }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
   const [created, setCreated] = useState<{ loginId: string; pin: string; studentId: string } | null>(null)
+  const [moveTo, setMoveTo] = useState(classId ?? '')
   const [form, setForm] = useState<StudentFormInput>({
     firstName: initial?.firstName ?? '',
     lastName: initial?.lastName ?? '',
@@ -38,6 +46,13 @@ export function StudentForm({ mode, classId, studentId, initial, backHref }: Pro
     notes: initial?.notes ?? '',
   })
 
+  // In edit mode the field moves an existing student; in create mode it is
+  // the class the new student is added to. The prototype's "Add Student to Any
+  // Class" form (F0062/F0559) is exactly this field on a blank form, which is
+  // why the two share one control rather than growing a second.
+  const canPickClass = !!classes && classes.length > 0
+  const canMove = mode === 'edit' && canPickClass
+
   const set = (k: keyof StudentFormInput) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm({ ...form, [k]: e.target.value })
 
@@ -46,12 +61,20 @@ export function StudentForm({ mode, classId, studentId, initial, backHref }: Pro
     setError('')
     startTransition(async () => {
       if (mode === 'create') {
-        const result = await createStudent(classId!, form)
+        const target = canPickClass ? moveTo : classId
+        if (!target) return setError('Choose a class for this student.')
+        const result = await createStudent(target, form)
         if (!result.ok) return setError(result.error)
         setCreated(result.data!)
       } else {
         const result = await updateStudent(studentId!, form)
         if (!result.ok) return setError(result.error)
+        // The class change rides along with the rest of the edit, so one save
+        // does what the prototype's one save did.
+        if (canMove && moveTo !== (classId ?? '')) {
+          const moved = await moveStudent(studentId!, moveTo || null)
+          if (!moved.ok) return setError(moved.error)
+        }
         router.push(backHref)
         router.refresh()
       }
@@ -86,6 +109,22 @@ export function StudentForm({ mode, classId, studentId, initial, backHref }: Pro
         <div className={GRID2}>
           <Field label="First name" htmlFor="firstName"><input id="firstName" value={form.firstName} onChange={set('firstName')} className={inputClass} required maxLength={60} /></Field>
           <Field label="Last name" htmlFor="lastName"><input id="lastName" value={form.lastName} onChange={set('lastName')} className={inputClass} maxLength={60} /></Field>
+          {(canMove || (mode === 'create' && canPickClass)) && (
+            <div className="sm:col-span-2">
+              <Field
+                label="Class"
+                htmlFor="student-class"
+                hint={mode === 'create' ? 'Which class this student joins.' : 'Changing this moves the student when you save.'}
+              >
+                <select id="student-class" value={moveTo} onChange={(e) => setMoveTo(e.target.value)} className={selectClass}>
+                  {/* A new student with no class would not appear on any
+                      roster, so creating one is a choice, not a default. */}
+                  <option value="">{mode === 'create' ? 'Choose a class…' : 'No class'}</option>
+                  {classes!.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </Field>
+            </div>
+          )}
           <Field label="Birthday" htmlFor="dob"><input id="dob" type="date" value={form.dob} onChange={set('dob')} className={inputClass} /></Field>
           <Field label="Gender" htmlFor="gender">
             <select id="gender" value={form.gender ?? ''} onChange={set('gender')} className={selectClass}>
@@ -94,6 +133,10 @@ export function StudentForm({ mode, classId, studentId, initial, backHref }: Pro
           </Field>
           <Field label="Grade" htmlFor="grade"><input id="grade" value={form.grade ?? ''} onChange={set('grade')} className={inputClass} maxLength={20} placeholder="e.g. 3rd" /></Field>
           <Field label="Address" htmlFor="address"><input id="address" value={form.address ?? ''} onChange={set('address')} className={inputClass} maxLength={200} /></Field>
+          {/* The child's own contact details. The port only ever captured the
+              parents', so an older student with their own phone had nowhere for it. */}
+          <Field label="Student's email" htmlFor="email" hint="Optional — theirs, not a parent's."><input id="email" type="email" value={form.email ?? ''} onChange={set('email')} className={inputClass} maxLength={200} /></Field>
+          <Field label="Student's phone" htmlFor="phone" hint="Optional."><input id="phone" type="tel" value={form.phone ?? ''} onChange={set('phone')} className={inputClass} maxLength={30} /></Field>
         </div>
         {mode === 'create' && (
           <Callout tone="warn">

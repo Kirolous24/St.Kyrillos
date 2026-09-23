@@ -50,18 +50,41 @@ export default async function CurriculumPage() {
       />
 
       <Card className="mb-5">
+        {/* F0269 — the year plan, the milestones document and the feedback form
+            are what a servant opens at the start of a term; the three companion
+            curricula are reference. Concatenating both arrays into one strip
+            made six equal links and lost that, so the three that matter most
+            were no easier to find than the three that matter least. */}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-[12px] border border-brand-gold/35 bg-brand-wash px-4 py-3.5">
-          {[...CURRICULUM_CORE, ...CURRICULUM_EXTRAS].map((l) => (
+          {CURRICULUM_CORE.map((l) => (
             <LinkRow key={l.url} href={l.url}>
               {l.label}
             </LinkRow>
+          ))}
+        </div>
+        <div className="mt-3.5 flex flex-wrap items-center gap-x-2.5 gap-y-2 border-t border-parch-200 pt-3.5">
+          {CURRICULUM_EXTRAS.map((l, i) => (
+            <span key={l.url} className="inline-flex items-center gap-2.5">
+              {i > 0 && <span aria-hidden className="text-parch-300">·</span>}
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] font-semibold text-brand-800 underline underline-offset-4 transition-colors hover:text-brand-gold-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-gold"
+              >
+                {l.label}
+              </a>
+            </span>
           ))}
         </div>
       </Card>
 
       <SectionTitle hint={`${CURRICULUM_GRADES.length} grades`}>Books by grade</SectionTitle>
 
-      <ul className="mt-3.5 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {/* F0270 — two covers to a phone row squeezed a 118x154 book jacket into
+          half a small screen and five to a desktop row shrank the titles; the
+          prototype never went below one or above three. */}
+      <ul className="mt-3.5 grid grid-cols-1 gap-x-4 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
         {CURRICULUM_GRADES.map((g, i) => {
           const [from, to] = paletteFor(i)
           return (
@@ -90,14 +113,20 @@ export default async function CurriculumPage() {
                 </div>
               </a>
 
+              {/* F0267 — the pill under each cover read the grade name, which the
+                  cover above it already prints twice. A servant hunting for the
+                  book saw a label where the prototype gave them something to
+                  press; the grade stays in the accessible name so fourteen
+                  identical links are still tellable apart. */}
               <a
                 href={g.bookUrl}
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label={`Download the ${g.label} book — ${g.title}`}
                 className="flex w-full max-w-[220px] items-center justify-center gap-1.5 truncate rounded-[24px] border-[1.5px] border-brand-gold px-3.5 py-2 text-[13px] font-bold text-brand-800 transition-colors hover:bg-brand-wash focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-gold"
               >
                 <FileText className="h-[13px] w-[13px] shrink-0" aria-hidden />
-                {g.pill}
+                Download Book
               </a>
 
               {g.slidesUrl && (
@@ -105,10 +134,11 @@ export default async function CurriculumPage() {
                   href={g.slidesUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={`${g.label} lesson slides`}
                   className="-mt-1 inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-parch-600 transition-colors hover:text-brand-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-gold"
                 >
                   <Presentation className="h-[12px] w-[12px] shrink-0" aria-hidden />
-                  Slides
+                  Lesson Slides
                 </a>
               )}
             </li>

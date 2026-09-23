@@ -101,11 +101,21 @@ export default async function AssignmentsPage() {
       {upcoming.length === 0 ? (
         <EmptyState title="Nothing coming up" hint="Your past assignments are below." />
       ) : (
-        <div className="space-y-4">
-          {upcoming.map((week) => (
-            <WeekCard key={week.weekStart} week={week} today={today} />
-          ))}
-        </div>
+        <>
+          {/* F0612 — the prototype headed this list "Upcoming (N)". The stat
+              tiles carry the number but nothing names the list under them, so a
+              servant scrolling past the tiles met a stack of week cards with no
+              heading saying what they were — and "Past weeks" below it does have
+              one, which made the top half read as the whole page. */}
+          <p className="mb-2.5">
+            <GroupTitle>Upcoming ({upcomingCount})</GroupTitle>
+          </p>
+          <div className="space-y-4">
+            {upcoming.map((week) => (
+              <WeekCard key={week.weekStart} week={week} today={today} />
+            ))}
+          </div>
+        </>
       )}
 
       {undated.length > 0 && (
@@ -116,10 +126,19 @@ export default async function AssignmentsPage() {
         </div>
       )}
 
+      {/* F0613 — the prototype rendered past weeks inline. Collapsed, the
+            question a servant asks this page after the fact — did I already lead
+            that lesson? — took an extra tap, and a disclosure with nothing
+            visible inside it reads as an empty section. It still folds away.
+            F0229 — and this block is built from assignmentsForServant's
+            eight-week default, so a bare "Past weeks (3)" read as everything
+            since September: a servant checking October was told "no" by a list
+            that had simply stopped. The window is unchanged; what it covers is
+            no longer a secret. */}
       {past.length > 0 && (
-        <details className="mt-5 overflow-hidden rounded-[16px] border border-parch-200 border-l-[3px] border-l-brand-gold bg-parch-50 shadow-card">
+        <details open className="mt-5 overflow-hidden rounded-[16px] border border-parch-200 border-l-[3px] border-l-brand-gold bg-parch-50 shadow-card">
           <summary className="cursor-pointer select-none px-[18px] py-3.5">
-            <GroupTitle>Past weeks ({past.length})</GroupTitle>
+            <GroupTitle>Past weeks · last 8 weeks ({past.length})</GroupTitle>
           </summary>
           <div className="border-t border-[#F0EEE8]">
             {past.map((week) => (

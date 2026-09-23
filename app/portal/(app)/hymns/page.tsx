@@ -1,8 +1,8 @@
-import { Music, Search } from 'lucide-react'
+import { Music, Search, Plus, BookOpen } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
 import { safeUrl } from '@/lib/portal/agenda'
-import { PageHeader, Card, buttonClass, inputClass } from '@/components/portal/ui'
+import { PageHeader, Card, buttonClass, inputClass, LinkButton, IconTile } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 import { HymnManager } from './HymnManager'
 
@@ -16,7 +16,11 @@ export default async function HymnsPage({ searchParams }: { searchParams: { q?: 
   const hymns = await prisma.hymn.findMany({
     where: query ? { title: { contains: query, mode: 'insensitive' } } : undefined,
     orderBy: { title: 'asc' },
-    take: 300,
+    // F0235 — the list was silently capped at 300. A hymn book that stops
+    // there gives no sign it has stopped, so a hymn that exists reads as one
+    // that was never added. The church's book is nowhere near this size; the
+    // bound only exists so a runaway import cannot render forever.
+    take: 2000,
     select: { id: true, title: true, lyrics: true, audioUrl: true, notes: true, addedBy: { select: { displayName: true } } },
   })
 
@@ -30,10 +34,24 @@ export default async function HymnsPage({ searchParams }: { searchParams: { q?: 
             ? 'The church-wide hymn book. Everyone can read it; servants keep it up to date.'
             : 'The church-wide hymn book.'
         }
+        actions={
+          canWrite ? (
+            // The only add control sat below the entire hymn list, so on a phone
+            // adding a hymn meant scrolling past every one already there.
+            <LinkButton href="#add-hymn" variant="secondary">
+              <Plus className="h-4 w-4" aria-hidden /> Add hymn
+            </LinkButton>
+          ) : undefined
+        }
       />
 
       {/* The prototype's "Looking for more hymns?" strip, above the book itself. */}
       <Card className="mb-4 print:hidden" bodyClassName="flex flex-wrap items-center gap-3 py-3.5">
+        {/* F0238 — the prototype's icon tile. Without it the strip reads as a
+            paragraph rather than a card you can act on. */}
+        <IconTile accent="#C89B3C">
+          <BookOpen className="h-5 w-5" aria-hidden />
+        </IconTile>
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-bold text-parch-900">Looking for more hymns?</p>
           <p className="text-[12px] text-parch-500">Browse the Tasbeha.org hymn library for lyrics, tunes and recordings.</p>

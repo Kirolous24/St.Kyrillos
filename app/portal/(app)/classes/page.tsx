@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { GraduationCap } from 'lucide-react'
+import { GraduationCap, Printer } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { PageHeader, EmptyState, LinkButton, ClassCard } from '@/components/portal/ui'
@@ -34,11 +34,22 @@ export default async function ClassesPage() {
               name={c.name}
               accent={accentByOrder(c.sortOrder)}
               icon={<GraduationCap className="h-[19px] w-[19px]" />}
+              photo={c.photo}
+              /* F0535 — "Ages 9 to 11" under the class name, from the notes an
+                 admin already writes on the class. */
+              note={c.description}
               rows={[
                 { key: 'Servants', value: c.servantCount === 0 ? 'Not assigned' : `${c.servantCount} servant${c.servantCount === 1 ? '' : 's'}` },
                 { key: 'Students', value: c.studentCount },
                 { key: 'Stage', value: <span className="text-brand-gold-dark">{STAGE_LABEL[c.stage]}</span> },
               ]}
+              /* The prototype put a one-click Print on every class row
+                 (OG L15478) — no navigating, no filters to set first. */
+              actions={
+                <LinkButton href={`/portal/reports/class/${c.id}`} variant="secondary" size="sm">
+                  <Printer className="h-4 w-4" aria-hidden /> Print
+                </LinkButton>
+              }
             />
           ))}
         </div>

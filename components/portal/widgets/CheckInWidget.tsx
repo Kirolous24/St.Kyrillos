@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { QrCode, ScanLine, CalendarCheck } from 'lucide-react'
+import { QrCode, ScanLine, CalendarCheck, UserX } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { can, type PortalUser } from '@/lib/portal/permissions'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
@@ -67,7 +67,7 @@ async function ServantCards({ user, servantId }: { user: PortalUser; servantId: 
   const writable = all.filter((c) => can(user, 'attendance.write', { classId: c.id, classStage: c.stage }))
   const classIds = writable.map((c) => c.id)
 
-  const [takenToday, activities, mine] = await Promise.all([
+  const [takenToday, activities, mine, roster, presentToday] = await Promise.all([
     isSunday && classIds.length > 0
       ? prisma.attendanceRecord.groupBy({
           by: ['classId'],
@@ -79,6 +79,22 @@ async function ServantCards({ user, servantId }: { user: PortalUser; servantId: 
       where: { servantId, weekStart: toUTCDate(weekStart) },
       select: { activityKey: true, status: true },
     }),
+    // Who is on the roster, and who has a mark today — the prototype's
+    // per-student "Not Checked In Today" list. The port tracked only whole
+    // classes with no register taken, so a class half-marked showed nothing.
+    classIds.length > 0
+      ? prisma.student.findMany({
+          where: { classId: { in: classIds } },
+          orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+          select: { id: true, firstName: true, lastName: true, classId: true },
+        })
+      : Promise.resolve([] as Array<{ id: string; firstName: string; lastName: string; classId: string | null }>),
+    classIds.length > 0
+      ? prisma.attendanceRecord.findMany({
+          where: { classId: { in: classIds }, date: toUTCDate(today) },
+          select: { studentId: true },
+        })
+      : Promise.resolve([] as Array<{ studentId: string }>),
   ])
 
   const done = new Set(takenToday.map((t) => t.classId))
@@ -86,10 +102,46 @@ async function ServantCards({ user, servantId }: { user: PortalUser; servantId: 
   const byKey = new Map(mine.map((m) => [m.activityKey, m.status as CheckInStatus]))
   const marked = mine.length
 
-  if (missing.length === 0 && activities.length === 0) return null
+  // Any session counts as "checked in" for the day: a child marked for Liturgy
+  // is plainly here, so nagging about them would be noise.
+  const seen = new Set(presentToday.map((r) => r.studentId))
+  const classNameOf = new Map(writable.map((c) => [c.id, c.name]))
+  const notIn = roster.filter((s) => !seen.has(s.id))
+
+  if (missing.length === 0 && activities.length === 0 && notIn.length === 0) return null
 
   return (
     <>
+      {/* Per-student, not per-class: this is the list a servant works down on a
+          Sunday morning. Capped, because a class nobody has marked yet would
+          otherwise render the whole roster. */}
+      {notIn.length > 0 && (
+        <Card
+          title="Not checked in today"
+          icon={<UserX className="h-4 w-4" aria-hidden />}
+          action={<Badge tone={notIn.length > 0 ? 'warn' : 'good'}>{notIn.length}</Badge>}
+        >
+          <ul className="space-y-1.5">
+            {notIn.slice(0, 12).map((s) => (
+              <li key={s.id}>
+                <Link
+                  href={`/portal/students/${s.id}`}
+                  className="flex items-center justify-between gap-2 rounded-[10px] border border-[#EFE9DC] bg-parch-100 px-2.5 py-1.5 text-[12.5px] transition-colors hover:border-brand-gold"
+                >
+                  <span className="min-w-0 flex-1 truncate font-semibold text-parch-800">
+                    {s.firstName} {s.lastName}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-parch-500">{classNameOf.get(s.classId ?? '') ?? ''}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {notIn.length > 12 && (
+            <p className="mt-2 text-[11px] text-parch-500">and {notIn.length - 12} more</p>
+          )}
+        </Card>
+      )}
+
       {missing.length > 0 && (
         <Card tone="brand" title="Sunday attendance" icon={<CalendarCheck className="h-4 w-4" aria-hidden />}>
           <Callout tone="warn" title={`${missing.length} class${missing.length === 1 ? '' : 'es'} still to record`}>

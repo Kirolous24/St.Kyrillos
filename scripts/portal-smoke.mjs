@@ -97,23 +97,36 @@ const ROUTES = {
       '/portal/exams', '/portal/exams/new', '/portal/exams/import', '/portal/lessons', '/portal/agenda',
       '/portal/agenda/week', '/portal/qr', '/portal/servant-attendance', '/portal/servant-attendance/report',
       '/portal/my-attendance', '/portal/announcements', '/portal/reports', '/portal/reports/cards',
+      '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/reports?tab=church&period=all',
+      '/portal/reports?tab=church&mode=exams', '/portal/reports?tab=church&mode=points',
       '/portal/readings', '/portal/photo',
     ],
     gone: [],
   },
   pastor: {
-    ok: ['/portal/classes', '/portal/follow-ups', '/portal/lessons', '/portal/exams', '/portal/announcements', '/portal/reports', '/portal/readings'],
+    ok: [
+      '/portal/classes', '/portal/follow-ups', '/portal/lessons', '/portal/exams', '/portal/announcements',
+      '/portal/reports', '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/readings',
+    ],
     // /portal/admin/audit is deliberately open to the pastor as well as the admin
     // (see app/portal/(app)/admin/audit/page.tsx), so it is not listed here.
-    ok2: ['/portal/admin/audit'],
-    gone: ['/portal/admin/data', '/portal/admin/servants', '/portal/admin/students', '/portal/admin/sessions'],
+    // /portal/admin/servants joined it: the prototype's pastor overview carried
+    // the church-wide servant roster and the port had no list anywhere else.
+    // It is read-only, and its <id>/new edit screens stay closed — see `gone`.
+    ok2: ['/portal/admin/audit', '/portal/admin/servants'],
+    gone: [
+      '/portal/admin/data',
+      '/portal/admin/servants/new',
+      '/portal/admin/students',
+      '/portal/admin/sessions',
+    ],
     notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123'],
   },
   servant: {
     ok: [
       '/portal/classes', '/portal/follow-ups', '/portal/exams', '/portal/lessons', '/portal/agenda',
       '/portal/assignments', '/portal/qr', '/portal/servant-attendance', '/portal/my-attendance',
-      '/portal/announcements', '/portal/reports', '/portal/readings', '/portal/photo',
+      '/portal/announcements', '/portal/reports', '/portal/reports?view=all', '/portal/readings', '/portal/photo',
     ],
     gone: ['/portal/admin/data', '/portal/admin/servants', '/portal/admin/students', '/portal/admin/audit', '/portal/admin/sessions'],
     notFound: [

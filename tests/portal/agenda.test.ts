@@ -227,7 +227,56 @@ describe('agenda CSV round-trip', () => {
   })
 
   it('returns nothing for an empty file', () => {
-    expect(csvRowsToAgenda(parseCsvRecords(''))).toEqual({ weeks: [], skipped: 0 })
+    expect(csvRowsToAgenda(parseCsvRecords(''))).toEqual({ weeks: [], skipped: 0, skippedRowDetail: [] })
+  })
+
+  // F0797 — "12 rows skipped" told a servant nothing they could act on: not which
+  // lines, and not whether the problem was the date column or the activity name.
+  describe('skipped rows say which line and why (F0797)', () => {
+    const header = 'Week Start,Activity,Topic\n'
+
+    it('names the row and the column when the week start is not a date', () => {
+      const { skipped, skippedRowDetail } = csvRowsToAgenda(parseCsvRecords(`${header}not-a-date,Lesson,Creation\n`))
+      expect(skipped).toBe(1)
+      expect(skippedRowDetail).toHaveLength(1)
+      expect(skippedRowDetail[0]!.row).toBe(1)
+      expect(skippedRowDetail[0]!.reason).toContain('not-a-date')
+      expect(skippedRowDetail[0]!.reason).toContain('week start')
+    })
+
+    it('names the activity when that is the unreadable column', () => {
+      const { skippedRowDetail } = csvRowsToAgenda(parseCsvRecords(`${header}2026-09-14,Interpretive Dance,x\n`))
+      expect(skippedRowDetail[0]!.reason).toContain('Interpretive Dance')
+      expect(skippedRowDetail[0]!.reason).not.toContain('week start')
+    })
+
+    it('says both when both columns are wrong', () => {
+      const { skippedRowDetail } = csvRowsToAgenda(parseCsvRecords(`${header}nope,also-nope,x\n`))
+      expect(skippedRowDetail[0]!.reason).toContain('week start')
+      expect(skippedRowDetail[0]!.reason).toContain('also-nope')
+    })
+
+    it('says so when a column is simply empty rather than quoting nothing', () => {
+      const { skippedRowDetail } = csvRowsToAgenda(parseCsvRecords(`${header},Lesson,x\n`))
+      expect(skippedRowDetail[0]!.reason).toContain('no week start')
+      expect(skippedRowDetail[0]!.reason).not.toContain('""')
+    })
+
+    it('explains the duplicate-activity case, which nobody guesses', () => {
+      const csv = `${header}2026-09-14,Lesson,First\n2026-09-14,Lesson,Second\n`
+      const { weeks, skipped, skippedRowDetail } = csvRowsToAgenda(parseCsvRecords(csv))
+      expect(skipped).toBe(1)
+      expect(skippedRowDetail[0]!.row).toBe(2)
+      expect(skippedRowDetail[0]!.reason).toContain('already set')
+      // The first one is the one kept, which the message implies.
+      expect(weeks[0]!.items.find((i) => i.activityKey === 'lesson')!.topic).toBe('First')
+    })
+
+    it('numbers rows as a spreadsheet does once the header is accounted for', () => {
+      const csv = `${header}2026-09-14,Lesson,Fine\nbad,Lesson,x\n`
+      const { skippedRowDetail } = csvRowsToAgenda(parseCsvRecords(csv))
+      expect(skippedRowDetail[0]!.row).toBe(2)
+    })
   })
 })
 

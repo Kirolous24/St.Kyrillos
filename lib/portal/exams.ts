@@ -141,9 +141,24 @@ export function examStatusFor(
 
 export type ScoreBand = 'excellent' | 'good' | 'needs-work'
 
+/**
+ * F0035 — the pass mark, and the floor for saying "Good job" to a child.
+ *
+ * The portal used to contradict itself about the same score. 65 read "Good job"
+ * on the child's quiz card and "Good" on their report card, while the servant
+ * looking at that very result saw it in red and the results table graded it D,
+ * because the exam screens have always counted A, B or C — 70 and above — as a
+ * pass. A parent could be shown both numbers in one conversation. Every quiz
+ * score now comes through this one constant, so they cannot drift apart again.
+ */
+export const QUIZ_PASS_PERCENT = 70
+
+/** The floor for "Excellent". */
+export const QUIZ_EXCELLENT_PERCENT = 90
+
 export function scoreBand(percentage: number): ScoreBand {
-  if (percentage >= 90) return 'excellent'
-  if (percentage >= 60) return 'good'
+  if (percentage >= QUIZ_EXCELLENT_PERCENT) return 'excellent'
+  if (percentage >= QUIZ_PASS_PERCENT) return 'good'
   return 'needs-work'
 }
 
@@ -279,6 +294,29 @@ export interface ExamCsvParse {
 
 const LETTERS = ['a', 'b', 'c', 'd', 'e', 'f']
 
+const TITLE_KEYS = ['title', 'exam', 'quiz', 'exam title', 'quiz title'] as const
+
+/** The prototype's bucket size when a sheet carries no Day column (OG L16314). */
+const QUESTIONS_PER_AUTO_DAY = 3
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+/** "Daily Quiz — July 1, 2026", as the prototype titled each day (OG L16376-16378). */
+function dailyQuizTitle(date: string): string {
+  const [y, m, d] = date.split('-') as [string, string, string]
+  return `Daily Quiz — ${MONTH_NAMES[Number(m) - 1]} ${Number(d)}, ${y}`
+}
+
+export interface ExamCsvOptions {
+  /** "YYYY-MM" — the month a bare Day number belongs to. */
+  month?: string
+  /** Points per question for a sheet that does not carry its own column. */
+  pointsPerQuestion?: number
+}
+
 function pick(rec: Record<string, string>, keys: readonly string[]): string {
   for (const k of keys) {
     const v = rec[k]
@@ -315,42 +353,95 @@ function resolveCorrectIndex(raw: string, options: readonly string[]): number {
  * title + due date. Bad rows are reported and skipped — never fatal to the
  * whole file — so a servant can fix three lines instead of the whole sheet.
  */
-export function parseExamCsv(records: readonly Record<string, string>[]): ExamCsvParse {
+export function parseExamCsv(
+  records: readonly Record<string, string>[],
+  options: ExamCsvOptions = {},
+): ExamCsvParse {
   const byTitle = new Map<string, ExamDraft[]>()
   const order: ExamDraft[] = []
   const errors: RowError[] = []
+
+  // The church's established sheet has no Title column at all — Day, Question,
+  // four options, Correct Answer — with month, year and points picked in the
+  // form (OG L16311-16313). The port required a Title on every row, so that
+  // whole format failed on every single line. Detect it by the header, not by
+  // a blank cell: a sheet that HAS a Title column and leaves it empty is still
+  // an error, as it always was.
+  const daily = !records.some((r) => TITLE_KEYS.some((k) => k in r))
+  const month = options.month && /^\d{4}-\d{2}$/.test(options.month) ? options.month : null
+  const hasDayColumn = records.some((r) => 'day' in r)
+  let autoQuestions = 0
 
   records.forEach((rec, idx) => {
     const row = idx + 2 // header is line 1
     const hasAnything = Object.values(rec).some((v) => v.trim() !== '')
     if (!hasAnything) return
 
-    const title = pick(rec, ['title', 'exam', 'quiz', 'exam title', 'quiz title'])
-    if (!title) {
-      errors.push({ row, message: 'Missing exam title.' })
-      return
-    }
-
-    const dueRaw = pick(rec, ['due date', 'due', 'date'])
-    const dueDate = dueRaw ? parseDateOnly(dueRaw) : null
-    if (dueRaw && !dueDate) {
-      errors.push({ row, message: `Could not read the due date "${dueRaw}".` })
-      return
-    }
-
     const questionText = pick(rec, ['question', 'question text', 'q'])
-    const options = readOptions(rec)
+    const optionValues = readOptions(rec)
     const correctRaw = pick(rec, ['correct', 'correct letter', 'correct answer', 'answer', 'key'])
-    const correctIndex = resolveCorrectIndex(correctRaw, options)
+    const correctIndex = resolveCorrectIndex(correctRaw, optionValues)
     if (correctIndex === -1 && correctRaw) {
       errors.push({ row, message: `"${correctRaw}" is not one of the answer options.` })
       return
     }
 
-    const compacted = compactQuestion({ text: questionText, options, correctIndex })
+    const compacted = compactQuestion({ text: questionText, options: optionValues, correctIndex })
     if (!compacted.question) {
       errors.push({ row, message: compacted.error ?? 'Invalid question.' })
       return
+    }
+
+    let title: string
+    let dueDate: string | null
+
+    if (daily) {
+      if (!month) {
+        errors.push({ row, message: 'This sheet has no Title column, so pick the month it covers first.' })
+        return
+      }
+      let dayNumber: number
+      if (hasDayColumn) {
+        const rawDay = pick(rec, ['day'])
+        if (!rawDay) {
+          errors.push({ row, message: 'The Day column is empty.' })
+          return
+        }
+        dayNumber = Number(rawDay)
+        if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 31) {
+          errors.push({ row, message: `Day "${rawDay}" should be a number from 1 to 31.` })
+          return
+        }
+      } else {
+        // No Day column anywhere: consecutive days, three questions each.
+        dayNumber = Math.floor(autoQuestions / QUESTIONS_PER_AUTO_DAY) + 1
+        autoQuestions += 1
+        if (dayNumber > 31) {
+          errors.push({ row, message: 'Ran out of days in the month for automatic grouping.' })
+          return
+        }
+      }
+      const candidate = `${month}-${String(dayNumber).padStart(2, '0')}`
+      const real = parseDateOnly(candidate)
+      if (!real) {
+        errors.push({ row, message: `Day ${dayNumber} is not a real date in that month.` })
+        return
+      }
+      dueDate = real
+      title = dailyQuizTitle(real)
+    } else {
+      title = pick(rec, TITLE_KEYS)
+      if (!title) {
+        errors.push({ row, message: 'Missing exam title.' })
+        return
+      }
+      const dueRaw = pick(rec, ['due date', 'due', 'date'])
+      const parsedDue = dueRaw ? parseDateOnly(dueRaw) : null
+      if (dueRaw && !parsedDue) {
+        errors.push({ row, message: `Could not read the due date "${dueRaw}".` })
+        return
+      }
+      dueDate = parsedDue
     }
 
     // Rows of the same quiz usually leave the exam-level columns blank after
@@ -371,7 +462,7 @@ export function parseExamCsv(records: readonly Record<string, string>[]): ExamCs
         dueDate,
         bibleReading: pick(rec, ['bible reading', 'reading', 'chapter']) || null,
         readingMessage: pick(rec, ['reading message', 'message', 'note']) || null,
-        pointsPerQuestion: DEFAULT_POINTS_PER_QUESTION,
+        pointsPerQuestion: options.pointsPerQuestion ?? DEFAULT_POINTS_PER_QUESTION,
         questions: [],
         rows: [],
       }
@@ -394,4 +485,46 @@ export function parseExamCsv(records: readonly Record<string, string>[]): ExamCs
   })
 
   return { drafts: order, errors }
+}
+
+/**
+ * Which published exams the dashboard widget shows, and in what order (F0094).
+ *
+ * The port filtered on `dueDate >= today`, which quietly excluded the commonest
+ * case there is: a servant types up last Sunday's quiz on the Tuesday after and
+ * dates it to the Sunday. That exam is born past due, so it never appeared on
+ * the dashboard at all — the one surface meant to say "this exists now".
+ *
+ * A just-written exam therefore shows for `EXAM_FRESH_HOURS` whatever its due
+ * date says, after the genuinely open ones and marked so it is never read as
+ * still taking submissions. `stillOpen` is kept separate because the headline
+ * count and the "papers still to come in" total must not be inflated by an exam
+ * whose due date has already passed.
+ *
+ * Pure, and takes `now` explicitly: every date rule in this portal that read the
+ * clock itself has been wrong at least once.
+ */
+export const EXAM_FRESH_HOURS = 48
+
+export function dashboardExams<T extends { status: string; dueDate: string | null; createdAt: Date }>(
+  rows: readonly T[],
+  todayKey: string,
+  now: Date,
+): { stillOpen: T[]; shown: T[] } {
+  const freshFrom = now.getTime() - EXAM_FRESH_HOURS * 60 * 60 * 1000
+  const published = rows.filter((r) => r.status === 'PUBLISHED')
+
+  const stillOpen = published
+    .filter((r) => !r.dueDate || r.dueDate >= todayKey)
+    .sort((a, b) => {
+      if (!a.dueDate) return 1
+      if (!b.dueDate) return -1
+      return a.dueDate < b.dueDate ? -1 : 1
+    })
+
+  const freshButDue = published
+    .filter((r) => r.dueDate !== null && r.dueDate < todayKey && r.createdAt.getTime() >= freshFrom)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+
+  return { stillOpen, shown: [...stillOpen, ...freshButDue] }
 }

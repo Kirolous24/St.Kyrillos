@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { BookOpen, Check, Copy, Link2, Pencil, Plus, Trash2, Undo2, X } from 'lucide-react'
 import {
   copyLessonsFromClass,
+  listCopyCandidates,
+  type CopyCandidate,
   deleteLesson,
   saveLesson,
   setLessonStatus,
@@ -27,6 +29,7 @@ import {
   textareaClass,
 } from '@/components/portal/ui'
 import { formatLongDate } from '@/lib/portal/format'
+import { todayInNewYork } from '@/lib/portal/dates'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -68,6 +71,10 @@ export function LessonManager({ classId, className, planned, taught, servants, c
   const [draft, setDraft] = useState<Draft | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [copyFrom, setCopyFrom] = useState(copySources[0]?.id ?? '')
+  // The prototype copied all-or-nothing. A class usually wants three lessons
+  // from another term, not the whole year.
+  const [candidates, setCandidates] = useState<{ sourceName: string; lessons: CopyCandidate[] } | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
   const [copyPlannedOnly, setCopyPlannedOnly] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
@@ -123,6 +130,21 @@ export function LessonManager({ classId, className, planned, taught, servants, c
     })
   }
 
+  /** Load the source's lessons so the servant can choose. */
+  function browseSource() {
+    if (!copyFrom) return
+    setMessage(null)
+    setCandidates(null)
+    startTransition(async () => {
+      const result = await listCopyCandidates(copyFrom, classId)
+      if (!result.ok) return setMessage({ kind: 'err', text: result.error })
+      setCandidates(result.data!)
+      // Pre-tick everything this class does not already have — the common case
+      // is "give me the ones I am missing".
+      setPicked(new Set(result.data!.lessons.filter((l) => !l.alreadyThere).map((l) => l.id)))
+    })
+  }
+
   function copy() {
     if (!copyFrom) return
     startTransition(async () => {
@@ -130,10 +152,13 @@ export function LessonManager({ classId, className, planned, taught, servants, c
         fromClassId: copyFrom,
         toClassId: classId,
         onlyPlanned: copyPlannedOnly,
+        lessonIds: candidates ? Array.from(picked) : undefined,
       })
       if (!result.ok) return setMessage({ kind: 'err', text: result.error })
       const n = result.data?.copied ?? 0
       setMessage({ kind: 'ok', text: `Copied ${n} lesson${n === 1 ? '' : 's'} into ${className}. The other class keeps its own.` })
+      setCandidates(null)
+      setPicked(new Set())
       router.refresh()
     })
   }
@@ -328,9 +353,46 @@ export function LessonManager({ classId, className, planned, taught, servants, c
                 )}
               </div>
 
-              <button type="button" onClick={submit} disabled={pending} className={cn(buttonClass('primary'), 'w-full')}>
-                {pending ? 'Saving…' : draft.id ? 'Save changes' : 'Add lesson'}
-              </button>
+              {/* F0268 — recording the lesson you have just given took two
+                  actions: add it, then find its card and flip the status, and it
+                  still ended up undated. It is the one thing every servant does
+                  every week, so it gets its own save. A blank date becomes today
+                  in church time, not the browser's — a Central-time phone at
+                  11pm on Saturday would otherwise file Sunday's lesson under
+                  Saturday. */}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button type="button" onClick={submit} disabled={pending} className={cn(buttonClass('primary'), 'w-full')}>
+                  {pending ? 'Saving…' : draft.id ? 'Save changes' : 'Add to plan'}
+                </button>
+                {!draft.id && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      if (!draft.title.trim()) return setMessage({ kind: 'err', text: 'Give the lesson a title.' })
+                      startTransition(async () => {
+                        const result = await saveLesson({
+                          classId,
+                          title: draft.title.trim(),
+                          date: draft.date || todayInNewYork(),
+                          topics: draft.topics.split(',').map((t) => t.trim()).filter(Boolean),
+                          notes: draft.notes.trim() || undefined,
+                          links: draft.links.filter((l) => l.url.trim()),
+                          assignedToId: draft.assignedToId || undefined,
+                          status: 'TAUGHT',
+                        })
+                        if (!result.ok) return setMessage({ kind: 'err', text: result.error })
+                        setMessage({ kind: 'ok', text: 'Lesson logged as taught.' })
+                        setDraft(null)
+                        router.refresh()
+                      })
+                    }}
+                    className={cn(buttonClass('secondary'), 'w-full')}
+                  >
+                    <Check className="h-4 w-4" aria-hidden /> Log as taught
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </Card>
@@ -360,9 +422,77 @@ export function LessonManager({ classId, className, planned, taught, servants, c
                 />
                 Planned lessons only
               </label>
-              <button type="button" onClick={copy} disabled={pending} className={cn(buttonClass('secondary'), 'w-full')}>
-                <Copy className="h-4 w-4" aria-hidden /> Copy lessons
-              </button>
+              {candidates === null ? (
+                <button type="button" onClick={browseSource} disabled={pending} className={cn(buttonClass('secondary'), 'w-full')}>
+                  <Copy className="h-4 w-4" aria-hidden /> {pending ? 'Loading…' : 'Choose lessons'}
+                </button>
+              ) : candidates.lessons.length === 0 ? (
+                <p className="text-[12.5px] text-parch-500">{candidates.sourceName} has no lessons to copy.</p>
+              ) : (
+                <>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">
+                      {picked.size} of {candidates.lessons.length} chosen
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPicked(
+                          picked.size === candidates.lessons.length
+                            ? new Set()
+                            : new Set(candidates.lessons.map((l) => l.id)),
+                        )
+                      }
+                      className="text-[11px] font-bold text-brand-800 underline"
+                    >
+                      {picked.size === candidates.lessons.length ? 'Clear' : 'Select all'}
+                    </button>
+                  </div>
+                  <ul className="mb-3 max-h-[240px] space-y-1 overflow-y-auto rounded-[10px] border border-parch-200 bg-parch-50 p-2">
+                    {candidates.lessons
+                      .filter((l) => !copyPlannedOnly || l.status === 'PLANNED')
+                      .map((l) => (
+                        <li key={l.id}>
+                          <label className="flex min-h-[36px] cursor-pointer items-start gap-2 px-1 py-1 text-[12.5px]">
+                            <input
+                              type="checkbox"
+                              className={cn(checkboxClass, 'mt-0.5')}
+                              checked={picked.has(l.id)}
+                              onChange={() =>
+                                setPicked((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(l.id)) next.delete(l.id)
+                                  else next.add(l.id)
+                                  return next
+                                })
+                              }
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-semibold text-parch-800">{l.title}</span>
+                              <span className="block text-[11px] text-parch-500">
+                                {l.date ?? 'No date'} · {l.status === 'TAUGHT' ? 'Taught' : 'Planned'}
+                                {l.alreadyThere && <span className="text-[#B45309]"> · already here</span>}
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      ))}
+                  </ul>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={copy}
+                      disabled={pending || picked.size === 0}
+                      className={cn(buttonClass('primary'), 'flex-1')}
+                    >
+                      <Copy className="h-4 w-4" aria-hidden /> {pending ? 'Copying…' : `Copy ${picked.size}`}
+                    </button>
+                    <button type="button" onClick={() => { setCandidates(null); setPicked(new Set()) }} className={buttonClass('secondary')}>
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </Card>

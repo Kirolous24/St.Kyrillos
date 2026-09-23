@@ -14,7 +14,7 @@ export const metadata = { title: 'Leaderboard' }
 /** The prototype's rank cell: a medal for the podium, "#n" for everyone else. */
 const MEDALS = ['\u{1F947}', '\u{1F948}', '\u{1F949}']
 
-export default async function LeaderboardPage({ searchParams }: { searchParams: { class?: string } }) {
+export default async function LeaderboardPage({ searchParams }: { searchParams: { class?: string; sort?: string } }) {
   const user = await requirePortalUser()
   const classes = await listVisibleClasses(user)
   const selectable = classes
@@ -24,6 +24,11 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
       ? selectable[0]?.id ?? 'all'
       : 'all'
   const scopeIds = classId === 'all' ? selectable.map((c) => c.id) : [classId]
+  // F0828 — points-descending answers "who is winning". A servant handing out
+  // certificates is asking "who has not been rewarded lately", and one reading
+  // names off a sheet wants them in the order the sheet is in. The medals stay
+  // pinned to points, whatever order the list is read in.
+  const sort = searchParams.sort === 'az' || searchParams.sort === 'lowest' ? searchParams.sort : 'highest'
 
   // Independent queries, so pay one round trip to Neon rather than two.
   const [students, totals] = await Promise.all([
@@ -36,8 +41,16 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
   const ranked = rankStudents(students.map((s) => ({ studentId: s.id, name: studentName(s), total: totals.get(s.id) ?? 0 })))
   const byId = new Map(students.map((s) => [s.id, s]))
   const canOpenProfiles = user.role !== 'STUDENT'
-  const rows = ranked.slice(0, 100)
-  const topTotal = Math.max(rows[0]?.total ?? 0, 1)
+  const ordered =
+    sort === 'az'
+      ? [...ranked].sort((a, b) => a.name.localeCompare(b.name))
+      : sort === 'lowest'
+        ? [...ranked].sort((a, b) => a.total - b.total)
+        : ranked
+  const rows = ordered.slice(0, 100)
+  // Off `ranked`, not `rows`: under A–Z or Lowest the first row is not the top
+  // scorer, and scaling the bars to it would draw someone at 110%.
+  const topTotal = Math.max(ranked[0]?.total ?? 0, 1)
 
   return (
     <>
@@ -49,6 +62,31 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
       {user.role !== 'STUDENT' && selectable.length > 1 && (
         <div className="mb-4">
           <ClassPicker value={classId} options={selectable.map((c) => ({ id: c.id, name: c.name }))} allowAll={user.role !== 'SERVANT'} />
+        </div>
+      )}
+      {ranked.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Sort</span>
+          {([['highest', 'Highest'], ['lowest', 'Lowest'], ['az', 'A–Z']] as const).map(([key, label]) => (
+            <Link
+              key={key}
+              href={`/portal/leaderboard?class=${encodeURIComponent(classId)}&sort=${key}`}
+              aria-current={sort === key ? 'true' : undefined}
+              className={[
+                'inline-flex min-h-[32px] items-center rounded-[20px] border px-3 py-[3px] text-[11px] font-bold transition-colors',
+                sort === key
+                  ? 'border-brand-800 bg-brand-800 text-parch-50'
+                  : 'border-[#E7E2DA] bg-parch-50 text-parch-600 hover:bg-brand-wash',
+              ].join(' ')}
+            >
+              {label}
+            </Link>
+          ))}
+          {ranked.length > rows.length && (
+            <span className="ml-auto text-[11px] text-parch-500">
+              Showing {rows.length} of {ranked.length}
+            </span>
+          )}
         </div>
       )}
       {rows.length === 0 ? (

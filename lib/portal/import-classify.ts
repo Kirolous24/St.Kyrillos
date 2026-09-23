@@ -9,6 +9,12 @@ export type ExistingImportAccount = {
   role: 'ADMIN' | 'PASTOR' | 'SERVANT' | 'STUDENT'
   /** The linked Student.id or Servant.id, whichever the role implies. */
   linkedId: string | null
+  /**
+   * The name already on file. A corrections sheet that carries no name column
+   * has nothing to call the row, and "Row 14" is no use to an admin reading
+   * the preview — so the existing name stands in.
+   */
+  displayName?: string | null
 }
 
 export type ImportClassification =

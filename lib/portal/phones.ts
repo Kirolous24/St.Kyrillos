@@ -14,3 +14,19 @@ export function formatPhone(digits: string | null | undefined): string {
   }
   return digits
 }
+
+/**
+ * A WhatsApp deep link for a stored phone number, ported from the prototype's
+ * `waLink` (OG L16751). Numbers here are entered by servants and stored without
+ * a country code, but wa.me needs the international form — so a bare 10-digit
+ * US number gets a 1 prepended. Anything already longer is assumed qualified
+ * and passed through.
+ */
+export function waLink(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  let digits = String(raw).replace(/\D+/g, '')
+  if (!digits) return null
+  if (digits.length === 10) digits = `1${digits}`
+  return `https://wa.me/${digits}`
+}
+

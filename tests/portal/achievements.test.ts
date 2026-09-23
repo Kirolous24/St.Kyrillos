@@ -14,6 +14,7 @@ import {
 const base: AchievementStats = {
   lifetimePoints: 0,
   attendanceStreak: 0,
+  sundaysAttended: 0,
   quizzesCompleted: 0,
   bestQuizPercentage: 0,
   readingStreak: 0,
@@ -31,9 +32,10 @@ describe('LEVELS and BADGES', () => {
     }
   })
 
-  it('has eleven badges with unique keys and positive targets', () => {
-    expect(BADGES).toHaveLength(11)
-    expect(new Set(BADGES.map((b) => b.key)).size).toBe(11)
+  // Twelve since F0734 added the lifetime-attendance badge as its own key.
+  it('has twelve badges with unique keys and positive targets', () => {
+    expect(BADGES).toHaveLength(12)
+    expect(new Set(BADGES.map((b) => b.key)).size).toBe(12)
     for (const b of BADGES) expect(b.target).toBeGreaterThan(0)
   })
 })
@@ -83,7 +85,7 @@ describe('evaluateAchievements', () => {
   it('earns nothing for a brand-new student and locks all eleven', () => {
     const r = evaluateAchievements(base)
     expect(r.earned).toHaveLength(0)
-    expect(r.locked).toHaveLength(11)
+    expect(r.locked).toHaveLength(12)
   })
 
   it('earns cumulative point badges together', () => {
@@ -249,5 +251,44 @@ describe('presentStreak', () => {
   it('is zero when the latest session was missed', () => {
     expect(presentStreak([{ date: '2026-09-20', status: 'ABSENT' }])).toBe(0)
     expect(presentStreak([])).toBe(0)
+  })
+})
+
+/**
+ * F0734 / F0735 — the badge for the child who comes faithfully but not without
+ * a gap. Every other attendance badge is a streak, so before this one existed
+ * an every-other-Sunday attender could never earn any of them.
+ */
+describe('the lifetime attendance badge', () => {
+  const earnedKeys = (stats: AchievementStats) =>
+    evaluateAchievements(stats).earned.map((e) => e.badge.key)
+
+  it('is earned on the tenth Sunday, however scattered', () => {
+    expect(earnedKeys({ ...base, sundaysAttended: 9, attendanceStreak: 1 })).not.toContain('ten-sundays')
+    expect(earnedKeys({ ...base, sundaysAttended: 10, attendanceStreak: 1 })).toContain('ten-sundays')
+  })
+
+  it('rewards the every-other-week attender the streak badges never could', () => {
+    // Twelve Sundays over a year, never two in a row.
+    const scattered = { ...base, sundaysAttended: 12, attendanceStreak: 1 }
+    const keys = earnedKeys(scattered)
+    expect(keys).toContain('ten-sundays')
+    expect(keys).not.toContain('faithful')
+    expect(keys).not.toContain('steadfast')
+  })
+
+  it('does not change what "faithful" means', () => {
+    // The old app's 'faithful' was a lifetime count; here it stays a streak, so
+    // no child holding it loses it. That is why this is a separate key.
+    const faithful = BADGES.find((b) => b.key === 'faithful')!
+    expect(faithful.target).toBe(3)
+    expect(faithful.value({ ...base, attendanceStreak: 3, sundaysAttended: 0 })).toBe(3)
+    expect(faithful.value({ ...base, attendanceStreak: 0, sundaysAttended: 50 })).toBe(0)
+  })
+
+  it('is its own key, so nothing already earned is touched', () => {
+    const keys = BADGES.map((b) => b.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(keys).toContain('ten-sundays')
   })
 })

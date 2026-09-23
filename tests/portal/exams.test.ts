@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  QUIZ_PASS_PERCENT,
   gradeSubmission,
   percentageOf,
   examTotalPoints,
@@ -103,13 +104,25 @@ describe('examStatusFor', () => {
 })
 
 describe('scoreBand', () => {
-  it('uses the prototype bands: 90 excellent, 60 good', () => {
+  // F0035 — the church moved the "good" floor to the pass mark. 65 used to read
+  // "Good job" to a child while the same result showed red to the servant and
+  // graded D on the results table.
+  it('bands on the pass mark: 90 excellent, 70 good', () => {
     expect(scoreBand(100)).toBe('excellent')
     expect(scoreBand(90)).toBe('excellent')
     expect(scoreBand(89)).toBe('good')
-    expect(scoreBand(60)).toBe('good')
-    expect(scoreBand(59)).toBe('needs-work')
+    expect(scoreBand(70)).toBe('good')
+    expect(scoreBand(69)).toBe('needs-work')
+    expect(scoreBand(65)).toBe('needs-work')
     expect(scoreBand(0)).toBe('needs-work')
+  })
+
+  it('agrees with the grade the results table prints', () => {
+    // A, B and C are 70 and above; anything the exam screens call a pass must
+    // be what the child is praised for, and nothing else.
+    expect(QUIZ_PASS_PERCENT).toBe(70)
+    expect(scoreBand(QUIZ_PASS_PERCENT)).toBe('good')
+    expect(scoreBand(QUIZ_PASS_PERCENT - 1)).toBe('needs-work')
   })
 })
 
@@ -265,6 +278,65 @@ describe('parseExamCsv', () => {
       parseCsvRecords('Title,Points Per Question,Question,Option A,Option B,Correct\nQ,5,Why?,Yes,No,A'),
     )
     expect(drafts[0]!.pointsPerQuestion).toBe(5)
+  })
+})
+
+// The church's own sheet has no Title column at all: Day, Question, four
+// options, Correct Answer — month, year and points are picked in the form.
+// Every row of it failed with "Missing exam title."
+describe('parseExamCsv — the prototype\'s daily format', () => {
+  const DAILY = [
+    'Day,Question,Option A,Option B,Option C,Option D,Correct Answer',
+    '1,Who baptised the Lord?,John,Peter,Paul,Andrew,A',
+    '1,Where was He baptised?,Nile,Jordan,Galilee,Red Sea,B',
+    '2,Who denied Him three times?,John,Peter,Paul,Andrew,B',
+  ].join('\n')
+
+  it('accepts a sheet with no Title column, one exam per day', () => {
+    const { drafts, errors } = parseExamCsv(parseCsvRecords(DAILY), { month: '2026-07' })
+    expect(errors).toEqual([])
+    expect(drafts).toHaveLength(2)
+    expect(drafts[0]!.dueDate).toBe('2026-07-01')
+    expect(drafts[0]!.questions).toHaveLength(2)
+    expect(drafts[1]!.dueDate).toBe('2026-07-02')
+    expect(drafts[1]!.questions).toHaveLength(1)
+  })
+
+  it('auto-titles each day the way the prototype did', () => {
+    const { drafts } = parseExamCsv(parseCsvRecords(DAILY), { month: '2026-07' })
+    expect(drafts[0]!.title).toBe('Daily Quiz — July 1, 2026')
+    expect(drafts[1]!.title).toBe('Daily Quiz — July 2, 2026')
+  })
+
+  it('takes points per question from the form, not the sheet', () => {
+    const { drafts } = parseExamCsv(parseCsvRecords(DAILY), { month: '2026-07', pointsPerQuestion: 5 })
+    expect(drafts[0]!.pointsPerQuestion).toBe(5)
+  })
+
+  it('buckets three questions to a day when there is no Day column', () => {
+    const noDay = [
+      'Question,Option A,Option B,Correct Answer',
+      ...Array.from({ length: 4 }, (_, i) => `Q${i + 1},Yes,No,A`),
+    ].join('\n')
+    const { drafts, errors } = parseExamCsv(parseCsvRecords(noDay), { month: '2026-07' })
+    expect(errors).toEqual([])
+    expect(drafts).toHaveLength(2)
+    expect(drafts[0]!.questions).toHaveLength(3)
+    expect(drafts[1]!.questions).toHaveLength(1)
+    expect(drafts[1]!.dueDate).toBe('2026-07-02')
+  })
+
+  it('rejects a day that is not a real date in that month', () => {
+    const bad = ['Day,Question,Option A,Option B,Correct Answer', '31,Q,Yes,No,A'].join('\n')
+    const { drafts, errors } = parseExamCsv(parseCsvRecords(bad), { month: '2026-02' })
+    expect(drafts).toHaveLength(0)
+    expect(errors[0]!.message).toMatch(/31/)
+  })
+
+  it('still requires a title when the sheet has a Title column', () => {
+    const titled = ['Title,Question,Option A,Option B,Correct Answer', ',Q,Yes,No,A'].join('\n')
+    const { errors } = parseExamCsv(parseCsvRecords(titled))
+    expect(errors[0]!.message).toBe('Missing exam title.')
   })
 })
 

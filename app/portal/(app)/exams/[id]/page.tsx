@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { BarChart3, ClipboardList, HelpCircle, Pencil, Percent, Send, ThumbsDown, Trophy, Users } from 'lucide-react'
+import { BarChart3, ClipboardList, GraduationCap, HelpCircle, Pencil, Percent, Send, ThumbsDown, Trophy, Users } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireExamRead, examDetail, examQuestions, canWriteExam } from '@/lib/portal/data/exams'
 import { formatDateOnly, todayInNewYork } from '@/lib/portal/dates'
@@ -26,7 +26,7 @@ import { ExamActions } from './ExamActions'
 
 export const metadata = { title: 'Exam' }
 
-/** The prototype's letter grades, used only for the distribution bars. */
+/** The prototype's letter grades: the distribution bars, the Results table and the pass rate. */
 const GRADES = [
   { key: 'A', min: 90, color: '#16A34A' },
   { key: 'B', min: 80, color: '#2563EB' },
@@ -37,6 +37,17 @@ const GRADES = [
 
 function gradeFor(percentage: number): string {
   return (GRADES.find((g) => percentage >= g.min) ?? GRADES[GRADES.length - 1]!).key
+}
+
+/**
+ * The prototype's pass rate: A, B or C — that is, 70% and above (OG L15119-15123
+ * and L15131). It sat beside Submissions and Class Average in its three-tile row
+ * and is the one number that says whether the class understood the material,
+ * which an average alone hides.
+ */
+function passRate(results: readonly { percentage: number }[]): number | null {
+  if (results.length === 0) return null
+  return Math.round((results.filter((r) => r.percentage >= 70).length / results.length) * 100)
 }
 
 export default async function ExamDetailPage({ params }: { params: { id: string } }) {
@@ -68,6 +79,7 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
   const ranked = [...detail.results].sort((a, b) => b.percentage - a.percentage)
   const highest = ranked[0] ?? null
   const lowest = ranked.length > 1 ? ranked[ranked.length - 1]! : null
+  const pass = passRate(detail.results)
   const distribution = GRADES.map((g) => ({
     ...g,
     count: detail.results.filter((r) => gradeFor(r.percentage) === g.key).length,
@@ -145,7 +157,7 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
         </div>
       )}
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           label="Submitted"
           value={expected ? `${detail.results.length}/${expected}` : detail.results.length}
@@ -159,6 +171,13 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
           hint={detail.averagePercentage === null ? 'Nobody has submitted yet' : SCORE_BAND_LABEL[scoreBand(detail.averagePercentage)]}
           tone={detail.averagePercentage === null ? 'default' : SCORE_BAND_TONE[scoreBand(detail.averagePercentage)]}
           icon={<Percent className="h-5 w-5" aria-hidden />}
+        />
+        <StatCard
+          label="Pass rate"
+          value={pass === null ? '—' : `${pass}%`}
+          hint={pass === null ? 'Nobody has submitted yet' : `${detail.results.filter((r) => r.percentage >= 70).length} of ${detail.results.length} at 70% or better`}
+          tone={pass === null ? 'default' : pass >= 70 ? 'good' : pass >= 50 ? 'warn' : 'bad'}
+          icon={<GraduationCap className="h-5 w-5" aria-hidden />}
         />
         <StatCard
           label="Best question"
@@ -248,7 +267,11 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
             <TableWrap>
               <thead>
                 <tr>
+                  {/* The prototype's ALL RESULTS list was ranked and carried a
+                      letter, which is how servants read it aloud to a class. */}
+                  <Th align="right">#</Th>
                   <Th>Student</Th>
+                  <Th align="center">Grade</Th>
                   <Th align="right">Score</Th>
                   <Th align="right">%</Th>
                   <Th>Band</Th>
@@ -256,15 +279,25 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
                 </tr>
               </thead>
               <tbody>
-                {detail.results.map((r) => {
+                {detail.results.map((r, i) => {
                   const band = scoreBand(r.percentage)
+                  const letter = gradeFor(r.percentage)
                   return (
                     <tr key={r.studentId}>
+                      <Td align="right" className="tabular-nums text-parch-500">{i + 1}</Td>
                       <Td>
                         <Link href={`/portal/students/${r.studentId}`} className="font-semibold text-brand-900 hover:underline">
                           {r.name}
                         </Link>
                         {r.reopened && <span className="ml-2 text-[11px] text-parch-500">reopened</span>}
+                      </Td>
+                      <Td align="center">
+                        <span
+                          className="text-[15px] font-bold"
+                          style={{ color: GRADES.find((g) => g.key === letter)?.color ?? '#7C7A7A' }}
+                        >
+                          {letter}
+                        </span>
                       </Td>
                       <Td align="right" className="tabular-nums">{r.score}/{r.total}</Td>
                       <Td align="right" className="w-32">

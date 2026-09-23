@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Download, Upload, KeyRound } from 'lucide-react'
+import { Download, Upload, KeyRound, FileSpreadsheet, Eye } from 'lucide-react'
 import {
   exportStudentsCsv,
   exportServantsCsv,
   importStudentsCsv,
   importServantsCsv,
+  studentImportTemplateCsv,
+  servantImportTemplateCsv,
 } from '@/lib/portal/actions/data-tools'
 import {
   Card,
@@ -48,12 +50,16 @@ export function ImportPanel({ classes }: { classes: Array<{ id: string; name: st
   const [fileName, setFileName] = useState<string | null>(null)
   const [csv, setCsv] = useState<string>('')
   const [summary, setSummary] = useState<ImportSummary | null>(null)
+  // A summary the admin has seen but not committed. The Help page promises a
+  // preview before anything is written; the port wrote on file selection.
+  const [isPreview, setIsPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   async function pickFile(file: File | undefined) {
     setError(null)
     setSummary(null)
+    setIsPreview(false)
     if (!file) return
     if (file.size > 4 * 1024 * 1024) {
       setError('That file is larger than 4 MB. Split it into smaller batches.')
@@ -61,6 +67,40 @@ export function ImportPanel({ classes }: { classes: Array<{ id: string; name: st
     }
     setFileName(file.name)
     setCsv(await file.text())
+  }
+
+  function downloadTemplate() {
+    setError(null)
+    startTransition(async () => {
+      // F0546 — servants had no template, so an admin adding the year's servants
+      // in bulk guessed the column names. The two nobody guesses are `classes`
+      // (semicolon-separated names or ids) and `titles`, which lines up
+      // positionally with it.
+      const result = kind === 'students' ? await studentImportTemplateCsv() : await servantImportTemplateCsv()
+      if (!result.ok) return setError(result.error)
+      saveCsv(result.data!.filename, result.data!.csv)
+    })
+  }
+
+  function previewImport() {
+    if (!csv.trim()) return setError('Choose a CSV file first.')
+    setError(null)
+    startTransition(async () => {
+      // F0547 — servants get a preview too. Theirs is the more dangerous import:
+      // a wrong `role` column makes somebody an ADMIN, and a `classes` column
+      // rewrites who serves which class. It committed on the first click.
+      const result =
+        kind === 'students'
+          ? await importStudentsCsv(csv, classId || null, { preview: true })
+          : await importServantsCsv(csv, { preview: true })
+      if (!result.ok) {
+        setSummary(null)
+        setIsPreview(false)
+        return setError(result.error)
+      }
+      setSummary(result.data!)
+      setIsPreview(true)
+    })
   }
 
   function exportCsv() {
@@ -86,10 +126,12 @@ export function ImportPanel({ classes }: { classes: Array<{ id: string; name: st
         kind === 'students' ? await importStudentsCsv(csv, classId || null) : await importServantsCsv(csv)
       if (!result.ok) {
         setSummary(null)
+        setIsPreview(false)
         setError(result.error)
         return
       }
       setSummary(result.data!)
+      setIsPreview(false)
     })
   }
 
@@ -148,13 +190,19 @@ export function ImportPanel({ classes }: { classes: Array<{ id: string; name: st
         <button type="button" onClick={exportCsv} disabled={pending} className={buttonClass('secondary')}>
           <Download className="h-4 w-4" aria-hidden /> Export {kind} CSV
         </button>
+        <button type="button" onClick={downloadTemplate} disabled={pending} className={buttonClass('secondary')}>
+          <FileSpreadsheet className="h-4 w-4" aria-hidden /> Download template
+        </button>
         <label className={cn(buttonClass('secondary'), 'cursor-pointer')}>
           <Upload className="h-4 w-4" aria-hidden /> Choose CSV
           <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => void pickFile(e.target.files?.[0])} />
         </label>
         {fileName && <span className="text-[11px] text-parch-500">{fileName}</span>}
+        <button type="button" onClick={previewImport} disabled={pending || !csv} className={buttonClass('secondary')}>
+          <Eye className="h-4 w-4" aria-hidden /> Preview
+        </button>
         <button type="button" onClick={runImport} disabled={pending || !csv} className={buttonClass('primary')}>
-          {pending ? 'Working…' : `Import ${kind}`}
+          {pending ? 'Working…' : isPreview ? 'Confirm import' : `Import ${kind}`}
         </button>
       </div>
 
@@ -171,9 +219,15 @@ export function ImportPanel({ classes }: { classes: Array<{ id: string; name: st
 
       {summary && (
         <div className="mt-4 space-y-3.5">
+          {isPreview && (
+            <Callout tone="warn" title="Preview — nothing has been written yet">
+              This is what the file would do. Check the rows below, then press{' '}
+              <strong>Confirm import</strong> to apply it.
+            </Callout>
+          )}
           <div className="flex flex-wrap gap-2">
-            <Badge tone="good">{summary.created} created</Badge>
-            <Badge tone="info">{summary.updated} updated</Badge>
+            <Badge tone="good">{summary.created} {isPreview ? 'to add' : 'created'}</Badge>
+            <Badge tone="info">{summary.updated} {isPreview ? 'to update' : 'updated'}</Badge>
             {summary.skipped > 0 && <Badge tone="neutral">{summary.skipped} skipped</Badge>}
             {summary.errors > 0 && <Badge tone="bad">{summary.errors} failed</Badge>}
           </div>

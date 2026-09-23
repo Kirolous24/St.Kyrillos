@@ -17,6 +17,7 @@
 // tests/portal/reports.test.ts.
 
 import { mondayOf, toUTCDate, formatDateOnly, addDays } from './dates'
+import { QUIZ_PASS_PERCENT, QUIZ_EXCELLENT_PERCENT } from './exams'
 
 export type AttendanceStatusKey = 'PRESENT' | 'EXCUSED' | 'ABSENT'
 
@@ -148,11 +149,14 @@ export function attendanceBand(rate: number | null): Band | null {
   return 'low'
 }
 
-/** §5 quiz bands: ≥90 excellent, ≥60 good. */
+/**
+ * §5 quiz bands. The "good" floor is the pass mark — F0035; see
+ * QUIZ_PASS_PERCENT for why it is not 60.
+ */
 export function quizBand(percentage: number | null): Band | null {
   if (percentage === null) return null
-  if (percentage >= 90) return 'excellent'
-  if (percentage >= 60) return 'good'
+  if (percentage >= QUIZ_EXCELLENT_PERCENT) return 'excellent'
+  if (percentage >= QUIZ_PASS_PERCENT) return 'good'
   return 'low'
 }
 
@@ -187,14 +191,43 @@ export function monthLabel(month: string): string {
   return `${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`
 }
 
-/** Every Sunday in the month — the blank attendance form's columns. */
-export function sundaysInMonth(month: string): string[] {
+/**
+ * Every date in the month that falls on `dayOfWeek` (0 = Sunday) — the blank
+ * attendance form's columns. A non-Sunday session (Bible study on a Wednesday,
+ * say) printed Sunday dates, so whoever transcribed the paper roll afterwards
+ * filed the marks under the wrong days.
+ */
+export function weekdaysInMonth(month: string, dayOfWeek: number): string[] {
   const { from, to } = monthRange(month)
+  const day = ((dayOfWeek % 7) + 7) % 7
   const out: string[] = []
   for (let d = from; d <= to; d = addDays(d, 1)) {
-    if (toUTCDate(d).getUTCDay() === 0) out.push(d)
+    if (toUTCDate(d).getUTCDay() === day) out.push(d)
   }
   return out
+}
+
+/**
+ * The weekday a class actually holds a session on, learned from the dates it
+ * has already recorded. There is no day-of-week column on AttendanceSession, so
+ * the blank paper form used to hardcode Sunday — a Wednesday Bible study came
+ * back with every mark filed under the wrong day. Ties and no history fall back
+ * to Sunday, which is what it did before.
+ */
+export function dominantWeekday(dates: readonly string[]): number {
+  const counts = new Array<number>(7).fill(0)
+  for (const d of dates) {
+    const day = toUTCDate(d).getUTCDay()
+    if (Number.isInteger(day)) counts[day] = (counts[day] ?? 0) + 1
+  }
+  let best = 0
+  for (let i = 1; i < 7; i++) if ((counts[i] ?? 0) > (counts[best] ?? 0)) best = i
+  return (counts[best] ?? 0) > 0 ? best : 0
+}
+
+/** Every Sunday in the month. */
+export function sundaysInMonth(month: string): string[] {
+  return weekdaysInMonth(month, 0)
 }
 
 /** The month a date belongs to, as "YYYY-MM". */
@@ -270,8 +303,22 @@ export function buildMonthMatrix(
   }
 
   const anyRecords = inMonth.length > 0
+  // F0204 — a column only exists because somebody in the class was marked that
+  // day, so a student with no row of their own was absent, not "not marked".
+  // The QR flows write a row only for the children who scanned (actions/qr.ts
+  // :398-411), so on a QR Sunday everyone who did not scan printed as an empty
+  // box: a parent reading the sheet sees a servant who never took the register.
+  // The rate column already counts them absent, so this only stops the grid
+  // from contradicting the number beside it.
+  const heldColumns = new Set<number>()
+  for (const rec of inMonth) {
+    const col = columnIndex.get(rec.date)
+    if (col !== undefined) heldColumns.add(col)
+  }
   const rows: MatrixRow[] = students.map((s) => {
-    const marks = byStudent.get(s.id) ?? dates.map(() => null)
+    const marks = (byStudent.get(s.id) ?? dates.map(() => null)).map((mark, i) =>
+      mark ?? (heldColumns.has(i) ? ('ABSENT' as const) : null),
+    )
     let present = 0
     let excused = 0
     for (const mark of marks) {
@@ -394,13 +441,36 @@ export function churchTotals(rows: readonly ClassSummaryRow[]) {
 
 /* ── Report card ──────────────────────────────────────────────────────────── */
 
+/**
+ * One quiz on a report card. The prototype showed a ring per exam with its
+ * correct/total and the points it earned (OG L6417-6454); the port carried only
+ * a percentage, so the card could say "82% average" and nothing else — a parent
+ * could not see which quiz went badly.
+ */
+export interface ReportCardExam {
+  examId: string
+  title: string
+  percentage: number
+  correct: number
+  questions: number
+  points: number
+  submittedAt: string | null
+}
+
 export interface ReportCardInput {
   studentId: string
   name: string
   className: string
   attendance: AttendanceRateResult
   quizPercentages: readonly number[]
+  exams?: readonly ReportCardExam[]
   pointsTotal: number
+  /**
+   * F0185 — where the points came from. A card that says only "184 points"
+   * cannot answer the question a parent actually asks at the door: is that
+   * because he turns up, or because he works? The prototype broke it down.
+   */
+  pointsBySource?: readonly { source: string; points: number }[]
   badges: readonly string[]
   rank?: number | null
 }
@@ -414,13 +484,21 @@ export interface ReportCard {
   quizAverage: number | null
   quizCount: number
   quizBand: Band | null
+  /** Newest first. */
+  exams: ReportCardExam[]
+  examCorrect: number
+  examQuestions: number
+  examPoints: number
   pointsTotal: number
+  /** Largest first, zero-point sources dropped. */
+  pointsBySource: Array<{ source: string; label: string; points: number }>
   badges: string[]
   rank: number | null
 }
 
 export function buildReportCard(input: ReportCardInput): ReportCard {
   const quizAverage = average(input.quizPercentages)
+  const exams = (input.exams ?? []).slice()
   return {
     studentId: input.studentId,
     name: input.name,
@@ -430,9 +508,304 @@ export function buildReportCard(input: ReportCardInput): ReportCard {
     quizAverage,
     quizCount: input.quizPercentages.length,
     quizBand: quizBand(quizAverage),
+    exams,
+    examCorrect: exams.reduce((n, e) => n + e.correct, 0),
+    examQuestions: exams.reduce((n, e) => n + e.questions, 0),
+    examPoints: exams.reduce((n, e) => n + e.points, 0),
     pointsTotal: input.pointsTotal,
+    pointsBySource: (input.pointsBySource ?? [])
+      .filter((r) => r.points !== 0)
+      .map((r) => ({ source: r.source, label: POINT_SOURCE_LABEL[r.source] ?? r.source, points: r.points }))
+      .sort((a, b) => b.points - a.points),
     badges: Array.from(new Set(input.badges)),
     rank: input.rank ?? null,
+  }
+}
+
+/**
+ * F0185 — how each point source reads on a sheet that goes home to a family.
+ * "ATTENDANCE" is a database value; "Attending" is what a parent understands.
+ */
+export const POINT_SOURCE_LABEL: Record<string, string> = {
+  ATTENDANCE: 'Attending',
+  MANUAL: 'Given by a servant',
+  QUIZ: 'Quizzes',
+  QR: 'Scanned in',
+  UNDO: 'Corrections',
+}
+
+/** The medal a top-three place earns on the printed card (the prototype's own). */
+export const RANK_MEDAL: Record<number, string> = { 1: '\u{1F947}', 2: '\u{1F948}', 3: '\u{1F949}' }
+
+/**
+ * Which session a headline attendance figure should be scored over.
+ *
+ * Every stat card hardcoded `sessionKey: 'sunday'`, so a class whose main
+ * register is Bible Study or Liturgy read "No sessions yet" on every card it
+ * looks at day to day, while the reports page had its attendance all along.
+ *
+ * Deliberately a fallback rather than a redefinition: a class that records
+ * Sunday School is still scored on Sunday School, so no existing number moves.
+ * Only a class with no Sunday rows at all falls back to everything it does
+ * record. Returns null for "all sessions".
+ */
+export function headlineSession(rows: readonly { sessionKey: string }[]): string | null {
+  return rows.some((r) => r.sessionKey === 'sunday') ? 'sunday' : null
+}
+
+/** The rows that headline figure is computed from. */
+export function headlineRows<T extends { sessionKey: string }>(rows: readonly T[]): T[] {
+  const key = headlineSession(rows)
+  return key ? rows.filter((r) => r.sessionKey === key) : [...rows]
+}
+
+export interface SessionTrendDay {
+  date: string
+  present: number
+  excused: number
+  absent: number
+  /** Roster members with no PRESENT mark that day, in roster order. */
+  missing: string[]
+  rate: number | null
+}
+
+/**
+ * The last few times this class held this session, and who was not there.
+ *
+ * The prototype showed a ring per recent date with a one-tap "who was missing"
+ * (OG L5414-5417). The port showed the register for one date and nothing about
+ * the weeks around it, so a servant could not see a child quietly sliding away
+ * without opening four separate dates.
+ *
+ * Excused counts as not-present here, deliberately: the question this answers
+ * is "who was not in the room", which is the question a servant chasing a
+ * child is asking. The scored attendance rate elsewhere still drops excused
+ * absences from the denominator; these are different questions and the UI says
+ * which one it is showing.
+ */
+export function sessionTrend(
+  dates: readonly string[],
+  rows: readonly { studentId: string; date: string; status: AttendanceStatusKey }[],
+  roster: readonly MatrixStudent[],
+): SessionTrendDay[] {
+  const byDate = new Map<string, Map<string, AttendanceStatusKey>>()
+  for (const r of rows) {
+    const day = byDate.get(r.date) ?? new Map<string, AttendanceStatusKey>()
+    const prev = day.get(r.studentId)
+    if (!prev || STATUS_RANK[r.status] > STATUS_RANK[prev]) day.set(r.studentId, r.status)
+    byDate.set(r.date, day)
+  }
+
+  return dates
+    .slice()
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((date) => {
+      const day = byDate.get(date) ?? new Map<string, AttendanceStatusKey>()
+      let present = 0
+      let excused = 0
+      const missing: string[] = []
+      for (const s of roster) {
+        const status = day.get(s.id)
+        if (status === 'PRESENT') present += 1
+        else {
+          if (status === 'EXCUSED') excused += 1
+          missing.push(s.name)
+        }
+      }
+      const size = roster.length
+      return {
+        date,
+        present,
+        excused,
+        absent: Math.max(0, size - present - excused),
+        missing,
+        rate: size === 0 ? null : Math.round((present / size) * 100),
+      }
+    })
+}
+
+/* ── All-sessions month grid ──────────────────────────────────────────────── */
+
+/**
+ * The prototype's session abbreviations (OG L8944), so a grid six sessions wide
+ * still fits on a sheet of paper.
+ */
+export const SESSION_ABBR: Readonly<Record<string, string>> = {
+  bible: 'BS',
+  vespers: 'V',
+  tasbeha: 'T',
+  liturgy: 'SL',
+  sunday: 'SS',
+  hymns: 'H',
+}
+
+/** Falls back to initials for a session the church added after the prototype. */
+export function sessionAbbr(key: string, label: string): string {
+  const known = SESSION_ABBR[key]
+  if (known) return known
+  const initials = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0]!)
+    .join('')
+  return (initials || key).slice(0, 3).toUpperCase()
+}
+
+export interface SessionMeta {
+  key: string
+  label: string
+}
+
+export interface GridColumn {
+  week: string
+  sessionKey: string
+  abbr: string
+  label: string
+}
+
+export interface GridWeek {
+  week: string
+  label: string
+  /** How many session columns sit under this week's header. */
+  span: number
+}
+
+export interface GridRow {
+  studentId: string
+  name: string
+  /** One per column, in `columns` order. */
+  marks: (AttendanceStatusKey | null)[]
+  present: number
+  excused: number
+  held: number
+  rate: number | null
+}
+
+export interface MultiSessionMatrix {
+  month: string
+  label: string
+  weeks: GridWeek[]
+  columns: GridColumn[]
+  rows: GridRow[]
+  totals: { present: number; excused: number; absent: number; held: number; rate: number | null }
+}
+
+/** Every Monday-to-Sunday week that overlaps the month (OG L8951-8958). */
+export function weeksOverlappingMonth(month: string): string[] {
+  const { from, to } = monthRange(month)
+  const out: string[] = []
+  for (let monday = mondayOf(from); monday <= to; monday = addDays(monday, 7)) out.push(monday)
+  return out
+}
+
+function weekLabelFor(monday: string): string {
+  const sunday = addDays(monday, 6)
+  const m = (d: string) => MONTH_NAMES[Number(d.slice(5, 7)) - 1]!.slice(0, 3)
+  const day = (d: string) => String(Number(d.slice(8, 10)))
+  return m(monday) === m(sunday)
+    ? `${m(monday)} ${day(monday)}–${day(sunday)}`
+    : `${m(monday)} ${day(monday)} – ${m(sunday)} ${day(sunday)}`
+}
+
+/**
+ * Students down the side; across the top, one group per week of the month with
+ * a column per session inside it.
+ *
+ * The prototype's attendance report was this grid — all six weekly sessions in
+ * one month view (OG renderAttendanceMonthTable, L8938-9017). The port reduced
+ * it to a single session at a time, so seeing a month properly meant running
+ * and printing the report six times.
+ *
+ * A (week, session) pair becomes a column when the class recorded that session
+ * in that week — the same held rule the rest of this module works to, so a
+ * session nobody took is not held against anyone. `options.sessionKeys` forces
+ * the full set instead, which is how the blank paper form gets its columns.
+ */
+export function buildMultiSessionMatrix(
+  students: readonly MatrixStudent[],
+  records: readonly { studentId: string; date: string; sessionKey: string; status: AttendanceStatusKey }[],
+  sessions: readonly SessionMeta[],
+  month: string,
+  options: { sessionKeys?: readonly string[] } = {},
+): MultiSessionMatrix {
+  const { from, to } = monthRange(month)
+  const inMonth = records.filter((r) => r.date >= from && r.date <= to)
+  const weeks = weeksOverlappingMonth(month)
+  const known = new Map(sessions.map((s) => [s.key, s]))
+
+  const heldPairs = new Set<string>()
+  if (options.sessionKeys) {
+    for (const week of weeks) for (const key of options.sessionKeys) if (known.has(key)) heldPairs.add(`${key}@${week}`)
+  } else {
+    for (const r of inMonth) if (known.has(r.sessionKey)) heldPairs.add(`${r.sessionKey}@${mondayOf(r.date)}`)
+  }
+
+  const columns: GridColumn[] = []
+  const weekHeaders: GridWeek[] = []
+  for (let i = 0; i < weeks.length; i++) {
+    const week = weeks[i]!
+    const inWeek = sessions.filter((s) => heldPairs.has(`${s.key}@${week}`))
+    if (inWeek.length === 0) continue
+    // F0443 — the church says "the 3rd week of October"; a bare date range made
+    // a servant count Mondays to work out which week of the month they were
+    // looking at, which is the one thing this header exists to answer. The
+    // ordinal comes from the month's own week list, not from the rendered
+    // columns, so a week nobody recorded does not shift the numbering of the
+    // weeks after it.
+    weekHeaders.push({ week, label: `Week ${i + 1} (${weekLabelFor(week)})`, span: inWeek.length })
+    for (const s of inWeek) {
+      columns.push({ week, sessionKey: s.key, abbr: sessionAbbr(s.key, s.label), label: s.label })
+    }
+  }
+
+  const columnIndex = new Map(columns.map((c, i) => [`${c.sessionKey}@${c.week}`, i]))
+  const byStudent = new Map<string, (AttendanceStatusKey | null)[]>()
+  for (const s of students) byStudent.set(s.id, columns.map(() => null))
+
+  for (const rec of inMonth) {
+    const col = columnIndex.get(`${rec.sessionKey}@${mondayOf(rec.date)}`)
+    const row = byStudent.get(rec.studentId)
+    if (col === undefined || !row) continue
+    const prev = row[col]
+    if (!prev || STATUS_RANK[rec.status] > STATUS_RANK[prev]) row[col] = rec.status
+  }
+
+  const rows: GridRow[] = students.map((s) => {
+    const marks = byStudent.get(s.id) ?? columns.map(() => null)
+    let present = 0
+    let excused = 0
+    for (const mark of marks) {
+      if (mark === 'PRESENT') present += 1
+      else if (mark === 'EXCUSED') excused += 1
+    }
+    const held = Math.max(0, columns.length - excused)
+    return {
+      studentId: s.id,
+      name: s.name,
+      marks,
+      present,
+      excused,
+      held,
+      rate: held === 0 ? null : Math.round((present / held) * 100),
+    }
+  })
+
+  const present = rows.reduce((n, r) => n + r.present, 0)
+  const excused = rows.reduce((n, r) => n + r.excused, 0)
+  const held = rows.reduce((n, r) => n + r.held, 0)
+  return {
+    month,
+    label: monthLabel(month),
+    weeks: weekHeaders,
+    columns,
+    rows,
+    totals: {
+      present,
+      excused,
+      absent: Math.max(0, held - present),
+      held,
+      rate: held === 0 ? null : Math.round((present / held) * 100),
+    },
   }
 }
 
@@ -520,6 +893,9 @@ export const CONFIRM_PHRASE = {
   endOfYear: 'RESET YEAR',
   resetActivities: 'RESET ACTIVITIES',
   clearPoints: 'CLEAR POINTS',
+  deleteClassStudents: 'DELETE STUDENTS',
+  resetClassPins: 'RESET PINS',
+  resetAllActivities: 'RESET ALL ACTIVITIES',
 } as const
 
 export interface DangerResult {
@@ -553,4 +929,91 @@ export function reportFilename(parts: readonly (string | null | undefined)[], ex
 /** Dates helper re-exported for report pages that only import this module. */
 export function dateOnly(d: Date): string {
   return formatDateOnly(d)
+}
+
+export interface QuizScoreRow {
+  studentId: string
+  name: string
+  percentage: number | null
+}
+
+export interface TopPerformer {
+  studentId: string
+  name: string
+  average: number
+  count: number
+}
+
+/**
+ * The prototype's "Top Performing Students" ranking (OG L4291-4305): mean quiz
+ * percentage, **minimum two quizzes** so one lucky score cannot outrank a
+ * student who is consistently good, ties broken by who has sat more.
+ */
+export const MIN_QUIZZES_FOR_RANKING = 2
+
+export function topQuizPerformers(rows: readonly QuizScoreRow[], limit = 4): TopPerformer[] {
+  const byStudent = new Map<string, { name: string; scores: number[] }>()
+  for (const r of rows) {
+    if (r.percentage === null || r.percentage === undefined) continue
+    const entry = byStudent.get(r.studentId) ?? { name: r.name, scores: [] }
+    entry.scores.push(r.percentage)
+    byStudent.set(r.studentId, entry)
+  }
+  return Array.from(byStudent.entries())
+    .filter(([, v]) => v.scores.length >= MIN_QUIZZES_FOR_RANKING)
+    .map(([studentId, v]) => ({
+      studentId,
+      name: v.name,
+      average: Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length),
+      count: v.scores.length,
+    }))
+    .sort((a, b) => b.average - a.average || b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, limit)
+}
+
+/**
+ * The prototype's "vs last session" arrow: how the most recent session's
+ * attendance compares with the one before it. Sessions whose rate could not be
+ * scored at all are not a comparison, so they are skipped rather than read as
+ * zero — which would invent a collapse and then a recovery.
+ */
+export function attendanceDelta(trend: readonly { date: string; rate: number | null }[]): number | null {
+  const scored = trend.filter((t) => t.rate !== null) as { date: string; rate: number }[]
+  if (scored.length < 2) return null
+  return scored[scored.length - 1]!.rate - scored[scored.length - 2]!.rate
+}
+
+export interface SchoolYearMonth {
+  /** "2026-09". */
+  key: string
+  /** "SEP" — the chip's own label. */
+  abbr: string
+  /** "September 2026" — for the accessible name. */
+  label: string
+}
+
+// Reuses MONTH_NAMES, declared near the top of this file for the range labels.
+const MONTH_ABBRS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+/**
+ * The twelve months of the school year, September→August (F0139/F0441).
+ *
+ * The prototype offered these as a row of tappable pills; the port replaced
+ * them with a native month input, which is three interactions to reach October
+ * and gives no sense of the year as a whole. The pills are also how the church
+ * talks about the year — it starts in September, not January.
+ */
+export function schoolYearMonths(todayKey: string): SchoolYearMonth[] {
+  const year = Number(todayKey.slice(0, 4))
+  const month = Number(todayKey.slice(5, 7))
+  const startYear = month >= 9 ? year : year - 1
+  return Array.from({ length: 12 }, (_, i) => {
+    const mIdx = (8 + i) % 12
+    const mYear = startYear + (mIdx < 8 ? 1 : 0)
+    return {
+      key: `${mYear}-${String(mIdx + 1).padStart(2, '0')}`,
+      abbr: MONTH_ABBRS[mIdx]!,
+      label: `${MONTH_NAMES[mIdx]} ${mYear}`,
+    }
+  })
 }

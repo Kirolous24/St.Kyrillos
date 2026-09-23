@@ -39,7 +39,15 @@ const ExamSchema = z.object({
   subject: z.string().trim().max(120).optional(),
   dueDate: z.string().max(40).optional(),
   pointsPerQuestion: z.number().int().min(1).max(100),
-  bibleReading: z.string().trim().max(300).optional(),
+  /**
+   * F0324 — 2000, not 300, and the form gives it more than one line. The
+   * prototype took a multi-line passage: a servant setting "Mark 1-3, and read
+   * the footnotes on the parable" ran out of room at 300 characters, and the
+   * single-line input made a long entry unreadable while typing it. Relaxing one
+   * side alone is worse than leaving both — a taller box that zod still rejects
+   * loses the servant's work at submit.
+   */
+  bibleReading: z.string().trim().max(2000).optional(),
   readingMessage: z.string().trim().max(2000).optional(),
   status: z.enum(['DRAFT', 'PUBLISHED', 'CLOSED']),
   questions: z.array(QuestionSchema).min(1).max(MAX_QUESTIONS),
@@ -65,6 +73,42 @@ function parseDue(raw: string | undefined): Date | null {
   const iso = parseDateOnly(raw)
   if (!iso) throw new PortalError('Pick a valid due date.')
   return toUTCDate(iso)
+}
+
+/**
+ * F0024 / F0483 — is there already a quiz for this class on this date?
+ *
+ * Two quizzes for the same class on the same Sunday is almost always the second
+ * servant not knowing about the first. The prototype's answer was to merge them,
+ * which is worse than either: merging edits a quiz children may already have sat,
+ * so their stored score and the quiz's question count end up disagreeing with
+ * each other on a report card. A warning costs one sentence on the form and
+ * leaves the servant in charge — they may well mean to set a second one.
+ *
+ * Read-only, and gated on the same permission as writing a quiz for that class.
+ */
+export async function findDuplicateExam(
+  classId: string,
+  dueDate: string,
+  excludeExamId?: string,
+): Promise<ActionResult<{ title: string; id: string } | null>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    if (!classId || !dueDate) return null
+    const cls = await assertClassAction(user, classId, EXAM_WRITE)
+    const due = parseDue(dueDate)
+    if (!due) return null
+    const existing = await prisma.exam.findFirst({
+      where: {
+        classId: cls.id,
+        dueDate: due,
+        ...(excludeExamId ? { id: { not: excludeExamId } } : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, title: true },
+    })
+    return existing ?? null
+  })
 }
 
 /* ── Create / update ──────────────────────────────────────────────────────── */
@@ -205,6 +249,57 @@ export async function setReopenedStudents(raw: z.infer<typeof ReopenSchema>): Pr
   })
 }
 
+const BulkReopenSchema = z.object({
+  examIds: z.array(z.string().min(1)).min(1).max(50),
+  studentIds: z.array(z.string().min(1)).min(1).max(500),
+})
+
+/**
+ * Reopen several exams at once for the same students, merging into each exam's
+ * existing list rather than replacing it (OG L11448-11456).
+ *
+ * The merge is the point: a student who was already granted one overdue quiz
+ * individually must not lose that grant because a later bulk action named a
+ * different set. The single-exam action deliberately still replaces, because
+ * that screen shows the current list and the servant is editing it directly.
+ *
+ * Each exam is permission-checked on its own, and students are filtered to the
+ * roster of the exam being written, so one selection spanning two classes
+ * grants each child only their own class's quizzes.
+ */
+export async function bulkReopenExams(
+  raw: z.infer<typeof BulkReopenSchema>,
+): Promise<ActionResult<{ exams: number; students: number }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = BulkReopenSchema.parse(raw)
+
+    let touched = 0
+    const granted = new Set<string>()
+    for (const examId of input.examIds) {
+      const exam = await assertExamWrite(user, examId)
+      if (!exam.classId) continue
+      const roster = await prisma.student.findMany({
+        where: { id: { in: input.studentIds }, classId: exam.classId },
+        select: { id: true },
+      })
+      if (roster.length === 0) continue
+      const current = await prisma.exam.findUnique({ where: { id: exam.id }, select: { reopenedFor: true } })
+      const merged = Array.from(new Set([...(current?.reopenedFor ?? []), ...roster.map((r) => r.id)]))
+      await prisma.exam.update({ where: { id: exam.id }, data: { reopenedFor: merged } })
+      for (const r of roster) granted.add(r.id)
+      touched += 1
+      revalidatePath(`/portal/exams/${exam.id}`)
+    }
+
+    if (touched === 0) throw new PortalError('None of those students are on the roster of the exams you picked.')
+    await audit(user, 'exam.bulkReopen', 'exam', null, `Reopened ${touched} exam${touched === 1 ? '' : 's'} for ${granted.size} student${granted.size === 1 ? '' : 's'}`)
+    revalidatePath('/portal/exams')
+    revalidatePath('/portal/quizzes')
+    return { exams: touched, students: granted.size }
+  })
+}
+
 export async function deleteExams(examIds: string[]): Promise<ActionResult<{ deleted: number }>> {
   return runAction(async () => {
     const user = await requirePortalUser()
@@ -252,6 +347,10 @@ const ImportSchema = z.object({
   classId: z.string().min(1),
   csv: z.string().min(1).max(500_000),
   status: z.enum(['DRAFT', 'PUBLISHED']),
+  // Only used by the prototype's Day-based sheet, which carries no Title and
+  // no full date — the month those day numbers belong to is picked in the form.
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  pointsPerQuestion: z.number().int().min(1).max(100).optional(),
 })
 
 export interface ImportReport {
@@ -267,7 +366,7 @@ export async function importExamsCsv(raw: z.infer<typeof ImportSchema>): Promise
 
     const records = parseCsvRecords(input.csv)
     if (records.length === 0) throw new PortalError('That file has no rows under its header.')
-    const { drafts, errors } = parseExamCsv(records)
+    const { drafts, errors } = parseExamCsv(records, { month: input.month, pointsPerQuestion: input.pointsPerQuestion })
     if (drafts.length === 0) {
       throw new PortalError(
         errors.length

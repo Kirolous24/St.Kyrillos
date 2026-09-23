@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, X } from 'lucide-react'
 import { createPost, updatePost } from '@/lib/portal/actions/feed'
 import { FEED_TAGS, type FeedTagKey } from '@/lib/portal/data/feed'
-import { Card, Field, inputClass, selectClass, textareaClass, buttonClass } from '@/components/portal/ui'
+import { Card, Field, inputClass, selectClass, textareaClass, buttonClass, checkboxClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
 export interface ComposerPost {
@@ -32,6 +32,10 @@ export function FeedComposer({ classId, post, onDone, onCancel }: Props) {
   const [open, setOpen] = useState(editing)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
+  // F0505 — publishing resolved in silence: the form shut and the page
+  // refreshed, which looks exactly like a form that threw away what you typed.
+  // A servant posting "no class this Sunday" then posts it twice to be sure.
+  const [saved, setSaved] = useState('')
   const [form, setForm] = useState({
     title: post?.title ?? '',
     body: post?.body ?? '',
@@ -39,6 +43,12 @@ export function FeedComposer({ classId, post, onDone, onCancel }: Props) {
     link: post?.link ?? '',
     linkLabel: post?.linkLabel ?? '',
     tag: (post?.tag ?? 'ANNOUNCEMENT') as FeedTagKey,
+    // F0275 — createPost has always accepted `pinned`; only the checkbox was
+    // missing, so the one thing a servant wants when posting "no class this
+    // Sunday" took a second action on the card afterwards. Edit deliberately
+    // leaves it alone: changing the pin has its own control (togglePin), and
+    // UpdateSchema omits the field.
+    pinned: false,
   })
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
@@ -54,6 +64,7 @@ export function FeedComposer({ classId, post, onDone, onCancel }: Props) {
   function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setSaved('')
     const payload = {
       title: form.title,
       body: form.body || undefined,
@@ -65,14 +76,15 @@ export function FeedComposer({ classId, post, onDone, onCancel }: Props) {
     startTransition(async () => {
       const result = editing
         ? await updatePost({ ...payload, postId: post!.id })
-        : await createPost({ ...payload, classId })
+        : await createPost({ ...payload, classId, pinned: form.pinned })
       if (!result.ok) {
         setError(result.error)
         return
       }
       if (!editing) {
-        setForm({ title: '', body: '', imageUrl: '', link: '', linkLabel: '', tag: 'ANNOUNCEMENT' })
+        setForm({ title: '', body: '', imageUrl: '', link: '', linkLabel: '', tag: 'ANNOUNCEMENT', pinned: false })
         setOpen(false)
+        setSaved('Posted to the class.')
       }
       onDone?.()
       router.refresh()
@@ -81,9 +93,29 @@ export function FeedComposer({ classId, post, onDone, onCancel }: Props) {
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className={cn(buttonClass('primary'), 'w-full sm:w-auto')}>
-        <Plus className="h-4 w-4" aria-hidden /> Write a post
-      </button>
+      <div className="flex flex-col items-start gap-2 sm:items-end">
+        {/* Persists until the composer is reopened rather than on a timer: a
+            confirmation that vanishes before the servant looks up has told
+            nobody anything. */}
+        {saved && (
+          <p
+            role="status"
+            className="rounded-[10px] border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-1.5 text-[12px] font-bold text-[#16A34A]"
+          >
+            {saved}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setSaved('')
+            setOpen(true)
+          }}
+          className={cn(buttonClass('primary'), 'w-full sm:w-auto')}
+        >
+          <Plus className="h-4 w-4" aria-hidden /> Write a post
+        </button>
+      </div>
     )
   }
 
@@ -135,6 +167,18 @@ export function FeedComposer({ classId, post, onDone, onCancel }: Props) {
         <Field label="Link label" htmlFor="post-link-label" hint="Shown on the button. Defaults to “Open link”.">
           <input id="post-link-label" value={form.linkLabel} onChange={(e) => set('linkLabel', e.target.value)} className={inputClass} maxLength={60} placeholder="Open link" />
         </Field>
+      )}
+
+      {!editing && (
+        <label className="flex items-center gap-2 text-[12.5px] text-parch-700">
+          <input
+            type="checkbox"
+            checked={form.pinned}
+            onChange={(e) => set('pinned', e.target.checked)}
+            className={checkboxClass}
+          />
+          Pin this to the top of the class feed
+        </label>
       )}
 
       {error && <p role="alert" className="text-[12px] font-bold text-red-700">{error}</p>}

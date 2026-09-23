@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import { CalendarPlus, Pencil, Trash2, X } from 'lucide-react'
 import { createEvent, updateEvent, deleteEvent } from '@/lib/portal/actions/events'
 import { Card, Field, inputClass, textareaClass, buttonClass, checkboxClass } from '@/components/portal/ui'
+import { toTimeInputValue } from '@/lib/portal/format'
 import { cn } from '@/lib/utils'
+import { weekdayName } from '@/lib/portal/dates'
 
 export interface ManagedEvent {
   id: string
@@ -60,6 +62,9 @@ export function EventManager({ classes, canTargetAll, event }: Props) {
         }
       : { ...EMPTY, classIds: classes.length === 1 ? [classes[0].id] : [] },
   )
+
+  // Null when the stored time is not something a native picker can hold.
+  const timeAsPicker = toTimeInputValue(form.time)
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -125,12 +130,33 @@ export function EventManager({ classes, canTargetAll, event }: Props) {
       </Field>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Date" htmlFor={`ev-date-${event?.id ?? 'new'}`}>
+        {/* F0316 — the day is worked out from the date and echoed here rather
+            than asked for separately. Two fields for one fact is how an event
+            comes to say "14 March" and "Tuesday" when 14 March is a Saturday. */}
+        <Field label="Date" htmlFor={`ev-date-${event?.id ?? 'new'}`} hint={weekdayName(form.date) ?? undefined}>
           <input id={`ev-date-${event?.id ?? 'new'}`} type="date" value={form.date} onChange={(e) => set('date', e.target.value)} className={inputClass} required />
         </Field>
-        <Field label="Time" htmlFor={`ev-time-${event?.id ?? 'new'}`} hint="Free text">
-          <input id={`ev-time-${event?.id ?? 'new'}`} value={form.time} onChange={(e) => set('time', e.target.value)} className={inputClass} maxLength={40} placeholder="6:00 PM" />
-        </Field>
+        {/* F0317 — a native time picker, as the prototype had. It is offered
+            only when the stored value is a time this can read: event times were
+            free text, and a bare type="time" input silently blanks anything it
+            cannot parse ("after liturgy", "6:00 PM - 8:00 PM"). Those keep the
+            text box, so nothing the church recorded is destroyed by editing an
+            unrelated field. */}
+        {timeAsPicker === null && form.time.trim() !== '' ? (
+          <Field label="Time" htmlFor={`ev-time-${event?.id ?? 'new'}`} hint="Free text">
+            <input id={`ev-time-${event?.id ?? 'new'}`} value={form.time} onChange={(e) => set('time', e.target.value)} className={inputClass} maxLength={40} placeholder="6:00 PM" />
+          </Field>
+        ) : (
+          <Field label="Time" htmlFor={`ev-time-${event?.id ?? 'new'}`}>
+            <input
+              id={`ev-time-${event?.id ?? 'new'}`}
+              type="time"
+              value={timeAsPicker ?? ''}
+              onChange={(e) => set('time', e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+        )}
         <Field label="Location" htmlFor={`ev-loc-${event?.id ?? 'new'}`}>
           <input id={`ev-loc-${event?.id ?? 'new'}`} value={form.location} onChange={(e) => set('location', e.target.value)} className={inputClass} maxLength={160} placeholder="Church hall" />
         </Field>
@@ -146,6 +172,17 @@ export function EventManager({ classes, canTargetAll, event }: Props) {
 
       <fieldset>
         <legend className="mb-1.5 block text-[12px] font-bold text-parch-700">Who is this for?</legend>
+        {/* F0318 — the prototype had a separate "owning class" select beside the
+            audience (OG :3437-3439, :15613-15614) and people who used it still
+            look for it here. One concept replaced two, and nothing on the form
+            said so, so an admin ticking classes could not tell whether they were
+            choosing who it belongs to or who it is for. Spelled out, because the
+            two answers differ: ticking a class does not hide the event from
+            anyone, and it does not hand that class's servants the pencil. */}
+        <p className="mb-2 text-[11.5px] leading-[1.5] text-parch-500">
+          Ticking classes says who the event is <em>for</em> — there is no separate owning class. Everyone in the
+          Sunday School can see every event either way, and only you, an admin or the pastor can edit this one.
+        </p>
         {canTargetAll && (
           <label className="mb-2 flex min-h-[40px] items-center gap-2 text-[12.5px] text-parch-800">
             <input type="checkbox" checked={form.targetAll} onChange={(e) => set('targetAll', e.target.checked)} className={checkboxClass} />

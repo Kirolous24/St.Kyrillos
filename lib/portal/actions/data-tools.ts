@@ -13,9 +13,13 @@ import { normalizePhone } from '../phones'
 import { splitName, formatFullName } from '../names'
 import { objectsToCsv, parseCsvRecords } from '../csv'
 import { studentName } from '../data/students'
+import { requireClassAccess } from '../data/classes'
 import { audit } from '../audit'
 import { randomPin } from '../credentials'
 import type { PortalUser } from '../permissions'
+import {
+  studentImportColumns,
+} from '../import-columns'
 import {
   classifyStudentImportRow,
   classifyServantImportRow,
@@ -197,6 +201,8 @@ const STUDENT_COLUMNS = [
   { key: 'grade', label: 'Grade' },
   { key: 'gender', label: 'Gender' },
   { key: 'dob', label: 'Date of birth' },
+  { key: 'email', label: 'Student email' },
+  { key: 'phone', label: 'Student phone' },
   { key: 'fatherName', label: 'Father name' },
   { key: 'fatherPhone', label: 'Father phone' },
   { key: 'motherName', label: 'Mother name' },
@@ -206,10 +212,61 @@ const STUDENT_COLUMNS = [
   { key: 'notes', label: 'Notes' },
 ] as const
 
+/**
+ * A one-row starter sheet. The Help page has always told admins to "download
+ * the template first so the columns line up" — there was no template, so the
+ * instruction sent them looking for a control that did not exist. Headers are
+ * STUDENT_COLUMNS verbatim, so a template filled in and re-imported round-trips
+ * through exportStudentsCsv unchanged.
+ *
+ * F0057 — any servant may fetch it; only an admin may upload one. The September
+ * rush is real, and a servant typing thirty new children in one at a time is the
+ * half of the job worth handing over: this sheet holds no church data, so there
+ * is nothing to leak and nothing to undo. Importing is the other half, and it
+ * stays with the office — it creates accounts, sets PINs, and can move a child
+ * out of somebody else's class, which is a church-wide act rather than a
+ * class-level one.
+ */
+export async function studentImportTemplateCsv(): Promise<ActionResult<{ filename: string; csv: string }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    if (user.role === 'STUDENT') throw new PortalError('That is a servant\u2019s tool.')
+    const example: Record<string, string> = {
+      id: '',
+      firstName: 'Mina',
+      lastName: 'Gerges',
+      classId: '',
+      className: 'Grade 3',
+      grade: '3rd',
+      gender: 'male',
+      dob: '2017-04-09',
+      email: '',
+      phone: '',
+      fatherName: 'Gerges Samir',
+      fatherPhone: '615-555-0147',
+      motherName: 'Mariam Gerges',
+      motherPhone: '615-555-0148',
+      parentEmails: 'gerges@example.com; mariam@example.com',
+      address: '123 Main St, Antioch TN',
+      notes: 'Leave the ID blank for a new student — one is assigned on import.',
+    }
+    return {
+      filename: 'students-import-template.csv',
+      csv: objectsToCsv(STUDENT_COLUMNS, [example]),
+    }
+  })
+}
+
 /** Students as CSV. Never includes a PIN or a hash. */
 export async function exportStudentsCsv(classId: string | null): Promise<ActionResult<{ filename: string; csv: string; rows: number }>> {
   return runAction(async () => {
-    const user = await requireAdmin()
+    // The prototype put Export CSV straight on the servant's own Students page
+    // — it was self-service. The port put it behind an admin-only route, so a
+    // servant who wanted their own roster as a spreadsheet had no way to get
+    // one. A servant may export a class they can read; everything else is still
+    // admin-only.
+    const user = classId ? await requirePortalUser() : await requireAdmin()
+    if (classId && user.role !== 'ADMIN') await requireClassAccess(user, classId, 'student.read')
     const students = await prisma.student.findMany({
       where: classId ? { classId } : {},
       orderBy: [{ class: { sortOrder: 'asc' } }, { firstName: 'asc' }, { lastName: 'asc' }],
@@ -218,7 +275,7 @@ export async function exportStudentsCsv(classId: string | null): Promise<ActionR
         fatherName: true, fatherPhone: true, motherName: true, motherPhone: true,
         parentEmails: true, address: true, notes: true,
         class: { select: { name: true } },
-        account: { select: { loginId: true } },
+        account: { select: { loginId: true, email: true, phone: true } },
       },
     })
     const rows = students.map((s) => ({
@@ -230,6 +287,8 @@ export async function exportStudentsCsv(classId: string | null): Promise<ActionR
       grade: s.grade ?? '',
       gender: s.gender ?? '',
       dob: s.dob ? formatDateOnly(s.dob) : '',
+      email: s.account.email ?? '',
+      phone: s.account.phone ?? '',
       fatherName: s.fatherName ?? '',
       fatherPhone: s.fatherPhone ?? '',
       motherName: s.motherName ?? '',
@@ -260,6 +319,42 @@ const SERVANT_COLUMNS = [
   { key: 'titles', label: 'Titles' },
   { key: 'isActive', label: 'Active' },
 ] as const
+
+/**
+ * F0546 — the servant CSV template. Students had one; servants did not, so an
+ * admin adding the year's servants in bulk had to guess the column names, and
+ * the two that matter most are the two nobody guesses: `classes` takes class
+ * names or ids separated by semicolons, and `titles` lines up positionally with
+ * them. Getting that wrong silently reassigns who serves which class.
+ *
+ * Headers are SERVANT_COLUMNS verbatim, so a template filled in and re-imported
+ * round-trips through exportServantsCsv unchanged — the same contract the
+ * student template holds.
+ */
+export async function servantImportTemplateCsv(): Promise<ActionResult<{ filename: string; csv: string }>> {
+  return runAction(async () => {
+    await requireAdmin()
+    const example: Record<string, string> = {
+      id: '',
+      name: 'Marina Fahmy',
+      role: 'SERVANT',
+      email: 'marina@example.com',
+      phone: '615-555-0163',
+      birthday: '1998-02-14',
+      address: '123 Main St, Antioch TN',
+      stageOversight: '',
+      // Semicolon-separated, and `titles` lines up position by position with
+      // `classes`: the first title belongs to the first class named.
+      classes: 'Grade 3; Grade 4',
+      titles: 'COORDINATOR;',
+      isActive: 'yes',
+    }
+    return {
+      filename: 'servants-import-template.csv',
+      csv: objectsToCsv(SERVANT_COLUMNS, [example]),
+    }
+  })
+}
 
 export async function exportServantsCsv(): Promise<ActionResult<{ filename: string; csv: string; rows: number }>> {
   return runAction(async () => {
@@ -327,7 +422,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 const StudentRowSchema = z.object({
   loginId: z.union([LoginIdSchema, z.literal('')]),
-  firstName: z.string().trim().min(1, 'First name is required').max(60),
+  firstName: z.string().trim().max(60),
   lastName: z.string().trim().max(60),
   classRef: z.string().trim().max(80),
   grade: z.string().trim().max(20),
@@ -338,8 +433,21 @@ const StudentRowSchema = z.object({
   motherName: z.string().trim().max(80),
   motherPhone: z.string().trim().max(30),
   parentEmails: z.string().trim().max(300),
+  email: z.string().trim().max(200),
+  phone: z.string().trim().max(30),
   address: z.string().trim().max(200),
   notes: z.string().trim().max(1000),
+})
+
+/**
+ * F0799 — a sheet that carries a name column must actually fill it in; a sheet
+ * with no name column at all is a corrections sheet (new phone numbers, a
+ * change of address) whose rows are matched on login ID alone, and demanding a
+ * first name from it would reject the very file the column check exists to
+ * make safe.
+ */
+const NamedStudentRowSchema = StudentRowSchema.extend({
+  firstName: z.string().trim().min(1, 'First name is required').max(60),
 })
 
 /**
@@ -354,24 +462,24 @@ const CLASS_NONE: ReadonlySet<string> = new Set(['none', 'no class', 'unassigned
  * that student; a row with a blank or unused ID creates a new account with a
  * fresh PIN. An existing PIN is never touched, by any path.
  */
+/**
+ * `preview` runs every check and reports exactly what the file would do without
+ * writing a row. The Help page has always promised admins a preview "before
+ * anything is written"; the port committed on file selection instead, so a
+ * mis-mapped column was only discovered after it had overwritten real records.
+ */
 export async function importStudentsCsv(
   csvText: string,
   defaultClassId: string | null,
+  options: { preview?: boolean } = {},
 ): Promise<ActionResult<ImportSummary>> {
   return runAction(async () => {
     const user = await requireAdmin()
+    const preview = options.preview === true
     const records = parseCsvRecords(csvText ?? '')
     if (records.length === 0) throw new PortalError('That file has no data rows.')
     if (records.length > MAX_IMPORT_ROWS) throw new PortalError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`)
 
-    const classes = await prisma.schoolClass.findMany({ select: { id: true, name: true } })
-    const byId = new Map(classes.map((c) => [c.id.toLowerCase(), c.id]))
-    const byName = new Map(classes.map((c) => [c.name.trim().toLowerCase(), c.id]))
-    const allocated = new Set<string>()
-    const results: ImportRowResult[] = []
-
-    // Pass 1: parse, validate and transform every row in memory — no DB
-    // round trips yet, so a bad file fails fast regardless of its size.
     type PreparedRow = {
       rowNumber: number
       displayName: string
@@ -392,7 +500,63 @@ export async function importStudentsCsv(
         parentEmails: string[]
         notes: string | null
       }
+      /** Student model has no contact columns; these live on their Account. */
+      account: { email: string | null; phone: string | null }
     }
+
+    const classes = await prisma.schoolClass.findMany({ select: { id: true, name: true } })
+    const byId = new Map(classes.map((c) => [c.id.toLowerCase(), c.id]))
+    const byName = new Map(classes.map((c) => [c.name.trim().toLowerCase(), c.id]))
+    const allocated = new Set<string>()
+    const results: ImportRowResult[] = []
+
+    // F0799 — which columns this file actually carries. `parseCsvRecords` gives
+    // every row a key for every header, blank cells included, so the first
+    // row's keys are the header row: a missing key means a missing column, not
+    // an empty cell, and the two must never be treated alike on an update.
+    const { namesGiven, writableFields, has: hasColumn, changedLabels } = studentImportColumns(
+      Object.keys(records[0] ?? {}),
+    )
+    const RowSchema = namesGiven ? NamedStudentRowSchema : StudentRowSchema
+
+    /**
+     * The update payload, cut to the columns the sheet carries. A field this
+     * file says nothing about is left off the payload entirely rather than
+     * written as null — writing the null is what made a partial sheet silently
+     * destructive.
+     */
+    const updatableData = (data: PreparedRow['data']): Partial<PreparedRow['data']> => {
+      const out: Partial<PreparedRow['data']> = {}
+      for (const field of writableFields) {
+        // Copied field by field rather than through a computed key, so each
+        // one keeps its own type instead of widening to the union.
+        switch (field) {
+          case 'gender': out.gender = data.gender; break
+          case 'dob': out.dob = data.dob; break
+          case 'grade': out.grade = data.grade; break
+          case 'address': out.address = data.address; break
+          case 'fatherName': out.fatherName = data.fatherName; break
+          case 'fatherPhone': out.fatherPhone = data.fatherPhone; break
+          case 'motherName': out.motherName = data.motherName; break
+          case 'motherPhone': out.motherPhone = data.motherPhone; break
+          case 'parentEmails': out.parentEmails = data.parentEmails; break
+          case 'notes': out.notes = data.notes; break
+        }
+      }
+      if (namesGiven) {
+        out.firstName = data.firstName
+        out.lastName = data.lastName
+      }
+      return out
+    }
+
+    const updatableAccount = (account: PreparedRow['account']) => ({
+      ...(hasColumn('email') ? { email: account.email } : {}),
+      ...(hasColumn('phone') ? { phone: account.phone } : {}),
+    })
+
+    // Pass 1: parse, validate and transform every row in memory — no DB
+    // round trips yet, so a bad file fails fast regardless of its size.
     const prepared: PreparedRow[] = []
 
     for (let i = 0; i < records.length; i++) {
@@ -412,13 +576,15 @@ export async function importStudentsCsv(
         fatherPhone: pick(rec, 'father phone', 'fatherphone'),
         motherName: pick(rec, 'mother name', 'mother', 'mothername'),
         motherPhone: pick(rec, 'mother phone', 'motherphone'),
-        parentEmails: pick(rec, 'parent emails', 'parent email', 'emails', 'email'),
+        parentEmails: pick(rec, 'parentemails', 'parent emails', 'parent email', 'parentemail', 'emails'),
+        email: pick(rec, 'student email', 'studentemail', 'email'),
+        phone: pick(rec, 'student phone', 'studentphone', 'phone', 'mobile', 'cell'),
         address: pick(rec, 'address'),
         notes: pick(rec, 'notes', 'note'),
       }
       const displayName = formatFullName({ firstName: draft.firstName, lastName: draft.lastName }) || rawName || `Row ${rowNumber}`
 
-      const parsed = StudentRowSchema.safeParse(draft)
+      const parsed = RowSchema.safeParse(draft)
       if (!parsed.success) {
         results.push({ row: rowNumber, name: displayName, loginId: draft.loginId || null, status: 'error', message: parsed.error.issues[0]?.message ?? 'Invalid row' })
         continue
@@ -452,6 +618,8 @@ export async function importStudentsCsv(
               .filter((e) => e && EMAIL_RE.test(e)),
           ),
         )
+        const email = input.email.trim().toLowerCase()
+        if (email && !EMAIL_RE.test(email)) throw new PortalError(`"${input.email}" is not a valid email address`)
         const gender = input.gender.toLowerCase()
         prepared.push({
           rowNumber,
@@ -473,6 +641,7 @@ export async function importStudentsCsv(
             parentEmails: emails,
             notes: input.notes || null,
           },
+          account: { email: email || null, phone: normalizePhone(input.phone) },
         })
       } catch (err) {
         const message = err instanceof PortalError ? err.message : 'Could not save this row'
@@ -487,17 +656,25 @@ export async function importStudentsCsv(
     const existingAccounts = providedIds.length
       ? await prisma.account.findMany({
           where: { loginId: { in: providedIds } },
-          select: { id: true, loginId: true, role: true, student: { select: { id: true } } },
+          select: { id: true, loginId: true, role: true, displayName: true, student: { select: { id: true } } },
         })
       : []
     const existingByLoginId = new Map<string, ExistingImportAccount>(
-      existingAccounts.map((a) => [a.loginId, { id: a.id, role: a.role, linkedId: a.student?.id ?? null }]),
+      existingAccounts.map((a) => [
+        a.loginId,
+        { id: a.id, role: a.role, linkedId: a.student?.id ?? null, displayName: a.displayName },
+      ]),
     )
+    /** What to call a row: the sheet's name, or the one already on file. */
+    const rowName = (p: PreparedRow) =>
+      namesGiven ? p.displayName : existingByLoginId.get(p.loginId)?.displayName || p.displayName
 
     // Pass 3: hash a fresh PIN for every row that will create an account, all
     // at once — bcrypt's hash cost is CPU-bound and gains nothing from being
     // awaited one row at a time, which is what made a large import crawl.
-    const toCreate = prepared.filter((p) => classifyStudentImportRow(p.loginId, existingByLoginId).kind === 'create')
+    const toCreate = preview
+      ? []
+      : prepared.filter((p) => classifyStudentImportRow(p.loginId, existingByLoginId).kind === 'create')
     const newPins = toCreate.map(() => randomPin())
     const newHashes = await Promise.all(newPins.map((pin) => bcrypt.hash(pin, 10)))
     const newPinByRow = new Map(toCreate.map((p, idx) => [p.rowNumber, { pin: newPins[idx]!, hash: newHashes[idx]! }]))
@@ -510,27 +687,65 @@ export async function importStudentsCsv(
         const classification = classifyStudentImportRow(p.loginId, existingByLoginId)
         if (classification.kind === 'error') throw new PortalError(classification.message)
 
+        if (preview) {
+          const classLabel = p.clearsClass
+            ? 'Would be removed from their class'
+            : p.classId
+              ? `Would be placed in ${classes.find((c) => c.id === p.classId)?.name ?? 'a class'}`
+              : 'Class left as it is'
+          // F0799 — name the fields, so an admin sees before writing that a
+          // column their sheet is missing is a column this import leaves alone.
+          const changeLabel =
+            classification.kind === 'update'
+              ? changedLabels.length
+                ? `Would update ${changedLabels.join(', ')}`
+                : 'Nothing to update'
+              : 'Would be added with a new ID and PIN'
+          results.push({
+            row: p.rowNumber,
+            name: rowName(p),
+            loginId: p.loginId || null,
+            status: classification.kind === 'update' ? 'updated' : 'created',
+            message: `${changeLabel} · ${classLabel}`,
+          })
+          continue
+        }
+
         if (classification.kind === 'update') {
           await prisma.student.update({
             where: { id: classification.account.linkedId! },
             data: {
-              ...p.data,
+              ...updatableData(p.data),
               ...(p.clearsClass
                 ? { class: { disconnect: true } }
                 : p.classId
                   ? { class: { connect: { id: p.classId } } }
                   : {}),
-              account: { update: { displayName: formatFullName(p.data) } },
+              account: {
+                update: {
+                  ...(namesGiven ? { displayName: formatFullName(p.data) } : {}),
+                  ...updatableAccount(p.account),
+                },
+              },
             },
           })
           results.push({
             row: p.rowNumber,
-            name: p.displayName,
+            name: rowName(p),
             loginId: p.loginId,
             status: 'updated',
             ...(p.clearsClass ? { message: 'Removed from class' } : {}),
           })
           continue
+        }
+
+        // A sheet with no name column cannot bring a new child into the school:
+        // it would create an account with a blank name. Matching rows still
+        // update; an unmatched one is an unknown ID and says so.
+        if (!namesGiven) {
+          throw new PortalError(
+            'This file has no name column, so it can only update children that already exist — and no child has this ID.',
+          )
         }
 
         const loginId = p.loginId || (await freeLoginId(allocated))
@@ -545,6 +760,7 @@ export async function importStudentsCsv(
                 pinHash: hash,
                 role: PortalRole.STUDENT,
                 displayName: formatFullName(p.data),
+                ...p.account,
               },
             },
           },
@@ -562,6 +778,9 @@ export async function importStudentsCsv(
     }
 
     const summary = summariseImport(results)
+    // A preview wrote nothing, so it neither logs as an import nor invalidates
+    // any cache — the log would otherwise claim rows were created.
+    if (preview) return summary
     await audit(user, 'data.importStudents', 'portal', defaultClassId, `${summary.created} created, ${summary.updated} updated, ${summary.errors} failed`)
     revalidatePath('/portal/admin/students')
     revalidatePath('/portal/classes')
@@ -582,9 +801,25 @@ const ServantRowSchema = z.object({
   titles: z.string().trim().max(300),
 })
 
-export async function importServantsCsv(csvText: string): Promise<ActionResult<ImportSummary>> {
+/**
+ * F0547 — the servant importer committed the moment it was called, while the
+ * student importer had had a preview arm since it was written. Importing the
+ * servant roster is the more dangerous of the two: a wrong `role` column makes
+ * somebody an ADMIN, and a `classes` column rewrites who serves which class
+ * (`classServant.deleteMany` then recreate). An admin had no way to see that
+ * before it happened.
+ *
+ * `preview` runs every check and reports exactly what the file would do without
+ * writing a row — the same contract as importStudentsCsv, deliberately, so the
+ * one Help page sentence covers both.
+ */
+export async function importServantsCsv(
+  csvText: string,
+  options: { preview?: boolean } = {},
+): Promise<ActionResult<ImportSummary>> {
   return runAction(async () => {
     const user = await requireAdmin()
+    const preview = options.preview === true
     const records = parseCsvRecords(csvText ?? '')
     if (records.length === 0) throw new PortalError('That file has no data rows.')
     if (records.length > MAX_IMPORT_ROWS) throw new PortalError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`)
@@ -690,9 +925,13 @@ export async function importServantsCsv(csvText: string): Promise<ActionResult<I
     // Pass 3: hash a fresh PIN for every row that will create an account, all
     // at once — bcrypt's hash cost is CPU-bound and gains nothing from being
     // awaited one row at a time, which is what made a large import crawl.
-    const toCreate = prepared.filter(
-      (p) => classifyServantImportRow(p.loginId, existingByLoginId, user.accountId, p.role).kind === 'create',
-    )
+    // No PIN is generated for a preview: it writes nothing, so a hashed PIN
+    // would be handed to the admin for an account that does not exist.
+    const toCreate = preview
+      ? []
+      : prepared.filter(
+          (p) => classifyServantImportRow(p.loginId, existingByLoginId, user.accountId, p.role).kind === 'create',
+        )
     const newPins = toCreate.map(() => randomPin())
     const newHashes = await Promise.all(newPins.map((pin) => bcrypt.hash(pin, 10)))
     const newPinByRow = new Map(toCreate.map((p, idx) => [p.rowNumber, { pin: newPins[idx]!, hash: newHashes[idx]! }]))
@@ -704,6 +943,25 @@ export async function importServantsCsv(csvText: string): Promise<ActionResult<I
       try {
         const classification = classifyServantImportRow(p.loginId, existingByLoginId, user.accountId, p.role)
         if (classification.kind === 'error') throw new PortalError(classification.message)
+
+        if (preview) {
+          // Names the two things that actually alarm an admin: the role the row
+          // would grant, and whether it rewrites the class assignments.
+          const classLabel =
+            p.memberships.length === 0
+              ? 'Classes left as they are'
+              : `Would serve ${p.memberships
+                  .map((m) => classes.find((c) => c.id === m.classId)?.name ?? m.classId)
+                  .join(', ')}`
+          results.push({
+            row: p.rowNumber,
+            name: p.name,
+            loginId: p.loginId || null,
+            status: classification.kind === 'update' ? 'updated' : 'created',
+            message: `${classification.kind === 'update' ? 'Would be updated' : 'Would be created'} as ${p.role} \u00b7 ${classLabel}`,
+          })
+          continue
+        }
 
         if (classification.kind === 'update') {
           const existing = classification.account
@@ -751,6 +1009,9 @@ export async function importServantsCsv(csvText: string): Promise<ActionResult<I
     }
 
     const summary = summariseImport(results)
+    // A preview wrote nothing, so it neither logs as an import nor invalidates
+    // any cache — the log would otherwise claim rows were created.
+    if (preview) return summary
     await audit(user, 'data.importServants', 'portal', null, `${summary.created} created, ${summary.updated} updated, ${summary.errors} failed`)
     revalidatePath('/portal/admin/servants')
     revalidatePath('/portal/classes')
@@ -761,7 +1022,7 @@ export async function importServantsCsv(csvText: string): Promise<ActionResult<I
 /* ── Data repair ──────────────────────────────────────────────────────────── */
 
 const RepairSchema = z.object({
-  tool: z.enum(['recount-classes', 'close-returned-cases', 'orphan-points', 'normalise-phones', 'clear-import-flags']),
+  tool: z.enum(['recount-classes', 'close-returned-cases', 'orphan-points', 'normalise-phones', 'clear-import-flags', 'check-attendance-points']),
   dryRun: z.boolean(),
 })
 
@@ -840,6 +1101,60 @@ export async function runRepair(raw: z.infer<typeof RepairSchema>): Promise<Acti
           found: closable.length,
           changed,
           detail: closable.slice(0, 20).map((c) => `${studentName(c.student)} — last seen ${back.get(c.studentId)}`),
+        }
+        break
+      }
+
+      /**
+       * F0668 — the prototype's "find attendance with missing points" tool, as a
+       * check and nothing more.
+       *
+       * The old version deleted the attendance records it found, which is a
+       * loaded gun pointed at children's history — and pointed at a problem that
+       * no longer exists here, because a mark and its point are written in one
+       * transaction. What the admin actually wanted from it was reassurance, so
+       * that is all this gives: it counts, it names the classes, and it never
+       * writes. `dryRun` is ignored deliberately; there is no other mode.
+       */
+      case 'check-attendance-points': {
+        const sessions = await prisma.attendanceSession.findMany({
+          where: { points: { gt: 0 } },
+          select: { key: true, label: true },
+        })
+        const scoring = sessions.map((x) => x.key)
+        const missing = scoring.length
+          ? await prisma.attendanceRecord.findMany({
+              where: { status: 'PRESENT', sessionKey: { in: scoring }, pointEntry: { is: null } },
+              select: { sessionKey: true, date: true, class: { select: { name: true } } },
+              orderBy: { date: 'desc' },
+              take: 200,
+            })
+          : []
+
+        const labelOf = new Map(sessions.map((x) => [x.key, x.label]))
+        const byClass = new Map<string, number>()
+        for (const m of missing) {
+          const key = `${m.class.name} · ${labelOf.get(m.sessionKey) ?? m.sessionKey}`
+          byClass.set(key, (byClass.get(key) ?? 0) + 1)
+        }
+        const detail =
+          missing.length === 0
+            ? ['Every present mark on a scoring session has its point entry.']
+            : Array.from(byClass.entries())
+                .sort((a, b) => b[1] - a[1])
+                .map(([where, n]) => `${where}: ${n} mark${n === 1 ? '' : 's'} with no point entry`)
+        if (missing.length >= 200) {
+          detail.push('Showing the 200 most recent; there may be more.')
+        }
+        detail.push('This check never changes anything. Re-saving that day\u2019s register writes the missing points.')
+
+        result = {
+          tool,
+          label: 'Check attendance points',
+          dryRun: true,
+          found: missing.length,
+          changed: 0,
+          detail,
         }
         break
       }
@@ -989,7 +1304,18 @@ export async function endOfYearReset(confirm: string): Promise<ActionResult<Dang
           tx.followUpCase.count(),
           tx.followUpLog.count(),
         ])
-        await tx.account.deleteMany({ where: { OR: [{ role: PortalRole.STUDENT }, { student: { isNot: null } }] } })
+        // F0850 — a servant who grew up here keeps a Student row holding their
+        // years as a child. Without the `servant: { is: null }` guard this
+        // reset would delete them along with the children every September,
+        // which is the loss the conversion exists to prevent.
+        await tx.account.deleteMany({
+          where: {
+            AND: [
+              { OR: [{ role: PortalRole.STUDENT }, { student: { isNot: null } }] },
+              { servant: { is: null } },
+            ],
+          },
+        })
         return [
           { table: 'students', rows: students },
           { table: 'pointEntries', rows: points },
@@ -1033,6 +1359,82 @@ export async function resetClassActivities(classId: string, confirm: string): Pr
     revalidatePath(`/portal/classes/${cls.id}/points`)
     revalidatePath('/portal/admin/data')
     return { action: `Reset point activities for ${cls.name}`, deleted, detail: 'Points already awarded were not touched.' }
+  })
+}
+
+/**
+ * Delete every student in one class, keeping the class and its servants.
+ *
+ * The prototype's Danger Zone had this as its fourth card; the port had only a
+ * church-wide end-of-year reset, so an admin retiring a single class had no
+ * tool between "one student at a time" and "wipe everything".
+ *
+ * Deleting the Account cascades to the Student and everything hanging off them
+ * — attendance, points, quiz results, follow-up cases — which is the same path
+ * the single-student delete takes.
+ */
+/**
+ * Remove every class's custom point activities in one go.
+ *
+ * This is the prototype's "Reset Activities to Standard 6" (OG settings), with
+ * an honest label. That button's name did not describe what it did: the "six
+ * standard activities" are the attendance *sessions*, which are separate rows
+ * and separately editable under Sessions & Points — the button simply deleted
+ * the custom point activities every class had defined. So this does that, and
+ * says so.
+ *
+ * Points already awarded are untouched: a PointEntry carries its own
+ * `activityLabel`, which is why `updateActivity` leaves the key alone.
+ */
+export async function resetAllClassActivities(confirm: string): Promise<ActionResult<DangerResult>> {
+  return runAction(async () => {
+    const user = await requireAdmin()
+    assertPhrase(confirm, CONFIRM_PHRASE.resetAllActivities)
+
+    const deleted = await prisma.$transaction(async (tx) => {
+      // Class-scoped rows only: a church-wide activity (classId null) is shared
+      // scaffolding, not something one class defined for itself.
+      const rows = await tx.pointActivity.count({ where: { classId: { not: null } } })
+      await tx.pointActivity.deleteMany({ where: { classId: { not: null } } })
+      return [{ table: 'pointActivities', rows }] satisfies BackupTableCount[]
+    }, { timeout: 120_000, maxWait: 20_000 })
+
+    await audit(user, 'data.resetAllActivities', 'portal', null, `Deleted ${deleted[0]!.rows} custom point activities across every class`)
+    revalidatePath('/portal/admin/data')
+    revalidatePath('/portal/classes')
+    return {
+      action: 'Reset every class\'s custom point activities',
+      deleted,
+      detail: 'Points already awarded were not touched, and the shared church-wide activities were kept.',
+    }
+  })
+}
+
+export async function deleteClassStudents(classId: string, confirm: string): Promise<ActionResult<DangerResult>> {
+  return runAction(async () => {
+    const user = await requireAdmin()
+    assertPhrase(confirm, CONFIRM_PHRASE.deleteClassStudents)
+    const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true, name: true } })
+    if (!cls) throw new PortalError('Class not found.')
+
+    const students = await prisma.student.findMany({ where: { classId: cls.id }, select: { accountId: true } })
+    if (students.length === 0) throw new PortalError(`${cls.name} has no students to delete.`)
+
+    const deleted = await prisma.$transaction(async (tx) => {
+      const removed = await tx.account.deleteMany({ where: { id: { in: students.map((s) => s.accountId) } } })
+      return [{ table: 'students', rows: removed.count }] satisfies BackupTableCount[]
+    }, { timeout: 120_000, maxWait: 20_000 })
+
+    await audit(user, 'data.deleteClassStudents', 'class', cls.id, `${cls.name}: deleted ${deleted[0]!.rows} students`)
+    revalidatePath(`/portal/classes/${cls.id}`)
+    revalidatePath('/portal/admin/students')
+    revalidatePath('/portal/admin/data')
+    revalidatePath('/portal')
+    return {
+      action: `Deleted every student in ${cls.name}`,
+      deleted,
+      detail: 'The class and its servants were kept. Each student\'s attendance, points, quiz results and follow-up cases went with their account.',
+    }
   })
 }
 

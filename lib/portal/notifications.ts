@@ -12,7 +12,7 @@
 // silence the fourth.
 
 import type { Role } from './permissions'
-import { daysBetween, daysUntilBirthday, mondayOf } from './dates'
+import { daysBetween, daysUntilBirthday, mondayOf, addDays } from './dates'
 
 export type NotificationTone = 'info' | 'good' | 'warn' | 'bad'
 
@@ -22,6 +22,13 @@ export interface PortalNotification {
   detail?: string
   href: string
   tone: NotificationTone
+  /**
+   * How many *things* this one notification stands for — 12 open cases, 3
+   * birthdays. The sidebar badges count these rather than counting
+   * notifications, so "Follow-ups 12" means twelve children, not one alert.
+   * Absent means one.
+   */
+  count?: number
 }
 
 export interface NotificationFacts {
@@ -86,29 +93,51 @@ export function buildNotifications(role: Role, facts: NotificationFacts): Portal
         key: `announcement:${a.id}`,
         title: a.title,
         detail: age === 0 ? 'Posted today' : `Posted ${age} ${plural(age, 'day')} ago`,
-        href: '/portal',
+        // F0281 — this pointed at '/portal', the page the student is already
+        // standing on when they open the bell: tapping the notification about a
+        // new announcement did nothing visible at all.
+        href: '/portal/announcements',
         tone: 'info',
       })
     }
 
-    if (facts.ownBirthday && daysUntilBirthday(facts.ownBirthday, today) === 0) {
-      items.push({
-        key: `birthday:self:${today}`,
-        title: 'Happy birthday!',
-        detail: 'May the Lord bless your year.',
-        href: '/portal',
-        tone: 'good',
-      })
+    // F0785 — the greeting fired on the exact day only, so a child whose
+    // birthday fell on a Wednesday got it on a Wednesday, when nobody from
+    // church sees them, and it was gone by the Sunday they came in. The
+    // prototype covered the whole Mon-Sun week the birthday falls in, which is
+    // the week the class actually celebrates it. Keyed to the Monday, like the
+    // servant birthdays item, so dismissing it silences it for the week rather
+    // than only until tomorrow.
+    if (facts.ownBirthday) {
+      const dob = facts.ownBirthday
+      const week = mondayOf(today)
+      const inWeek = Array.from({ length: 7 }, (_, i) => addDays(week, i)).some((d) => d.slice(5) === dob.slice(5))
+      if (inWeek) {
+        items.push({
+          key: `birthday:self:${week}`,
+          title: daysUntilBirthday(dob, today) === 0 ? 'Happy birthday!' : 'Happy birthday this week!',
+          detail: 'May the Lord bless your year.',
+          href: '/portal',
+          tone: 'good',
+        })
+      }
     }
   }
 
   if (role === 'SERVANT') {
+    // F0786 — "this week" was seven days rolling from today, so on a Thursday a
+    // servant was shown next Tuesday's child and not Monday's, whose party had
+    // already happened. The window is now the church's own Mon–Sun week, which
+    // is the week the birthdays page and the weekly cards already show, so the
+    // bell and the page can no longer name different children.
+    const weekStart = mondayOf(today)
     const soon = (facts.birthdays ?? []).filter(
-      (b) => daysUntilBirthday(b.dob, today) <= BIRTHDAY_WINDOW_DAYS,
+      (b) => daysUntilBirthday(b.dob, weekStart) < BIRTHDAY_WINDOW_DAYS,
     )
     if (soon.length > 0) {
       items.push({
         key: `birthdays:${mondayOf(today)}`,
+        count: soon.length,
         title: `${soon.length} ${plural(soon.length, 'birthday')} this week`,
         detail: soon
           .slice(0, 4)
@@ -136,6 +165,7 @@ export function buildNotifications(role: Role, facts: NotificationFacts): Portal
     if (orphans.length > 0) {
       items.push({
         key: `classes-without-servants:${orphans.length}`,
+        count: orphans.length,
         title: `${orphans.length} ${plural(orphans.length, 'class', 'classes')} without a servant`,
         detail: orphans
           .slice(0, 4)
@@ -152,6 +182,7 @@ export function buildNotifications(role: Role, facts: NotificationFacts): Portal
     if (open > 0) {
       items.push({
         key: `cases:open:${open}`,
+        count: open,
         title: `${open} open follow-up ${plural(open, 'case')}`,
         detail: 'Students waiting to be visited or called.',
         href: '/portal/follow-ups',

@@ -454,9 +454,41 @@
 }
 
 /* ── Sunday School portal: print defaults for reports and rosters ────────── */
+
+/* F0137 — the prototype opened reports in an isolated A4-landscape window. The
+   port prints through the page itself, which is the better approach, but until
+   now nothing told the printer what shape the paper was: margins and
+   orientation were whatever the browser dialog happened to default to.
+   A named page lets the wide grids ask for landscape while ordinary sheets —
+   report cards, QR cards, rosters — stay portrait. */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+@page landscape {
+  size: A4 landscape;
+  margin: 10mm;
+}
+.portal-print-landscape {
+  page: landscape;
+}
+
 @media print {
   .portal-print-page {
     background: #fff !important;
+  }
+  /* The real defect behind F0137: TableWrap scrolls horizontally on screen, and
+     an overflow container CLIPS on paper — a twelve-week attendance grid printed
+     as however many columns happened to fit the viewport, with the rest simply
+     gone and nothing to say so. */
+  .portal-print-page .overflow-x-auto,
+  .portal-print-page .overflow-auto,
+  .portal-print-page .overflow-y-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  .portal-print-page table {
+    width: 100% !important;
   }
   .portal-print-page * {
     box-shadow: none !important;
@@ -488,7 +520,20 @@
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.portal-enter { animation: portalFadeSlideIn .3s ease both; }
+/*
+ * `backwards`, not `both`, and the reason matters: `both` retains the final
+ * keyframe forever, so this element keeps `transform: translateY(0)` — a
+ * computed transform of anything but `none` makes it the containing block for
+ * every `position: fixed` descendant. That trapped modal dialogs rendered
+ * inside the page content: the follow-up message composer was positioned
+ * against this wrapper instead of the viewport, and its own controls sat under
+ * it, unclickable. `backwards` still hides the pre-start state (no flash) but
+ * leaves no transform behind.
+ *
+ * Dialogs also render through a React portal now, so they never depend on an
+ * ancestor's transform again.
+ */
+.portal-enter { animation: portalFadeSlideIn .3s ease backwards; }
 
 @keyframes portalShimmer {
   0%   { background-position: -240px 0; }

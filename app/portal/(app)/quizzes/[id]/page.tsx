@@ -68,15 +68,39 @@ export default async function TakeQuizPage({ params }: { params: { id: string } 
 
       {(paper.bibleReading || paper.readingMessage) && (
         <div className="mb-4">
+          {/* F0326 — the prototype put the reading behind its own chevron and the
+              servant's note underneath it, in italics. The port hoisted the
+              reference into the card's TITLE and showed only the note in the body,
+              so a child opening a quiz read a heading and then a sentence that was
+              not the passage, with nothing to open. The title is fixed now, the
+              reference is the summary, and the passage itself renders pre-line so a
+              multi-line devotional keeps its shape. Open by default when there is
+              no reference to collapse, so a note-only quiz still shows its note. */}
           <Card
             className="border-[#EFE4C8] border-l-brand-gold"
             bodyClassName="bg-brand-wash p-[18px]"
-            title={paper.bibleReading ? `Today's reading: ${paper.bibleReading}` : 'Before you start'}
+            title="Today’s Bible Reading"
             icon={<BookOpen className="h-4 w-4" aria-hidden />}
           >
-            <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-[#633806]">
-              {paper.readingMessage ?? 'Read the passage before answering.'}
-            </p>
+            <details className="group" open={!paper.bibleReading}>
+              <summary className="flex min-h-[40px] cursor-pointer list-none items-center justify-between gap-3 text-[12.5px] font-bold text-[#633806]">
+                <span className="min-w-0 truncate">
+                  {paper.bibleReading ? paper.bibleReading.split('\n')[0] : 'Before you start'}
+                </span>
+                <span aria-hidden className="shrink-0 text-[12px] text-[#8B5A0F] group-open:hidden">▾</span>
+                <span aria-hidden className="hidden shrink-0 text-[12px] text-[#8B5A0F] group-open:inline">▴</span>
+              </summary>
+              <div className="mt-2.5 space-y-2">
+                {paper.bibleReading?.includes('\n') && (
+                  <p className="whitespace-pre-line text-[12.5px] leading-relaxed text-[#633806]">
+                    {paper.bibleReading}
+                  </p>
+                )}
+                <p className="whitespace-pre-line text-[12.5px] italic leading-relaxed text-[#8B5A0F]">
+                  ✨ {paper.readingMessage ?? 'Read the passage before answering.'}
+                </p>
+              </div>
+            </details>
           </Card>
         </div>
       )}

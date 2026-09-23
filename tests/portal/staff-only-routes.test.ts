@@ -35,3 +35,35 @@ describe('middleware: /portal/classes is staff-only', () => {
     expect(visit('/portal/feed', 'STUDENT')).toBe('allowed')
   })
 })
+
+// The pastor's job is oversight and the prototype's pastor overview carried the
+// whole church's servant roster. The port had no servant list anywhere else and
+// this middleware bounced PASTOR before the page's own check ran.
+describe('middleware: the pastor may read the servant roster, not edit it', () => {
+  it('lets the pastor open the roster', () => {
+    expect(visit('/portal/admin/servants', 'PASTOR')).toBe('allowed')
+  })
+
+  // Exact-match, deliberately: /portal/admin/servants/<id> is an edit screen,
+  // so opening the prefix would have made every roster tile a link to a 404.
+  it('still turns the pastor away from the edit screens under it', () => {
+    expect(visit('/portal/admin/servants/abc123', 'PASTOR')).toBe('bounced')
+    expect(visit('/portal/admin/servants/new', 'PASTOR')).toBe('bounced')
+  })
+
+  it('leaves the rest of /portal/admin closed to the pastor', () => {
+    expect(visit('/portal/admin/students', 'PASTOR')).toBe('bounced')
+    expect(visit('/portal/admin/data', 'PASTOR')).toBe('bounced')
+    expect(visit('/portal/admin/settings', 'PASTOR')).toBe('bounced')
+  })
+
+  it('keeps the activity log open to the pastor, sub-pages included', () => {
+    expect(visit('/portal/admin/audit', 'PASTOR')).toBe('allowed')
+    expect(visit('/portal/admin/audit/anything', 'PASTOR')).toBe('allowed')
+  })
+
+  it('does not open any of it to a servant or a student', () => {
+    expect(visit('/portal/admin/servants', 'SERVANT')).toBe('bounced')
+    expect(visit('/portal/admin/servants', 'STUDENT')).toBe('bounced')
+  })
+})

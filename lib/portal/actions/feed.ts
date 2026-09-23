@@ -116,7 +116,19 @@ export async function togglePin(postId: string): Promise<ActionResult<{ pinned: 
 
     // The current value comes from the row, never from the client.
     const pinned = !post.pinned
-    await prisma.feedPost.update({ where: { id: post.id }, data: { pinned } })
+    /**
+     * F0282 — pinning must not mark the notice "edited".
+     *
+     * `edited` is worked out from `updatedAt` against `createdAt`, and
+     * `@updatedAt` moves on every Prisma `update` — so moving a notice to the
+     * top of the feed stamped it as rewritten when nobody had changed a word.
+     * On a feed that carries church notices to children and parents, being able
+     * to tell whether a notice was altered after it was posted is worth keeping,
+     * so the fix is to write the pin without touching the stamp rather than to
+     * drop the label. Raw SQL is the only way past `@updatedAt`; the id comes
+     * from a row already loaded and permission-checked above.
+     */
+    await prisma.$executeRaw`UPDATE "FeedPost" SET "pinned" = ${pinned} WHERE "id" = ${post.id}`
 
     await audit(user, 'feed.pin', 'post', post.id, `${cls.name}: ${pinned ? 'pinned' : 'unpinned'} "${post.title}"`)
     revalidatePath('/portal/feed')

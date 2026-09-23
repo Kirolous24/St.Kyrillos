@@ -24,13 +24,27 @@ interface Props {
   classes?: FilterClass[]
   classId?: string
   month?: string
+  /** The twelve school-year pills, from schoolYearMonths(). */
+  months: { key: string; abbr: string; label: string }[]
   from?: string
   to?: string
   sessionKey?: string | null
   sessions?: FilterSession[]
   allowAllSessions?: boolean
   blank?: boolean
-  show: { class?: boolean; month?: boolean; range?: boolean; session?: boolean; blank?: boolean }
+  /** Church tab only: 'range' | 'month' | 'all'. */
+  period?: string
+  /** Attendance tab only: 'one' | 'all' — one session, or the month grid. */
+  view?: string
+  show: {
+    class?: boolean
+    month?: boolean
+    range?: boolean
+    session?: boolean
+    blank?: boolean
+    period?: boolean
+    view?: boolean
+  }
 }
 
 /** The prototype's 11px uppercase field caption (its period bar and `.fs` labels). */
@@ -50,12 +64,15 @@ export function ReportFilters({
   classes = [],
   classId,
   month,
+  months,
   from,
   to,
   sessionKey,
   sessions = [],
   allowAllSessions = false,
   blank = false,
+  period = 'range',
+  view = 'one',
   show,
 }: Props) {
   return (
@@ -80,11 +97,66 @@ export function ReportFilters({
           </label>
         )}
 
+        {/* The prototype's three period buttons (OG L7415-7429). The port had
+            From/To only, and silently defaulted to the last 90 days with
+            nothing on screen saying so. */}
+        {show.period && (
+          <label className="block min-w-[9rem] flex-1 sm:flex-none">
+            <span className={CAPTION}>Period</span>
+            <select name="period" defaultValue={period} className={cn(selectClass, 'min-h-[40px] sm:min-w-[10rem]')}>
+              <option value="range">Date range</option>
+              <option value="month">By month</option>
+              <option value="all">All time</option>
+            </select>
+          </label>
+        )}
+
+        {show.view && (
+          <label className="block min-w-[9rem] flex-1 sm:flex-none">
+            <span className={CAPTION}>View</span>
+            <select name="view" defaultValue={view} className={cn(selectClass, 'min-h-[40px] sm:min-w-[10rem]')}>
+              <option value="one">One session</option>
+              <option value="all">All sessions</option>
+            </select>
+          </label>
+        )}
+
         {show.month && (
           <label className="block min-w-[9rem] flex-1 sm:flex-none">
             <span className={CAPTION}>Month</span>
             <input type="month" name="month" defaultValue={month} className={cn(inputClass, 'min-h-[40px]')} />
           </label>
+        )}
+
+        {/* F0139 / F0441 — the prototype's row of twelve month pills. The native
+            month input above is three interactions to reach October and gives no
+            sense of the school year at all; these are one tap each and are how
+            the church talks about the year, which starts in September. The input
+            stays for any month outside it. */}
+        {show.month && (
+          <div className="flex w-full flex-wrap gap-1.5 print:hidden">
+            {months.map((m) => {
+              const active = m.key === month
+              return (
+                <button
+                  key={m.key}
+                  type="submit"
+                  name="month"
+                  value={m.key}
+                  aria-label={m.label}
+                  aria-current={active ? 'true' : undefined}
+                  className={cn(
+                    'rounded-[20px] border px-2.5 py-1 text-[11px] font-bold tracking-[0.5px] transition-colors',
+                    active
+                      ? 'border-brand-gold bg-brand-wash text-brand-800'
+                      : 'border-parch-200 text-parch-600 hover:border-brand-gold hover:text-brand-800',
+                  )}
+                >
+                  {m.abbr}
+                </button>
+              )
+            })}
+          </div>
         )}
 
         {show.range && (
@@ -118,11 +190,27 @@ export function ReportFilters({
           </label>
         )}
 
+        {/* F0439 — the prototype had one button and it produced a print-ready
+            blank grid covering the whole month, every session. Here it was a
+            checkbox, then "Show report", then "Print" — and because the view
+            defaults to one session, the form a servant carried into the hall
+            covered one register out of six. One tap, all sessions, the month
+            already on screen. */}
         {show.blank && (
-          <label className="flex min-h-[40px] items-center gap-2 text-[12.5px] font-semibold text-parch-700">
-            <input type="checkbox" name="blank" value="1" defaultChecked={blank} className={checkboxClass} />
-            Blank form for paper
-          </label>
+          <a
+            data-blank-form=""
+            aria-current={blank ? 'page' : undefined}
+            href={`${basePath}?${new URLSearchParams({
+              ...(tab ? { tab } : {}),
+              ...(classId ? { class: classId } : {}),
+              ...(month ? { month } : {}),
+              view: 'all',
+              blank: '1',
+            })}`}
+            className={cn(buttonClass('gold'), 'min-h-[40px]')}
+          >
+            <Download className="h-4 w-4" aria-hidden /> Blank form for paper
+          </a>
         )}
 
         <button type="submit" className={cn(buttonClass('primary'), 'min-h-[40px]')}>

@@ -24,7 +24,10 @@ export default async function PointsPage({ params }: { params: { id: string } })
     prisma.pointEntry.findMany({
       where: { classId: cls.id },
       orderBy: { createdAt: 'desc' },
-      take: 60,
+      // Was 60, which made anything older than about a fortnight in an active
+      // class unreachable through the UI — the rows were in the database but
+      // invisible, and the History tab's own search could not find them.
+      take: 500,
       select: {
         id: true, points: true, activityLabel: true, reason: true, source: true, undone: true, undoOfId: true, createdAt: true,
         student: { select: { firstName: true, lastName: true } },
@@ -54,6 +57,7 @@ export default async function PointsPage({ params }: { params: { id: string } })
           label: h.activityLabel,
           reason: h.reason,
           undone: h.undone,
+          source: h.source,
           canUndo: canUndo(h),
           student: studentName(h.student),
           by: h.createdBy?.displayName ?? 'System',

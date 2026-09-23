@@ -6,7 +6,13 @@ import { runRepair } from '@/lib/portal/actions/data-tools'
 import { Card, Callout, Badge, buttonClass } from '@/components/portal/ui'
 import type { RepairResult } from '@/lib/portal/reports'
 
-type Tool = 'recount-classes' | 'close-returned-cases' | 'orphan-points' | 'normalise-phones' | 'clear-import-flags'
+type Tool =
+  | 'recount-classes'
+  | 'close-returned-cases'
+  | 'orphan-points'
+  | 'normalise-phones'
+  | 'clear-import-flags'
+  | 'check-attendance-points'
 
 const TOOLS: Array<{ key: Tool; label: string; description: string; readOnly?: boolean }> = [
   {
@@ -37,6 +43,18 @@ const TOOLS: Array<{ key: Tool; label: string; description: string; readOnly?: b
     label: 'Clear review flags',
     description: 'Removes the “needs review” note the migration left on imported students, once you have checked them.',
   },
+  {
+    /* F0668 — the prototype's "find attendance with missing points", as a check
+       and nothing more. Its old version deleted the attendance records it found,
+       which here would be a loaded gun aimed at a problem that no longer exists:
+       a mark and its point are written in one transaction. The reassurance is
+       what the admin wanted; the delete was never the useful part. */
+    key: 'check-attendance-points',
+    label: 'Check attendance points',
+    description:
+      'Looks for present marks on a scoring session that have no point entry. Reports only — it never changes anything, and re-saving that day’s register writes any missing points.',
+    readOnly: true,
+  },
 ]
 
 export function RepairPanel() {
@@ -65,6 +83,19 @@ export function RepairPanel() {
         Every tool checks first and tells you exactly how many rows it would touch. Nothing is written until you press
         Run.
       </p>
+
+      {/* F0843 — an admin trained on the prototype opens this card looking for
+          four tools by name, finds five different ones, and has no way to tell
+          whether the repair went missing or the damage did. Saying so once is
+          cheaper than an admin deciding the portal cannot fix a class list. */}
+      <div className="mb-3.5">
+        <Callout tone="info" title="Four of the prototype's repair tools are gone on purpose">
+          Fix Broken Student Names, Fix Class Servant Lists, Fix Student Birthdates and Fix Servant Stage Names all
+          repaired data that had been copied from one record into another. Names, class servant lists, dates of birth
+          and stage names are now single rows that everything else points at, so they cannot fall out of step and there
+          is nothing left for those four to repair.
+        </Callout>
+      </div>
 
       <ul className="divide-y divide-[#F3F0EB]">
         {TOOLS.map((tool) => {

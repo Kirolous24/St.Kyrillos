@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, Music, Pencil, Plus, Trash2, Volume2 } from 'lucide-react'
 import { deleteHymn, saveHymn } from '@/lib/portal/actions/hymns'
@@ -47,9 +47,36 @@ export function HymnManager({
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [openId, setOpenId] = useState<string | null>(hymns.length === 1 ? hymns[0]!.id : null)
+  // F0233 — the prototype let several hymns' lyrics stay open at once. An
+  // exclusive accordion closes the hymn you were comparing against the moment
+  // you open the next one, which is precisely what comparing two tunes needs.
+  const [openIds, setOpenIds] = useState<Set<string>>(
+    () => new Set(hymns.length === 1 ? [hymns[0]!.id] : []),
+  )
+  const toggleOpen = (id: string) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  // F0231 — the confirmation renders at the top of the left column, above the
+  // hymn list, while the form that produced it is in the right column: on a
+  // phone that is below the entire book, so a servant taps "Add hymn" and
+  // nothing appears to happen — and a validation error saying the title is
+  // missing is invisible at exactly the moment it is needed. Bring it into view
+  // and hand it the focus, so the answer arrives where the question was asked.
+  // A fixed toast is not an option here: `.portal-enter`'s transform traps
+  // position:fixed inside page content.
+  useEffect(() => {
+    if (!message) return
+    const el = document.getElementById('hymn-message')
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el?.focus()
+  }, [message])
 
   function submit() {
     if (!draft) return
@@ -98,13 +125,23 @@ export function HymnManager({
                   ? 'Add the first hymn with its lyrics so the whole church can follow along.'
                   : 'Servants will add hymns here soon.'
             }
+            /* F0232 — the prototype put the call to action in the empty state
+               itself. Telling somebody to add the first hymn without offering
+               them the way to do it sends them looking for the panel. */
+            action={
+              canWrite && !query ? (
+                <button type="button" onClick={() => setDraft({ ...emptyDraft })} className={buttonClass('primary')}>
+                  <Plus className="h-[13px] w-[13px]" aria-hidden /> Add a hymn
+                </button>
+              ) : undefined
+            }
           />
         ) : (
           /* One sheet of hairline-ruled hymn rows, exactly as the prototype. */
           <Card title="Hymn book" icon={<Music className="h-4 w-4" aria-hidden />} bodyClassName="p-0">
             <ul>
               {hymns.map((hymn) => {
-                const open = openId === hymn.id
+                const open = openIds.has(hymn.id)
                 return (
                   <li key={hymn.id} className="border-b-[0.5px] border-[#F0EEE8] last:border-b-0">
                     <div className="flex items-center gap-2.5 px-[18px] py-3">
@@ -113,7 +150,7 @@ export function HymnManager({
                       </IconTile>
                       <button
                         type="button"
-                        onClick={() => setOpenId(open ? null : hymn.id)}
+                        onClick={() => toggleOpen(hymn.id)}
                         aria-expanded={open}
                         className="min-w-0 flex-1 py-1 text-left"
                       >
@@ -209,8 +246,9 @@ export function HymnManager({
         )}
       </div>
 
+      {/* id anchors the page header's "Add hymn" button to this card. */}
       {canWrite && (
-        <div className="lg:col-span-2">
+        <div id="add-hymn" className="lg:col-span-2 scroll-mt-24">
           <Card
             tone="brand"
             title={draft ? (draft.id ? 'Edit hymn' : 'New hymn') : 'Add a hymn'}

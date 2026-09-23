@@ -92,7 +92,10 @@ export async function loadServantScope(user: PortalUser): Promise<ServantScope> 
 
   return {
     servants,
-    canMarkOthers: user.role === 'ADMIN' || (user.role === 'SERVANT' && (isCoordinator || hasStageOversight)),
+    // Any servant may mark anyone their own grid shows them — the prototype's
+    // rule, restored at the church's request. `canMarkServant` enforces the
+    // same thing server-side; this is only what the page renders.
+    canMarkOthers: user.role === 'ADMIN' || user.role === 'SERVANT',
     isCoordinator,
     hasStageOversight,
   }
@@ -138,9 +141,12 @@ export interface ServantReportRow {
   rate: number | null
   /** Per-activity attended/held, keyed by activity key. */
   byActivity: Record<string, { attended: number; held: number }>
+  /** One cell per held (activity, week) pair — which week was missed, not just how many. */
+  cells: SessionWeekRow[]
 }
 
 export interface ServantReport {
+  /** Mondays with anything recorded, oldest first. */
   weeks: string[]
   activities: ServantActivityRow[]
   rows: ServantReportRow[]
@@ -167,9 +173,13 @@ export async function servantAttendanceReport(
   }
 
   const [heldPairs, rows] = await Promise.all([
+    // Scoped to the servants on screen. Church-wide, any servant anywhere
+    // recording an activity made it "held" for everybody in scope, so a group
+    // that never attends, say, the Friday meeting was scored 0/N on it and the
+    // Standing badge was computed from a denominator they were never part of.
     prisma.servantAttendance.groupBy({
       by: ['activityKey', 'weekStart'],
-      where: { weekStart: range },
+      where: { weekStart: range, servantId: { in: servantIds } },
     }),
     prisma.servantAttendance.findMany({
       where: { weekStart: range, servantId: { in: servantIds } },
@@ -210,6 +220,11 @@ export async function servantAttendanceReport(
       held: total.held,
       rate: total.rate,
       byActivity,
+      // The per-week cells were computed and then thrown away, collapsed into
+      // one aggregate per activity before the function returned — so the page
+      // could say a servant attended 3 of 5, but never which two they missed.
+      // That is the whole point of the prototype's week grid (OG L8080-8106).
+      cells,
     }
   })
 
@@ -230,6 +245,110 @@ export async function servantAttendanceReport(
   })
 
   return { weeks, activities, rows: reportRows, perActivity }
+}
+
+export interface MeetingHistoryRow {
+  activityKey: string
+  label: string
+  weekStart: string
+  present: number
+  excused: number
+  marked: number
+  /** Who was there, in the order the grid lists them. */
+  attendees: string[]
+  /**
+   * F0009 / F0605 — how many of those present scanned the code themselves,
+   * rather than being ticked off the grid by somebody else.
+   *
+   * No column was added for this. Every scan already writes a QrRedemption
+   * receipt naming the token, the account and the moment, and nothing in the
+   * portal ever deletes one — so the answer was already stored for every meeting
+   * ever held, including the ones held before anybody asked the question. The
+   * earlier note calling this unrecoverable without a migration was reading the
+   * ServantAttendance table alone and missing the receipts.
+   */
+  scanned: number
+}
+
+/**
+ * Past servant meetings, newest first — the prototype's meeting history list.
+ *
+ * Editing a past week already worked through the week stepper, but there was
+ * no list of what had been held: a coordinator had to step back through empty
+ * weeks to find the last meeting. Read-only, and scoped exactly like the grid,
+ * so the pastor sees it too.
+ */
+export async function listMeetingHistory(user: PortalUser, limit = 16): Promise<MeetingHistoryRow[]> {
+  const [activities, scope] = await Promise.all([listServantActivities(), loadServantScope(user)])
+  const ids = scope.servants.map((s) => s.id)
+  if (ids.length === 0) return []
+
+  const held = await prisma.servantAttendance.groupBy({
+    by: ['activityKey', 'weekStart'],
+    where: { servantId: { in: ids } },
+    orderBy: { weekStart: 'desc' },
+    take: limit,
+  })
+  if (held.length === 0) return []
+
+  const rows = await prisma.servantAttendance.findMany({
+    where: {
+      servantId: { in: ids },
+      weekStart: { in: held.map((h) => h.weekStart) },
+      activityKey: { in: Array.from(new Set(held.map((h) => h.activityKey))) },
+    },
+    select: { servantId: true, activityKey: true, weekStart: true, status: true },
+  })
+
+  // F0009 / F0605 — the scan receipts for exactly the meetings on this page.
+  // A receipt exists only where somebody scanned; everything else was marked by
+  // hand.
+  const receipts = await prisma.qrRedemption.findMany({
+    where: {
+      token: {
+        kind: 'SERVANT_MEETING',
+        activityKey: { in: Array.from(new Set(held.map((h) => h.activityKey))) },
+        weekStart: { in: held.map((h) => h.weekStart) },
+      },
+    },
+    select: { accountId: true, token: { select: { activityKey: true, weekStart: true } } },
+  })
+  const accountOf = new Map(scope.servants.map((s) => [s.id, s.accountId]))
+  const scannedKeys = new Set(
+    receipts
+      .filter((r) => r.token.activityKey && r.token.weekStart)
+      .map((r) => `${r.accountId}|${r.token.activityKey}|${formatDateOnly(r.token.weekStart!)}`),
+  )
+
+  const labelOf = new Map(activities.map((a) => [a.key, a.label]))
+  const nameOf = new Map(scope.servants.map((s) => [s.id, s.name]))
+
+  return held
+    .map((h) => {
+      const week = formatDateOnly(h.weekStart)
+      const mine = rows.filter((r) => r.activityKey === h.activityKey && formatDateOnly(r.weekStart) === week)
+      const attendees = mine
+        .filter((r) => r.status === 'PRESENT')
+        .map((r) => nameOf.get(r.servantId) ?? '')
+        .filter(Boolean)
+      const scanned = mine.filter(
+        (r) =>
+          r.status === 'PRESENT' &&
+          scannedKeys.has(`${accountOf.get(r.servantId) ?? ''}|${h.activityKey}|${week}`),
+      ).length
+      return {
+        activityKey: h.activityKey,
+        label: labelOf.get(h.activityKey) ?? h.activityKey,
+        weekStart: week,
+        present: attendees.length,
+        excused: mine.filter((r) => r.status === 'EXCUSED').length,
+        marked: mine.length,
+        attendees,
+        scanned,
+      }
+    })
+    .filter((h) => labelOf.has(h.activityKey))
+    .sort((a, b) => (a.weekStart === b.weekStart ? a.label.localeCompare(b.label) : a.weekStart < b.weekStart ? 1 : -1))
 }
 
 /** One servant's own history, newest week first — powers /portal/my-attendance. */

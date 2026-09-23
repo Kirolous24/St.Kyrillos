@@ -62,7 +62,7 @@ export default async function AdminDataPage() {
             The class-level tools appear once there is at least one class.
           </Callout>
         ) : (
-          <DangerZone classes={classes} />
+          <DangerZone classes={classes} studentCount={studentCount} />
         )}
       </div>
     </>

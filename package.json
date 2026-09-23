@@ -4,20 +4,24 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma migrate deploy && next build",
+    "build": "next build",
+    "vercel-build": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
+    "db:deploy": "prisma migrate deploy",
     "db:seed": "npx tsx prisma/seed.ts",
     "smoke": "node scripts/portal-smoke.mjs",
-    "smoke:write": "node --env-file=.env scripts/portal-write-smoke.mjs"
+    "smoke:write": "node --env-file=.env scripts/portal-write-smoke.mjs",
+    "verify:ui": "node --env-file=.env scripts/og-parity-verify-ui.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
+    "chart.js": "^4.5.1",
     "clsx": "^2.1.0",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.400.0",

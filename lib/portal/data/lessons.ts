@@ -98,6 +98,28 @@ export async function listLessonArchive(classIds: string[], take = 200): Promise
   return lessons.map(toView)
 }
 
+export interface LessonClassStat {
+  count: number
+  last: Date | null
+}
+
+/**
+ * How many lessons each class has, and when it last taught one.
+ *
+ * Counted from the database rather than from `listLessonArchive`'s page: that
+ * caps at 200 rows, so deriving "no lessons" from it would paint a red
+ * oversight flag on a class whose lessons simply fell off the end of the cap —
+ * the flag has to mean what it says.
+ */
+export async function lessonStatsByClass(): Promise<Map<string, LessonClassStat>> {
+  const rows = await prisma.lesson.groupBy({
+    by: ['classId'],
+    _count: { _all: true },
+    _max: { date: true },
+  })
+  return new Map(rows.map((r) => [r.classId, { count: r._count._all, last: r._max.date }]))
+}
+
 /** A single lesson with its class, for permission checks in server actions. */
 export async function loadLessonForAction(id: string) {
   return prisma.lesson.findUnique({
@@ -135,6 +157,43 @@ export async function nextPlannedLesson(
     select: lessonSelect,
   })
   return next ? toView(next) : null
+}
+
+/**
+ * The prototype's "Upcoming Lessons" widget listed the next **three** planned
+ * lessons (OG L4272), not one. The port's own rule — headline the lesson this
+ * servant is down to teach — is kept: if their next lesson falls outside the
+ * three soonest, it is pulled to the front rather than hidden behind two
+ * lessons somebody else is preparing.
+ */
+export async function nextPlannedLessons(
+  classIds: string[],
+  servantId?: string,
+  todayKey = todayInNewYork(),
+  limit = 3,
+): Promise<LessonView[]> {
+  if (classIds.length === 0) return []
+  const common = {
+    status: 'PLANNED' as const,
+    classId: { in: classIds },
+    date: { gte: toUTCDate(todayKey) },
+  }
+  const soonest = await prisma.lesson.findMany({
+    where: common,
+    orderBy: { date: 'asc' },
+    take: limit,
+    select: lessonSelect,
+  })
+  const views = soonest.map(toView)
+  if (!servantId || views.some((l) => l.assignedToId === servantId)) return views
+
+  const mine = await prisma.lesson.findFirst({
+    where: { ...common, assignedToId: servantId },
+    orderBy: { date: 'asc' },
+    select: lessonSelect,
+  })
+  if (!mine) return views
+  return [toView(mine), ...views].slice(0, limit)
 }
 
 /** Counts for the lessons page header. */

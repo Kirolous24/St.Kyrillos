@@ -1,14 +1,14 @@
-import Link from 'next/link'
-import { Users, Search, Pencil } from 'lucide-react'
+import { Users, Search, UserPlus } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
-import { studentName } from '@/lib/portal/data/students'
 import { notFound } from 'next/navigation'
-import { PageHeader, EmptyState, Badge, Card, Avatar, inputClass, buttonClass } from '@/components/portal/ui'
+import { PageHeader, EmptyState, Card, buttonClass, LinkButton } from '@/components/portal/ui'
 import { STAGE_LABEL } from '@/lib/portal/format'
+import { DebouncedSearch } from '@/components/portal/DebouncedSearch'
 import { accentFor } from '@/lib/portal/accents'
 import { ClassPicker } from '@/components/portal/ClassPicker'
-import { MoveStudentSelect } from './MoveStudentSelect'
+import { BulkSelection, BulkBar, GroupSelectAll, StudentCard, type BulkStudent } from './BulkTools'
+import { StudentForm } from '@/components/portal/StudentForm'
 
 export const metadata = { title: 'All students' }
 
@@ -25,7 +25,26 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
   const students = await prisma.student.findMany({
     where: {
       ...(classId === 'all' ? {} : classId === 'none' ? { classId: null } : { classId }),
-      ...(q ? { OR: [{ firstName: { contains: q, mode: 'insensitive' } }, { lastName: { contains: q, mode: 'insensitive' } }, { account: { loginId: { contains: q } } }] } : {}),
+      // F0563 — the prototype searched email too ("Search by name or email").
+      // A servant handed a parent's address and asked "is this child with us?"
+      // had no way to answer from this page.
+      //
+      // `parentEmails` is a scalar list, and Prisma's only list predicate is
+      // `has`, which is an exact match — a partial query would match nothing
+      // and read as "no such child". So that arm is added only when the query
+      // IS a full address; otherwise it is left out rather than quietly
+      // under-matching. Stored lowercased by toData(), hence the fold.
+      ...(q
+        ? {
+            OR: [
+              { firstName: { contains: q, mode: 'insensitive' as const } },
+              { lastName: { contains: q, mode: 'insensitive' as const } },
+              { account: { loginId: { contains: q } } },
+              { account: { email: { contains: q, mode: 'insensitive' as const } } },
+              ...(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(q) ? [{ parentEmails: { has: q.toLowerCase() } }] : []),
+            ],
+          }
+        : {}),
     },
     orderBy: [{ class: { sortOrder: 'asc' } }, { firstName: 'asc' }, { lastName: 'asc' }],
     take: 500,
@@ -53,10 +72,31 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
 
   return (
     <>
+      {/* F0073 — the roster query stops at 500 rows and the subtitle said only
+          "500 shown", which an admin reads as the whole school. Past 500 children
+          there would be students who exist in the database and on no page anyone
+          can reach, with nothing on screen admitting it. The class picker and the
+          search box are the way to the rest, so the line says so.
+          F0811 — the prototype put Import, Export and Template in this page's own
+          toolbar. The port moved them to Data & Backup and left nothing here
+          pointing that way, so an admin standing on the student roster with a
+          spreadsheet in hand had no sign the importer existed. One link, rather
+          than a second copy of a destructive tool. */}
       <PageHeader
         title="All students"
-        subtitle={`${students.length} shown${flagged ? ` · ${flagged} need review` : ''}`}
+        subtitle={[
+          `${students.length} shown`,
+          students.length >= 500 ? 'the first 500 only — pick a class or search to reach the rest' : null,
+          flagged ? `${flagged} need review` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         icon={<Users className="h-5 w-5" />}
+        actions={
+          <LinkButton href="/portal/admin/data" variant="secondary">
+            Import / export CSV
+          </LinkButton>
+        }
       />
 
       <Card bodyClassName="p-3.5">
@@ -66,7 +106,11 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
             <input type="hidden" name="class" value={classId} />
             <label className="block w-full max-w-sm">
               <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Search</span>
-              <input name="q" defaultValue={q} className={inputClass} placeholder="Name or ID" />
+              {/* F0823 — refines as you type. The filtering stays on the server
+                  on purpose: the roster query stops at 500 rows (F0073), so a
+                  client-side filter would search the first 500 and tell an admin
+                  the 501st student does not exist. */}
+              <DebouncedSearch placeholder="Name, ID or email" aria-label="Search students" />
             </label>
             <button type="submit" className={buttonClass('secondary')}>
               <Search className="h-[13px] w-[13px]" /> Search
@@ -75,30 +119,70 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
         </div>
       </Card>
 
+      {/* F0062 / F0559 — the prototype's "Add Student to Any Class" form lived
+          on this page with its own class dropdown. The port made an admin open
+          a class first, so adding a child meant knowing which class before you
+          started. Collapsed by default, in the card header rather than the
+          body: a control inside a collapsed body cannot be found. */}
+      <details className="group mt-3.5 overflow-hidden rounded-[16px] border border-parch-200 border-l-[3px] border-l-brand-gold bg-parch-50 shadow-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-[18px] py-3.5 [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4 shrink-0 text-brand-gold-dark" aria-hidden />
+            <span className="text-[13px] font-semibold text-parch-900">Add a student to any class</span>
+          </span>
+          <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.8px] text-brand-800 group-open:hidden">
+            Open
+          </span>
+          <span className="hidden shrink-0 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500 group-open:inline">
+            Close
+          </span>
+        </summary>
+        <div className="border-t border-[#F3F0EB] p-[18px]">
+          <StudentForm mode="create" classes={pickerOptions} backHref="/portal/admin/students" />
+        </div>
+      </details>
+
       {students.length === 0 ? (
         <div className="mt-3.5">
           <EmptyState title="No students match" hint="Try a different class or search term." />
         </div>
       ) : (
+        <BulkSelection>
         <div className="mt-3.5 space-y-3.5">
           {STAGE_ORDER.map((stage) => {
             const stageGroups = groups.filter((g) => g.stage === stage)
             if (stageGroups.length === 0) return null
             const totalStudents = stageGroups.reduce((n, g) => n + g.members.length, 0)
             return (
-              <section key={stage} className="overflow-hidden rounded-[14px] border-[1.5px] border-[#EFE9DC] bg-parch-50 shadow-panel">
-                <header className="px-[18px] pb-3 pt-4">
-                  <h2 className="font-serif text-[14.5px] font-bold text-brand-800">{STAGE_LABEL[stage]}</h2>
-                  <p className="mt-0.5 text-[10.5px] font-semibold text-brand-gold-dark">
-                    {stageGroups.length} class{stageGroups.length === 1 ? '' : 'es'} · {totalStudents} student{totalStudents === 1 ? '' : 's'}
-                  </p>
-                </header>
+              // F0568 — an admin looking for one child in Preparatory scrolled
+              // past every class in Primary and Kindergarten to reach it; the
+              // class level collapsed but the stage wrapping it did not, so the
+              // page could only ever get taller. Born open, so nothing that is
+              // on screen today disappears behind a click — and so the bulk
+              // selection controls inside stay findable.
+              <details
+                key={stage}
+                open
+                data-stage-group={stage}
+                className="group overflow-hidden rounded-[14px] border-[1.5px] border-[#EFE9DC] bg-parch-50 shadow-panel"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-[18px] pb-3 pt-4 [&::-webkit-details-marker]:hidden">
+                  <div>
+                    <h2 className="font-serif text-[14.5px] font-bold text-brand-800">{STAGE_LABEL[stage]}</h2>
+                    <p className="mt-0.5 text-[10.5px] font-semibold text-brand-gold-dark">
+                      {stageGroups.length} class{stageGroups.length === 1 ? '' : 'es'} · {totalStudents} student{totalStudents === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <span aria-hidden className="shrink-0 text-[13px] text-parch-500 transition-transform group-open:rotate-180">
+                    ▾
+                  </span>
+                </summary>
                 <div className="grid gap-3 border-t border-[#F0EBE3] p-4 sm:grid-cols-[repeat(auto-fit,minmax(260px,1fr))]">
                   {stageGroups.map((g) => (
                     <ClassGroup key={g.id} label={g.label} accent={accentFor(g.id)} members={g.members} moveOptions={moveOptions} />
                   ))}
                 </div>
-              </section>
+              </details>
             )
           })}
 
@@ -113,7 +197,9 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
               </div>
             </section>
           )}
+          <BulkBar moveOptions={moveOptions} />
         </div>
+        </BulkSelection>
       )}
     </>
   )
@@ -128,15 +214,7 @@ function ClassGroup({
 }: {
   label: string
   accent: string
-  members: Array<{
-    id: string
-    firstName: string
-    lastName: string
-    grade: string | null
-    classId: string | null
-    importNotes: string | null
-    account: { loginId: string; photo: string | null; lastLoginAt: Date | null }
-  }>
+  members: BulkStudent[]
   moveOptions: Array<{ id: string; name: string }>
   defaultOpen?: boolean
 }) {
@@ -152,32 +230,14 @@ function ClassGroup({
             </span>
           </span>
         </span>
-        <span aria-hidden className="shrink-0 text-[13px] text-parch-500">▾</span>
+        <span className="flex shrink-0 items-center gap-2">
+          <GroupSelectAll ids={members.map((m) => m.id)} label={label} />
+          <span aria-hidden className="text-[13px] text-parch-500">▾</span>
+        </span>
       </summary>
       <div className="grid grid-cols-2 gap-2.5 border-t border-[#F0EBE3] p-3 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))]">
         {members.map((s) => (
-          <div key={s.id} className="rounded-[12px] border border-[#EFE9DC] bg-parch-50 px-3.5 pb-3 pt-4 text-center">
-            <Link href={`/portal/students/${s.id}`} className="block">
-              <span className="mx-auto mb-2.5 block w-fit">
-                <Avatar name={studentName(s)} photo={s.account.photo} size="lg" />
-              </span>
-              <span className="block truncate text-[13px] font-bold text-parch-900">{studentName(s)}</span>
-              <span className="mb-1 block truncate text-[11px] text-parch-500">
-                ID {s.account.loginId}{s.grade ? ` · ${s.grade}` : ''}
-              </span>
-            </Link>
-            {s.importNotes && <span className="mb-2 block"><Badge tone="warn">Review</Badge></span>}
-            <div className="flex items-center justify-center gap-1.5 border-t border-[#F5F2ED] pt-2.5">
-              <MoveStudentSelect studentId={s.id} value={s.classId ?? ''} options={moveOptions} />
-              <Link
-                href={`/portal/students/${s.id}/edit`}
-                aria-label={`Edit ${studentName(s)}`}
-                className="grid h-[28px] w-[28px] shrink-0 place-items-center rounded-[7px] border border-parch-200 text-parch-700 transition-colors hover:border-brand-gold hover:text-brand-800"
-              >
-                <Pencil className="h-[13px] w-[13px]" />
-              </Link>
-            </div>
-          </div>
+          <StudentCard key={s.id} student={s} moveOptions={moveOptions} />
         ))}
       </div>
     </details>

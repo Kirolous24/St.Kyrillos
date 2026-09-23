@@ -1,4 +1,3 @@
-import Image from 'next/image'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
@@ -8,8 +7,8 @@ import { buildStudentPayload } from '@/lib/portal/qr'
 import { accentFor } from '@/lib/portal/accents'
 import { PageHeader, EmptyState, Callout } from '@/components/portal/ui'
 import { ClassPicker } from '@/components/portal/ClassPicker'
-import { PrintButton } from '@/components/portal/PrintButton'
-import { QrImage } from '@/components/portal/QrImage'
+import { qrSvgDataUrl } from '@/components/portal/QrImage'
+import { CardSheet } from './CardSheet'
 
 export const metadata = { title: 'Print QR cards' }
 
@@ -37,6 +36,18 @@ export default async function QrCardsPage({ searchParams }: { searchParams: { cl
     select: { id: true, firstName: true, lastName: true, account: { select: { loginId: true, isActive: true } } },
   })
 
+  // QR images are rendered here because `qrcode` is server-only; the client
+  // sheet takes the finished data URLs.
+  const cards = await Promise.all(
+    students.map(async (s) => ({
+      id: s.id,
+      name: studentName(s),
+      loginId: s.account.loginId,
+      inactive: !s.account.isActive,
+      qr: await qrSvgDataUrl(buildStudentPayload(s.account.loginId)),
+    })),
+  )
+
   return (
     <div className="portal-print-page">
       <PageHeader
@@ -44,7 +55,8 @@ export default async function QrCardsPage({ searchParams }: { searchParams: { cl
         title="QR cards"
         subtitle={`${cls.name} · ${students.length} card${students.length === 1 ? '' : 's'}`}
         back={{ href: '/portal/qr', label: 'QR Check-in' }}
-        actions={<PrintButton label="Print cards" />}
+        /* Printing lives with the selection below, so there is one print
+           control and it knows what was picked. */
       />
 
       {classes.length > 1 && (
@@ -68,34 +80,7 @@ export default async function QrCardsPage({ searchParams }: { searchParams: { cl
       {students.length === 0 ? (
         <EmptyState title="No students in this class" />
       ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {students.map((s) => (
-            <li
-              key={s.id}
-              className={`flex break-inside-avoid flex-col items-center gap-2 rounded-[12px] border-[1.5px] border-dashed border-parch-300 bg-parch-50 p-3 text-center ${
-                s.account.isActive ? '' : 'opacity-60'
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <Image src="/images/Logo.png" alt="" width={18} height={18} className="h-[18px] w-[18px] rounded-full object-cover" />
-                <span className="text-[8.5px] font-bold uppercase tracking-[0.8px] text-brand-gold-dark">St. Kyrillos VI</span>
-              </span>
-
-              <QrImage value={buildStudentPayload(s.account.loginId)} size={128} alt="" className="shadow-none" />
-
-              <p className="w-full truncate font-serif text-[13px] font-bold leading-tight text-parch-900">{studentName(s)}</p>
-              <p
-                className="w-full truncate text-[9.5px] font-bold uppercase tracking-[0.8px]"
-                style={{ color: accent }}
-              >
-                {cls.name}
-              </p>
-              <p className="text-[19px] font-bold leading-none tracking-[0.28em] text-brand-800 tabular-nums">
-                {s.account.loginId}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <CardSheet cards={cards} className={cls.name} accent={accent} />
       )}
     </div>
   )

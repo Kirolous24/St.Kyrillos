@@ -131,3 +131,46 @@ export function daysUntilBirthday(dob: string, from: string): number {
 export function daysBetween(a: string, b: string): number {
   return Math.round((toUTCDate(b).getTime() - toUTCDate(a).getTime()) / 86_400_000)
 }
+
+/** Day-of-week names, indexed 0 = Sunday, as ServantActivity.dayOfWeek stores them. */
+export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
+
+/**
+ * F0354 — the hour of the day in church time, 0–23.
+ *
+ * Used to decide when Sunday's "attendance has not been taken" reminder stops
+ * being a note in the corner and becomes a banner: before classes have met, a
+ * prompt to take the register is nagging, and after they have finished it is the
+ * most useful thing on the page. The server's clock is wherever Vercel put it,
+ * so the church's own hour has to be asked for explicitly.
+ */
+export function hourInNewYork(at: Date = new Date()): number {
+  const hour = new Intl.DateTimeFormat('en-US', {
+    timeZone: CHURCH_TIMEZONE,
+    hour: 'numeric',
+    hour12: false,
+  }).format(at)
+  const parsed = Number(hour)
+  // hour12:false can render midnight as "24" in some ICU versions.
+  return Number.isFinite(parsed) ? parsed % 24 : 0
+}
+
+/**
+ * F0316 — the weekday a date-only string falls on, for echoing beside a date
+ * picker.
+ *
+ * The prototype's event form had a separate day-of-week box, which is two
+ * fields for one fact: fill in 14 March and pick Tuesday and the event now
+ * disagrees with itself, and the card that reads it has to choose which to
+ * believe. The day is worked out from the date instead; this is what makes it
+ * visible while the date is being typed, so nothing is lost by not asking.
+ *
+ * Parsed as UTC noon rather than midnight so a browser behind UTC cannot roll
+ * the answer back to the previous day.
+ */
+export function weekdayName(dateOnly: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return null
+  const at = Date.parse(`${dateOnly}T12:00:00.000Z`)
+  if (Number.isNaN(at)) return null
+  return DAY_NAMES[new Date(at).getUTCDay()] ?? null
+}

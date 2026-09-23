@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react'
-import { createExam, updateExam } from '@/lib/portal/actions/exams'
+import { createExam, updateExam, findDuplicateExam } from '@/lib/portal/actions/exams'
 import { MAX_OPTIONS, MAX_QUESTIONS, MIN_OPTIONS } from '@/lib/portal/exams'
 import {
   Callout,
@@ -14,6 +14,7 @@ import {
   selectClass,
   textareaClass,
 } from '@/components/portal/ui'
+import { todayInNewYork } from '@/lib/portal/dates'
 import { cn } from '@/lib/utils'
 
 export interface EditorQuestion {
@@ -110,6 +111,27 @@ export function ExamEditor({
   const [bibleReading, setBibleReading] = useState(exam?.bibleReading ?? '')
   const [readingMessage, setReadingMessage] = useState(exam?.readingMessage ?? '')
   const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED' | 'CLOSED'>(exam?.status ?? 'PUBLISHED')
+  /**
+   * F0024 / F0483 — a second quiz for the same class on the same Sunday is
+   * usually the second servant not knowing about the first. It warns and stops
+   * there: merging would edit a quiz children may already have answered, leaving
+   * their stored score and the quiz's question count disagreeing on a report
+   * card. The servant may well mean to set two.
+   */
+  const [duplicate, setDuplicate] = useState<{ id: string; title: string } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    if (!classId || !dueDate) {
+      setDuplicate(null)
+      return
+    }
+    void findDuplicateExam(classId, dueDate, exam?.id).then((r) => {
+      if (!cancelled) setDuplicate(r.ok ? (r.data ?? null) : null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [classId, dueDate, exam?.id])
   const [questions, setQuestions] = useState<Q[]>(
     exam && exam.questions.length ? exam.questions.map(fromExisting) : [blankQuestion()],
   )
@@ -196,9 +218,30 @@ export function ExamEditor({
           <Field label="Subject" htmlFor="exam-subject" hint="Optional">
             <input id="exam-subject" className={inputClass} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Bible" />
           </Field>
+          {/* F0034 / F0482 — a due date typed a month short (2026-09 for
+              2026-10) publishes a quiz that every child in the class is already
+              too late for, and the only way back is the reopen picker. The floor
+              is today in church time, not UTC, so a servant setting up after 8pm
+              on a Sunday is not offered tomorrow. Only on a new exam: an exam
+              being edited legitimately has a due date in the past. */}
           <Field label="Due date" htmlFor="exam-due" hint="Leave blank for no deadline">
-            <input id="exam-due" type="date" className={inputClass} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <input
+              id="exam-due"
+              type="date"
+              min={exam ? undefined : todayInNewYork()}
+              className={inputClass}
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
           </Field>
+          {duplicate && (
+            <div className="sm:col-span-2">
+              <Callout tone="warn" title="There is already a quiz for that day">
+                “{duplicate.title}” is already set for this class on that date. Two quizzes on one day
+                is fine if you mean it — change the date if you do not.
+              </Callout>
+            </div>
+          )}
           <Field label="Points per question" htmlFor="exam-pts" hint={`Worth ${totalPoints} point${totalPoints === 1 ? '' : 's'} in total`}>
             <input
               id="exam-pts"
@@ -218,7 +261,18 @@ export function ExamEditor({
             </select>
           </Field>
           <Field label="Bible reading" htmlFor="exam-reading" hint="Optional — shown with the quiz">
-            <input id="exam-reading" className={inputClass} value={bibleReading} onChange={(e) => setBibleReading(e.target.value)} placeholder="Mark 1–3" />
+            {/* F0324 — multi-line, to match the 2000 characters the action now
+                accepts. A servant writing out a passage plus an instruction had
+                300 characters on one line to do it in. */}
+            <textarea
+              id="exam-reading"
+              className={textareaClass}
+              rows={2}
+              maxLength={2000}
+              value={bibleReading}
+              onChange={(e) => setBibleReading(e.target.value)}
+              placeholder="Mark 1–3"
+            />
           </Field>
           <Field label="Reading message" htmlFor="exam-msg" hint="Optional note for the students">
             <textarea id="exam-msg" className={textareaClass} value={readingMessage} onChange={(e) => setReadingMessage(e.target.value)} />

@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
-import { QrCode, RefreshCw, XCircle } from 'lucide-react'
+import Link from 'next/link'
+import { QrCode, RefreshCw, XCircle, ClipboardCheck } from 'lucide-react'
 import { createGroupCode, createMeetingCode, codeStatus, endCode, type GroupCode } from '@/lib/portal/actions/qr'
 import { secondsLeft } from '@/lib/portal/qr'
 import { Card, Callout, Field, buttonClass, selectClass, checkboxClass, Badge, Avatar } from '@/components/portal/ui'
@@ -10,8 +11,26 @@ import { cn } from '@/lib/utils'
 
 type Mode = 'ATTENDANCE' | 'POINTS' | 'MEETING'
 
+/** Unattended refreshes before the panel gives up and waits to be asked. */
+const AUTO_REGEN_LIMIT = 3
+
 interface Props {
+  /** Preselected from ?mode= so the sidebar's "QR Points" lands ready to use. */
+  initialMode?: Mode
+  /** From ?class= — the class this code should already be pointed at. */
+  preselectClassId?: string | null
   classes: Array<{ id: string; name: string }>
+  /**
+   * F0013 — the servant's own class ids. The prototype pre-checked the servant's
+   * class and labelled it "(my class)"; here a servant who serves one class among
+   * the church's twelve had to find it in the list every Sunday, and an admin
+   * generating a code for the wrong class is a silent mistake — the children
+   * scan, and the marks land on somebody else's register.
+   *
+   * It has to come from the page: this is a client component and `user.classIds`
+   * lives on the session.
+   */
+  myClassIds?: readonly string[]
   sessions: Array<{ key: string; label: string; points: number }>
   activities: Array<{ id: string; label: string; points: number; classId: string | null }>
   servantActivities: Array<{ key: string; label: string }>
@@ -54,10 +73,30 @@ function Segmented<T extends string>({
   )
 }
 
-export function GroupCodePanel({ classes, sessions, activities, servantActivities }: Props) {
+export function GroupCodePanel({
+  classes,
+  sessions,
+  activities,
+  servantActivities,
+  initialMode = 'ATTENDANCE',
+  preselectClassId = null,
+  myClassIds = [],
+}: Props) {
+  const mine = new Set(myClassIds)
   const [pending, startTransition] = useTransition()
-  const [mode, setMode] = useState<Mode>('ATTENDANCE')
-  const [selected, setSelected] = useState<string[]>(classes.length === 1 ? [classes[0]!.id] : [])
+  const [mode, setMode] = useState<Mode>(initialMode)
+  // Pre-checked: the one class if that is all there is, otherwise the servant's
+  // own. An admin with no class of their own still starts from nothing, which is
+  // right — they have no "my class" to assume.
+  const [selected, setSelected] = useState<string[]>(
+    // An explicit ?class= wins: the admin came here from that class's workspace
+    // and picking it again by hand is the step this removes.
+    preselectClassId
+      ? [preselectClassId]
+      : classes.length === 1
+        ? [classes[0]!.id]
+        : classes.filter((c) => mine.has(c.id)).map((c) => c.id),
+  )
   const [sessionKey, setSessionKey] = useState(sessions.find((s) => s.key === 'sunday')?.key ?? sessions[0]?.key ?? '')
   const [activityId, setActivityId] = useState(activities[0]?.id ?? '')
   const [meetingKey, setMeetingKey] = useState(servantActivities.find((a) => a.key === 'servants_meeting')?.key ?? servantActivities[0]?.key ?? '')
@@ -65,6 +104,10 @@ export function GroupCodePanel({ classes, sessions, activities, servantActivitie
   const [code, setCode] = useState<GroupCode | null>(null)
   const [left, setLeft] = useState(0)
   const [scanned, setScanned] = useState<Array<{ name: string; at: string }>>([])
+  // A code the servant ended on purpose must never be re-minted underneath
+  // them, and a tab left on the projector cart must not mint codes all night.
+  const [ended, setEnded] = useState(false)
+  const [autoCycles, setAutoCycles] = useState(0)
 
   const expired = code !== null && left <= 0
 
@@ -82,19 +125,60 @@ export function GroupCodePanel({ classes, sessions, activities, servantActivitie
     if (result.ok && result.data) setScanned(result.data.redemptions)
   }, [])
 
+  /**
+   * F0016 — the "N checked in" tally refreshes every two seconds while a code
+   * is live, not every five. The prototype moved the number the instant a child
+   * scanned; at five seconds the servant holding the code up is looking at a
+   * count that is usually wrong and starts asking the room "did that work?".
+   * Each poll is one indexed read of a single token row, and the effect returns
+   * the moment the code expires, so nothing polls in the background.
+   */
   useEffect(() => {
     if (!code || expired) return
     void poll(code.token)
-    const id = window.setInterval(() => void poll(code.token), 5000)
+    const id = window.setInterval(() => void poll(code.token), 2000)
     return () => window.clearInterval(id)
   }, [code, expired, poll])
+
+  /**
+   * Mint a fresh code when the projected one runs out, so a class still
+   * arriving is not staring at a dead square — the prototype's own behaviour.
+   *
+   * The condition is the stored expiry timestamp, NOT `left <= 0`. `left`
+   * starts at 0 and the countdown only fills it after mount, so every freshly
+   * minted code reads as expired for one render: keying off `left` regenerates
+   * forever. It also stops after three unattended cycles and while the tab is
+   * hidden, because each generate writes a token row and an audit row.
+   */
+  useEffect(() => {
+    if (!code || ended || pending) return
+    if (mode !== 'ATTENDANCE' && mode !== 'POINTS' && mode !== 'MEETING') return
+    if (autoCycles >= AUTO_REGEN_LIMIT) return
+    const expiresAt = new Date(code.expiresAt).getTime()
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() < expiresAt) return
+      generate(true)
+    }
+    const id = window.setInterval(tick, 1000)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', tick)
+    }
+    // `generate` is stable enough here: it reads current state via setState
+    // callbacks and the effect is re-created whenever `code` changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, ended, pending, autoCycles, mode])
 
   function toggleClass(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]))
   }
 
-  function generate() {
+  function generate(auto = false) {
     setError(null)
+    setEnded(false)
+    setAutoCycles((n) => (auto ? n + 1 : 0))
     startTransition(async () => {
       if (mode === 'MEETING') {
         if (!meetingKey) return setError('Pick a servant activity.')
@@ -121,6 +205,7 @@ export function GroupCodePanel({ classes, sessions, activities, servantActivitie
     startTransition(async () => {
       const result = await endCode(code.token)
       if (!result.ok) return setError(result.error)
+      setEnded(true)
       setLeft(0)
     })
   }
@@ -155,7 +240,9 @@ export function GroupCodePanel({ classes, sessions, activities, servantActivitie
               {/* expiry strip, exactly the prototype's: label + timer left, tally right */}
               <div className="mt-4 flex items-center justify-between gap-3 rounded-[12px] border border-parch-200 bg-parch-100 px-4 py-3">
                 <div className="text-left">
-                  <p className="mb-0.5 text-[11px] text-parch-500">{expired ? 'Ended' : 'Expires in'}</p>
+                  <p className="mb-0.5 text-[11px] text-parch-500">
+                    {!expired ? 'Expires in' : ended || autoCycles >= AUTO_REGEN_LIMIT ? 'Ended' : 'Refreshing…'}
+                  </p>
                   {expired ? (
                     <Badge tone="bad">Expired</Badge>
                   ) : (
@@ -173,13 +260,32 @@ export function GroupCodePanel({ classes, sessions, activities, servantActivitie
               </div>
 
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <button type="button" onClick={() => { setCode(null); setScanned([]) }} className={cn(buttonClass('primary'), 'flex-1')}>
-                  <RefreshCw className="h-4 w-4" aria-hidden /> New code
+                {/* Regenerate keeps the classes and session already chosen;
+                    "New code" goes back to the form to change them. The port
+                    only had the latter, so a code that ran out mid-arrival meant
+                    re-picking every setting. */}
+                <button type="button" onClick={() => generate()} disabled={pending} className={cn(buttonClass('primary'), 'flex-1')}>
+                  <RefreshCw className="h-4 w-4" aria-hidden /> {pending ? 'Opening…' : 'Regenerate'}
+                </button>
+                <button type="button" onClick={() => { setCode(null); setScanned([]); setEnded(false); setAutoCycles(0) }} className={buttonClass('secondary')}>
+                  New code
                 </button>
                 {!expired && (
                   <button type="button" onClick={stop} disabled={pending} className={buttonClass('secondary')}>
                     <XCircle className="h-4 w-4" aria-hidden /> End now
                   </button>
+                )}
+                {/* F0606 — a meeting code that has just run out leaves a list of
+                    who scanned and no way to act on it: the two or three
+                    servants who came without a phone still have to be marked by
+                    hand, and finding them meant stepping the week picker back
+                    from today. No ?week= on purpose — the page resolves the
+                    current week in church time, and a Monday computed in the
+                    browser is a day out on a Sunday evening. */}
+                {mode === 'MEETING' && (
+                  <Link href="/portal/servant-attendance" className={buttonClass('secondary')}>
+                    <ClipboardCheck className="h-4 w-4" aria-hidden /> Fix who attended
+                  </Link>
                 )}
               </div>
               {error && <p role="status" className="mt-3 text-[12.5px] font-semibold text-red-600">{error}</p>}
@@ -257,6 +363,11 @@ export function GroupCodePanel({ classes, sessions, activities, servantActivitie
                       onChange={() => toggleClass(c.id)}
                     />
                     <span className="truncate text-parch-800">{c.name}</span>
+                    {mine.has(c.id) && (
+                      <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.5px] text-brand-gold-dark">
+                        my class
+                      </span>
+                    )}
                   </label>
                 ))}
               </div>
@@ -291,7 +402,7 @@ export function GroupCodePanel({ classes, sessions, activities, servantActivitie
 
         <button
           type="button"
-          onClick={generate}
+          onClick={() => generate()}
           disabled={pending || (mode === 'POINTS' && activities.length === 0)}
           className={cn(buttonClass('primary'), 'w-full py-3')}
         >

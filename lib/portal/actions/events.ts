@@ -6,8 +6,9 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseDateOnly, toUTCDate } from '../dates'
-import { assertCanTarget, optionalHttpUrl } from '../data/community'
+import { assertCanTargetIncludingStage, optionalHttpUrl } from '../data/community'
 import { audit } from '../audit'
+import { mayModifyEvent } from '../permissions'
 
 const EventSchema = z.object({
   title: z.string().trim().min(1, 'Give the event a name.').max(120),
@@ -36,7 +37,7 @@ export async function createEvent(raw: EventInput): Promise<ActionResult<{ id: s
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = EventSchema.parse(raw)
-    assertCanTarget(user, input.classIds, input.targetAll)
+    await assertCanTargetIncludingStage(user, input.classIds, input.targetAll)
 
     const date = parseDateOnly(input.date)
     if (!date) throw new PortalError('Pick a valid date.')
@@ -71,7 +72,7 @@ export type UpdateEventInput = z.input<typeof UpdateSchema>
 async function loadEvent(eventId: string) {
   const event = await prisma.portalEvent.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, targetAll: true, classes: { select: { classId: true } } },
+    select: { id: true, title: true, targetAll: true, createdById: true, classes: { select: { classId: true } } },
   })
   if (!event) throw new PortalError('That event is no longer there.')
   return event
@@ -85,8 +86,12 @@ export async function updateEvent(raw: UpdateEventInput): Promise<ActionResult> 
 
     // Both the event as it stands and the event as it would become must be
     // within reach, so nobody can grab an event by retargeting it.
-    assertCanTarget(user, event.classes.map((c) => c.classId), event.targetAll)
-    assertCanTarget(user, input.classIds, input.targetAll)
+    await assertCanTargetIncludingStage(user, event.classes.map((c) => c.classId), event.targetAll)
+    await assertCanTargetIncludingStage(user, input.classIds, input.targetAll)
+    if (!mayModifyEvent(user, event)) {
+      throw new PortalError('Only the servant who created this event can change it. Ask an admin if it needs correcting.')
+    }
+
 
     const date = parseDateOnly(input.date)
     if (!date) throw new PortalError('Pick a valid date.')
@@ -120,7 +125,10 @@ export async function deleteEvent(eventId: string): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const event = await loadEvent(z.string().min(1).parse(eventId))
-    assertCanTarget(user, event.classes.map((c) => c.classId), event.targetAll)
+    await assertCanTargetIncludingStage(user, event.classes.map((c) => c.classId), event.targetAll)
+    if (!mayModifyEvent(user, event)) {
+      throw new PortalError('Only the servant who created this event can change it. Ask an admin if it needs correcting.')
+    }
 
     await prisma.portalEvent.delete({ where: { id: event.id } })
 

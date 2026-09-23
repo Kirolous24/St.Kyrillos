@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { attemptLogin, LOCKOUT, type LoginAccount, type LoginRepo } from '@/lib/portal/login'
+import { attemptLogin, LOCKOUT, type LoginAccount, type LoginRepo, safeNextPath } from '@/lib/portal/login'
 
 function makeRepo(accounts: LoginAccount[]): LoginRepo & { accounts: LoginAccount[] } {
   return {
@@ -135,3 +135,44 @@ describe('attemptLogin lockout under concurrency', () => {
     expect(repo.accounts[0].failedAttempts).toBe(4)
   })
 })
+
+// A child scans the projected group code while signed out. The middleware used
+// to bounce them to /portal/login and throw the path away, so after signing in
+// they landed on the dashboard and the code — which expires in five minutes —
+// was gone. Preserving the destination means accepting it from the URL, so it
+// has to be validated: an unchecked `next` is an open redirect.
+describe('safeNextPath', () => {
+  it('keeps an internal portal path', () => {
+    expect(safeNextPath('/portal/scan/abc123')).toBe('/portal/scan/abc123')
+    expect(safeNextPath('/portal/my-attendance')).toBe('/portal/my-attendance')
+  })
+
+  it('keeps a query string', () => {
+    expect(safeNextPath('/portal/grades?student=abc')).toBe('/portal/grades?student=abc')
+  })
+
+  it('refuses to send anyone off-site', () => {
+    expect(safeNextPath('https://evil.example.com/steal')).toBeNull()
+    expect(safeNextPath('http://evil.example.com')).toBeNull()
+    expect(safeNextPath('//evil.example.com')).toBeNull()
+    expect(safeNextPath('/\\evil.example.com')).toBeNull()
+  })
+
+  it('refuses paths outside the portal', () => {
+    expect(safeNextPath('/admin/dashboard')).toBeNull()
+    expect(safeNextPath('/')).toBeNull()
+    expect(safeNextPath('/portalish')).toBeNull()
+  })
+
+  it('refuses the login page itself, so it cannot loop', () => {
+    expect(safeNextPath('/portal/login')).toBeNull()
+    expect(safeNextPath('/portal/login?next=/portal')).toBeNull()
+  })
+
+  it('is null for nothing usable', () => {
+    expect(safeNextPath(null)).toBeNull()
+    expect(safeNextPath(undefined)).toBeNull()
+    expect(safeNextPath('')).toBeNull()
+  })
+})
+

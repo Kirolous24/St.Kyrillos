@@ -13,15 +13,20 @@ interface Props {
   streak: number
   totalDays: number
   /** 30 days, oldest first, ending today. */
-  grid: Array<{ date: string; read: boolean }>
+  grid: Array<{ date: string; read: boolean; future: boolean }>
+  /** "September 2026" — the prototype's own heading above the grid. */
+  monthLabel: string
 }
 
-export function ReadingCheckIn({ checkedInToday, streak, totalDays, grid }: Props) {
+export function ReadingCheckIn({ checkedInToday, streak, totalDays, grid, monthLabel }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
-  const readInWindow = grid.filter((d) => d.read).length
-  const todayKey = grid.length > 0 ? grid[grid.length - 1].date : ''
+  // F0329 / F0754 — scored over the days that have actually happened. Dividing
+  // by the whole month would tell a child on the 2nd that they were on 1/30.
+  const elapsed = grid.filter((d) => !d.future)
+  const readInWindow = elapsed.filter((d) => d.read).length
+  const todayKey = elapsed.length > 0 ? elapsed[elapsed.length - 1]!.date : ''
 
   function checkIn() {
     setError('')
@@ -56,9 +61,22 @@ export function ReadingCheckIn({ checkedInToday, streak, totalDays, grid }: Prop
 
       <div className="mt-4">
         {checkedInToday ? (
-          <p className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[10px] border-[1.5px] border-[#BBF7D0] bg-[#F0FDF4] px-3.5 text-[13px] font-bold text-[#16A34A]">
-            <Check className="h-4 w-4" aria-hidden /> Done for today
-          </p>
+          /* F0331 — the prototype answered back: "Marked as read — keep it up!".
+             The port swapped in the green pill and nothing else, so a child tapped
+             "I read today" and the page just moved under them, with the streak the
+             action already counts never said out loud. Written from checkedInToday
+             rather than from a transient flag on purpose: it appears the moment the
+             pill does, and it survives the router.refresh() that follows. */
+          <div className="space-y-1.5">
+            <p className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[10px] border-[1.5px] border-[#BBF7D0] bg-[#F0FDF4] px-3.5 text-[13px] font-bold text-[#16A34A]">
+              <Check className="h-4 w-4" aria-hidden /> Done for today
+            </p>
+            <p role="status" className="text-center text-[12px] font-semibold text-brand-gold-dark">
+              {streak > 1
+                ? `Marked as read — ${streak} days in a row, keep it up!`
+                : 'Marked as read — keep it up!'}
+            </p>
+          </div>
         ) : (
           <button type="button" onClick={checkIn} disabled={pending} className={cn(buttonClass('primary'), 'w-full py-3 text-[13px]')}>
             <BookOpenCheck className="h-4 w-4" aria-hidden />
@@ -70,8 +88,10 @@ export function ReadingCheckIn({ checkedInToday, streak, totalDays, grid }: Prop
 
       <div className="mt-5">
         <div className="mb-2.5 flex items-baseline justify-between gap-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.6px] text-parch-500">Last 30 days</p>
-          <p className="text-[11px] text-parch-500 tabular-nums">{readInWindow}/30</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.6px] text-parch-500">{monthLabel}</p>
+          <p className="text-[11px] text-parch-500 tabular-nums">
+            {readInWindow}/{elapsed.length} so far
+          </p>
         </div>
         <ol className="grid grid-cols-10 gap-1.5">
           {grid.map((day) => {
@@ -85,14 +105,19 @@ export function ReadingCheckIn({ checkedInToday, streak, totalDays, grid }: Prop
                     'grid aspect-square place-items-center rounded-[8px] text-[11px] font-bold',
                     day.read
                       ? 'bg-[linear-gradient(160deg,#6F1D1B,#7A2A2A)] text-brand-gold shadow-[0_2px_6px_rgba(90,31,31,.25)]'
-                      : 'bg-parch-100 text-parch-500',
+                      : day.future
+                        // Not yet, rather than missed: a month grid contains days
+                        // that have not happened, and colouring them like a
+                        // skipped day would read as a month already lost.
+                        ? 'bg-parch-50 text-parch-300 ring-1 ring-inset ring-[#F0EEE8]'
+                        : 'bg-parch-100 text-parch-500',
                     isToday && 'shadow-[0_0_0_2px_#C89B3C,0_2px_8px_rgba(200,155,60,.35)]',
                   )}
                 >
                   <span aria-hidden>{dayNum}</span>
                   <span className="sr-only">
                     {formatMonthDay(day.date)}
-                    {day.read ? ': read' : ': not checked in'}
+                    {day.read ? ': read' : day.future ? ': still to come' : ': not checked in'}
                   </span>
                 </span>
               </li>

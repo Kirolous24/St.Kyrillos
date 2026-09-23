@@ -9,6 +9,8 @@ export interface PortalUser {
   accountId: string
   role: Role
   displayName: string
+  /** Their uploaded photo, when there is one — the chrome shows it as an avatar. */
+  photo?: string | null
   servantId?: string
   studentId?: string
   /** Classes the user belongs to (servant assignments, or the student's class). */
@@ -114,3 +116,20 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
   }
   return false
 }
+
+/**
+ * Who may edit or delete an existing event.
+ *
+ * Class scope alone is not enough: every servant of a targeted class shares
+ * that scope, so the port let any co-servant rewrite or delete a colleague's
+ * event. The prototype kept servants to their own events and let admins and
+ * the pastor manage anything.
+ */
+export function mayModifyEvent(
+  user: Pick<PortalUser, 'role' | 'accountId'>,
+  event: { createdById: string | null },
+): boolean {
+  if (user.role === 'ADMIN' || user.role === 'PASTOR') return true
+  return !!event.createdById && event.createdById === user.accountId
+}
+

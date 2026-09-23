@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  can,
-  visibleClassIds,
-  type PortalUser,
-  type ClassScope,
-} from '@/lib/portal/permissions'
+import { can, visibleClassIds, type PortalUser, type ClassScope, mayModifyEvent } from '@/lib/portal/permissions'
 
 const classes: ClassScope[] = [
   { id: 'kg', stage: 'ELEMENTARY' },
@@ -79,3 +74,29 @@ describe('can', () => {
     expect(can(admin, 'nope')).toBe(false)
   })
 })
+
+// Class scope alone is not enough for events: every servant of a targeted class
+// shares it, so the port let any co-servant rewrite or delete a colleague's
+// event. The prototype kept servants to their own.
+describe('mayModifyEvent', () => {
+  const ev = { createdById: 'acct-owner' }
+
+  it('lets the servant who created it modify it', () => {
+    expect(mayModifyEvent({ role: 'SERVANT', accountId: 'acct-owner' }, ev)).toBe(true)
+  })
+
+  it('stops a different servant, even one who serves a targeted class', () => {
+    expect(mayModifyEvent({ role: 'SERVANT', accountId: 'acct-other' }, ev)).toBe(false)
+  })
+
+  it('lets an admin or the pastor manage anything', () => {
+    expect(mayModifyEvent({ role: 'ADMIN', accountId: 'acct-other' }, ev)).toBe(true)
+    expect(mayModifyEvent({ role: 'PASTOR', accountId: 'acct-other' }, ev)).toBe(true)
+  })
+
+  it('refuses a servant when the creator is unknown, rather than opening it up', () => {
+    expect(mayModifyEvent({ role: 'SERVANT', accountId: 'acct-owner' }, { createdById: null })).toBe(false)
+    expect(mayModifyEvent({ role: 'ADMIN', accountId: 'a' }, { createdById: null })).toBe(true)
+  })
+})
+

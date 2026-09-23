@@ -21,6 +21,14 @@ import {
 import { DownloadButton } from '@/components/portal/DownloadButton'
 import { formatLongDate } from '@/lib/portal/format'
 
+/** The church's own sheet shape (OG L17673-17681) — no Title, just a Day. */
+const DAILY_SAMPLE = [
+  'Day,Question,Option A,Option B,Option C,Option D,Correct Answer',
+  '1,Who baptised the Lord Jesus?,St. John the Baptist,St. Peter,St. Paul,St. Andrew,A',
+  '1,Where was the Lord baptised?,The Nile,The Jordan,The Red Sea,Galilee,B',
+  '2,Who denied the Lord three times?,St. John,St. Peter,St. Paul,St. Andrew,B',
+].join('\r\n')
+
 const SAMPLE = [
   'Title,Subject,Due Date,Bible Reading,Question,Option A,Option B,Option C,Option D,Correct',
   'St. Mark Chapter 1,Bible,2026-10-05,Mark 1,Who baptised the Lord Jesus?,St. John the Baptist,St. Peter,St. Paul,St. Andrew,A',
@@ -54,11 +62,45 @@ export function ExamImport({ classes }: { classes: { id: string; name: string }[
   const [fileName, setFileName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<ImportReport | null>(null)
+  // Only read for a Day-based sheet. Defaulted to the month in view so the
+  // common case needs no thought.
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [pointsPerQuestion, setPointsPerQuestion] = useState(2)
+  // The header alone says which shape this is, exactly as the parser decides.
+  const isDaily = csv.trim().length > 0 && !/(^|,)\s*"?(title|exam|quiz)"?\s*(,|$)/i.test(csv.split(/\r?\n/)[0] ?? '')
 
+  /**
+   * F0038 — an oversized sheet surfaced as "Something went wrong. Please try
+   * again.": the only limit was a server-side `z.string().max(500_000)`, and a
+   * ZodError is not a PortalError, so it fell into runAction's catch-all and the
+   * admin was told nothing they could act on. Both bounds are the prototype's
+   * (OG L16239-16265, 2MB and 500 rows), and the file input is cleared so the
+   * next pick is not silently the same file again.
+   */
   async function readFile(file: File | undefined) {
     if (!file) return
+    const MAX_BYTES = 2 * 1024 * 1024
+    const MAX_ROWS = 500
+    const reject = (text: string) => {
+      const el = document.getElementById('import-file')
+      if (el instanceof HTMLInputElement) el.value = ''
+      setFileName(null)
+      setCsv('')
+      setReport(null)
+      setError(text)
+    }
+    if (file.size > MAX_BYTES) {
+      return reject(
+        `That file is ${(file.size / 1024 / 1024).toFixed(1)}MB. A quiz sheet is only ever a few KB — check you picked the right file.`,
+      )
+    }
+    const text = await file.text()
+    const rows = text.split(/\r?\n/).filter((line) => line.trim()).length
+    if (rows > MAX_ROWS) {
+      return reject(`That file has ${rows} rows, far more than one quiz — check you picked the right file.`)
+    }
     setFileName(file.name)
-    setCsv(await file.text())
+    setCsv(text)
     setError(null)
     setReport(null)
   }
@@ -69,7 +111,7 @@ export function ExamImport({ classes }: { classes: { id: string; name: string }[
     if (!classId) return setError('Choose a class.')
     if (!csv.trim()) return setError('Choose a CSV file or paste its contents.')
     startTransition(async () => {
-      const result = await importExamsCsv({ classId, csv, status })
+      const result = await importExamsCsv({ classId, csv, status, month, pointsPerQuestion })
       if (!result.ok) return setError(result.error)
       setReport(result.data ?? null)
       router.refresh()
@@ -141,8 +183,11 @@ export function ExamImport({ classes }: { classes: { id: string; name: string }[
             Each quiz appears for the students on its due date. Import as drafts first if you want to check them over.
           </Step>
         </ol>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap gap-2">
           <DownloadButton filename="quiz-import-template.csv" content={SAMPLE} label="Download a template" />
+          {/* The church's own sheets are this shape; the port rejected every
+              row of one with "Missing exam title." */}
+          <DownloadButton filename="daily-quiz-template.csv" content={DAILY_SAMPLE} label="Daily-quiz template" />
         </div>
       </Card>
 
@@ -162,6 +207,37 @@ export function ExamImport({ classes }: { classes: { id: string; name: string }[
             </select>
           </Field>
         </div>
+
+        {isDaily && (
+          <div className="mb-3.5">
+            <Callout tone="info" title="Daily-quiz sheet">
+              This file has no Title column, so each day becomes its own quiz named
+              “Daily Quiz — <em>date</em>”. Pick the month those day numbers belong to.
+            </Callout>
+            <div className="mt-3 grid gap-x-4 sm:grid-cols-2">
+              <Field label="Month" htmlFor="import-month">
+                <input
+                  id="import-month"
+                  type="month"
+                  className={inputClass}
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                />
+              </Field>
+              <Field label="Points per question" htmlFor="import-points">
+                <input
+                  id="import-points"
+                  type="number"
+                  min={1}
+                  max={100}
+                  className={inputClass}
+                  value={pointsPerQuestion}
+                  onChange={(e) => setPointsPerQuestion(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                />
+              </Field>
+            </div>
+          </div>
+        )}
 
         <Field label="CSV file" htmlFor="import-file" hint={fileName ? `Loaded ${fileName}` : 'Or paste the rows below'}>
           <input

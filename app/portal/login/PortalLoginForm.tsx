@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowRight, UserRound, KeyRound } from 'lucide-react'
+import { safeNextPath } from '@/lib/portal/login'
 
 const REMEMBER_KEY = 'portal:rememberedId'
 
@@ -21,6 +22,7 @@ export function PortalLoginForm() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const search = useSearchParams()
 
   // Only the ID is ever remembered — never the PIN.
   useEffect(() => {
@@ -51,7 +53,8 @@ export function PortalLoginForm() {
     } catch {
       /* ignore */
     }
-    router.replace('/portal')
+    // Back to whatever they were trying to reach — a scanned code, usually.
+    router.replace(safeNextPath(search.get('next')) ?? '/portal')
     router.refresh()
   }
 
@@ -203,8 +206,17 @@ export function PortalLoginForm() {
               Remember my ID
             </label>
 
+            {/* F0048 — the button is disabled until both fields are filled and
+                said nothing about why, so a parent who typed a three-digit ID
+                was looking at a dead control with no words. The prototype said
+                it in the form, before any network call. */}
+            <p id="signin-hint" className="mb-4 text-center text-[12px] leading-[1.6] text-[#8A8175]">
+              Please enter a 4-digit ID and PIN. Sign in stays greyed out until both are in.
+            </p>
+
             <button
               type="submit"
+              aria-describedby="signin-hint"
               disabled={loading || loginId.length !== 4 || pin.length < 4}
               className="group mb-5 flex h-14 w-full items-center justify-center gap-2.5 rounded-[14px] bg-[linear-gradient(120deg,#6F1D1B_0%,#7A2A2A_50%,#C89B3C_100%)] text-[13.5px] font-bold uppercase tracking-[1.5px] text-white shadow-[0_10px_28px_rgba(107,30,30,.32)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(107,30,30,.4)] hover:brightness-105 focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-[3px] focus-visible:outline-brand-gold disabled:cursor-default disabled:opacity-[.85] disabled:shadow-none disabled:hover:translate-y-0 disabled:hover:brightness-100"
             >
@@ -222,8 +234,21 @@ export function PortalLoginForm() {
             </button>
           </form>
 
+          {/* Forgetting a PIN is the commonest way into this screen, and the card
+              said nothing about it — it covered not *having* an account and left
+              having *lost* one unanswered. Every reset also clears the lockout,
+              so the wait in the error message above is not something anyone has
+              to sit through. Deliberately not behind a disclosure: the person
+              reading this is already stuck. */}
           <div className="rounded-[14px] border border-[#EDE4D2] bg-[#FBF7EF] px-4.5 py-3.5 text-center shadow-[0_2px_10px_rgba(0,0,0,.03)]">
-            <p className="text-[12px] leading-[1.6] text-[#8A8175]">
+            <p className="text-[12px] font-bold leading-[1.6] text-brand-800">Forgotten your ID or PIN?</p>
+            <p className="mt-1 text-[12px] leading-[1.6] text-[#8A8175]">
+              Students, ask your class servant. Servants, ask an administrator
+              (Bason Emad or Bason Kirolous Kamel).
+              <br className="hidden sm:inline" /> They can set you a new PIN, and it works
+              straight away &mdash; even if you have been locked out.
+            </p>
+            <p className="mt-3 border-t border-[#EDE4D2] pt-3 text-[12px] leading-[1.6] text-[#8A8175]">
               Don&rsquo;t have an account? <strong className="font-bold text-brand-800">Ask your class servant for access.</strong>
             </p>
           </div>

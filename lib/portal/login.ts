@@ -76,3 +76,33 @@ export async function attemptLogin(
   await repo.recordSuccess(account.id, now)
   return { ok: true, account: { ...account, failedAttempts: 0, lockedUntil: null, lastLoginAt: now } }
 }
+
+/** Where a signed-out visitor is sent to authenticate. */
+export const PORTAL_LOGIN_PATH = '/portal/login'
+
+/**
+ * Validate a post-sign-in destination taken from the URL.
+ *
+ * A child who scans the projected group code while signed out has to be
+ * returned to that code after authenticating — the middleware used to drop the
+ * path, so they landed on the dashboard and the code (five-minute expiry) was
+ * gone. Carrying the destination in the URL means it is attacker-controlled,
+ * so only a relative path inside /portal is ever accepted: no absolute URLs,
+ * no protocol-relative `//host`, no backslash tricks, and never the login page
+ * itself, which would loop.
+ *
+ * Returns null when there is nothing safe to use; callers fall back to /portal.
+ */
+export function safeNextPath(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const value = raw.trim()
+  if (!value.startsWith('/')) return null
+  // `//host` is protocol-relative and `/\host` is treated as such by browsers.
+  if (value.startsWith('//') || value.startsWith('/\\')) return null
+  if (value.includes('\\')) return null
+  const path = value.split(/[?#]/)[0]!
+  if (path !== '/portal' && !path.startsWith('/portal/')) return null
+  if (path === PORTAL_LOGIN_PATH) return null
+  return value
+}
+

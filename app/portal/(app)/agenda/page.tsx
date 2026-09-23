@@ -1,11 +1,13 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { CalendarDays, ChevronLeft, ChevronRight, Link2, Printer } from 'lucide-react'
+import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses, requireClassAccess } from '@/lib/portal/data/classes'
-import { agendaCsvForClass, classServants, listAgendaWeeks, loadAgendaWeek } from '@/lib/portal/data/agenda'
+import { agendaCsvForClass, agendaServantOptions, listAgendaWeeks, loadAgendaWeek } from '@/lib/portal/data/agenda'
 import { can } from '@/lib/portal/permissions'
-import { TEACHING_WRITE, normaliseWeekStart, weekDistanceLabel } from '@/lib/portal/agenda'
+import { TEACHING_WRITE, normaliseWeekStart, weekDistanceLabel, agendaBlankTemplateRows, schoolYearWeeks, weekLabel } from '@/lib/portal/agenda'
+import { toCsv } from '@/lib/portal/csv'
 import { addDays, mondayOf, todayInNewYork } from '@/lib/portal/dates'
 import {
   PageHeader,
@@ -14,12 +16,26 @@ import {
   Badge,
   EmptyState,
   LinkButton,
+  Tabs,
+  TabLink,
 } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 import { AgendaEditor } from './AgendaEditor'
+import { CurriculumLink } from './CurriculumLink'
 import { AgendaNav, AgendaTools } from './AgendaTools'
+import { ArchiveSearch } from './ArchiveSearch'
+import { ClearWeeksPanel } from './ClearWeeksPanel'
 
 export const metadata = { title: 'Schedule of the Year' }
+
+/**
+ * F0227 — the two rails name this page differently and both are the prototype's
+ * own wording: a servant's rail says "Lesson Preparation" (index.stripped.html
+ * L4021, where it pointed at exactly this page) and an admin's says "Schedule of
+ * the Year". A single fixed heading makes one of the two rails a lie, so the
+ * heading follows the viewer. The browser-tab title stays the neutral one.
+ */
+const agendaTitle = (role: string) => (role === 'SERVANT' ? 'Lesson Preparation' : 'Schedule of the Year')
 
 /** The prototype's week-navigation pills (`padding:9px 16px;border-radius:20px`). */
 function pillClass(active: boolean) {
@@ -34,7 +50,7 @@ function pillClass(active: boolean) {
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: { class?: string; week?: string }
+  searchParams: { class?: string; week?: string; view?: string }
 }) {
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
@@ -43,7 +59,7 @@ export default async function AgendaPage({
   if (classes.length === 0) {
     return (
       <>
-        <PageHeader title="Schedule of the Year" icon={<CalendarDays className="h-5 w-5" aria-hidden />} />
+        <PageHeader title={agendaTitle(user.role)} icon={<CalendarDays className="h-5 w-5" aria-hidden />} />
         <EmptyState title="No classes yet" hint="Ask the Sunday School admin to add you to a class." />
       </>
     )
@@ -53,16 +69,33 @@ export default async function AgendaPage({
   const cls = await requireClassAccess(user, classId, 'class.read')
   const canWrite = can(user, TEACHING_WRITE, { classId: cls.id, classStage: cls.stage })
 
+  const mode = searchParams.view === 'archive' ? 'archive' : 'edit'
+  // The class this one follows, if an admin linked it. Two reads because the
+  // column is a bare id with no relation — it came across from the Firebase
+  // import that way and nothing has ever needed to join on it.
+  const linkRow = await prisma.schoolClass.findUnique({
+    where: { id: classId },
+    select: { curriculumLinkedToId: true },
+  })
+  const curriculumSource = linkRow?.curriculumLinkedToId
+    ? await prisma.schoolClass.findUnique({
+        where: { id: linkRow.curriculumLinkedToId },
+        select: { id: true, name: true },
+      })
+    : null
   const today = todayInNewYork()
   const thisMonday = mondayOf(today)
   const week = normaliseWeekStart(searchParams.week) ?? thisMonday
 
   const [view, servants, archive, csv] = await Promise.all([
     loadAgendaWeek(cls.id, week),
-    classServants(cls.id),
+    agendaServantOptions(cls.id),
     listAgendaWeeks(cls.id),
     canWrite ? agendaCsvForClass(cls.id) : Promise.resolve(''),
   ])
+
+  // Generated, not queried — an empty year in the importer's own shape.
+  const blankCsv = canWrite ? toCsv(agendaBlankTemplateRows(today)) : ''
 
   const href = (w: string) => `/portal/agenda?class=${encodeURIComponent(cls.id)}&week=${w}`
   const shareTargets = classes
@@ -72,7 +105,7 @@ export default async function AgendaPage({
   return (
     <>
       <PageHeader
-        title="Schedule of the Year"
+        title={agendaTitle(user.role)}
         icon={<CalendarDays className="h-5 w-5" aria-hidden />}
         subtitle={`${cls.name} · ${view.label}`}
         actions={
@@ -82,11 +115,37 @@ export default async function AgendaPage({
         }
       />
 
+      {/* The prototype's three-mode strip (Edit List / Weekly Assignment View /
+          Lesson Archive). The port split the modes across pages with nothing
+          linking them, so a servant on one had no idea the others existed.
+          Every tab carries class and week, so none of them is a dead link. */}
+      <Tabs>
+        <TabLink href={`/portal/agenda?class=${encodeURIComponent(cls.id)}&week=${week}`} active={mode === 'edit'}>
+          This week
+        </TabLink>
+        <TabLink href={`/portal/agenda/week?class=${encodeURIComponent(cls.id)}&week=${week}`} active={false}>
+          Weekly assignments
+        </TabLink>
+        <TabLink href={`/portal/agenda?class=${encodeURIComponent(cls.id)}&week=${week}&view=archive`} active={mode === 'archive'}>
+          Archive
+        </TabLink>
+      </Tabs>
+
       <AgendaNav
         classId={cls.id}
         week={week}
         classes={classes.map((c) => ({ id: c.id, name: c.name }))}
       />
+
+      {curriculumSource && (
+        <CurriculumLink
+          classId={cls.id}
+          weekStart={view.weekStart}
+          weekLabel={view.label}
+          source={curriculumSource}
+          canWrite={canWrite}
+        />
+      )}
 
       <nav aria-label="Week" className="mb-5 flex flex-wrap items-center gap-2 print:hidden">
         <Link href={href(addDays(week, -7))} className={pillClass(false)}>
@@ -101,6 +160,9 @@ export default async function AgendaPage({
         <span className="ml-1 text-[12px] text-parch-500">{weekDistanceLabel(week, today)}</span>
       </nav>
 
+      {mode === 'archive' ? (
+        <ArchiveMonths archive={archive} currentWeek={view.weekStart} href={href} today={today} />
+      ) : (
       <div className="grid gap-5 lg:grid-cols-5">
         <div className="lg:col-span-3">
           {canWrite ? (
@@ -109,7 +171,8 @@ export default async function AgendaPage({
               className={cls.name}
               weekStart={view.weekStart}
               weekLabel={view.label}
-              servants={servants}
+              servants={servants.onClass}
+              otherServants={servants.others}
               initial={{
                 slideLink: view.slideLink ?? '',
                 notes: view.notes ?? '',
@@ -131,12 +194,31 @@ export default async function AgendaPage({
 
         <div className="space-y-4 lg:col-span-2">
           {canWrite && (
-            <AgendaTools classId={cls.id} className={cls.name} weekStart={view.weekStart} csv={csv} shareTargets={shareTargets} />
+            <AgendaTools classId={cls.id} className={cls.name} weekStart={view.weekStart} csv={csv} blankCsv={blankCsv} shareTargets={shareTargets} />
           )}
 
-          <ArchiveMonths archive={archive} currentWeek={view.weekStart} href={href} />
+          {/* F0221 / F0490 / F0585 / F0586 — the old app's bulk "Clear Selected
+              Weeks", as a folded panel rather than a tick box on every tile: the
+              tiles are links, and this deletes lesson planning. */}
+          {canWrite && (
+            <ClearWeeksPanel
+              classId={cls.id}
+              className={cls.name}
+              weeks={archive
+                .filter((w) => w.filledCount > 0 || w.hasSlides)
+                .map((w) => ({
+                  weekStart: w.weekStart,
+                  label: w.label,
+                  filledCount: w.filledCount,
+                  hasSlides: w.hasSlides,
+                }))}
+            />
+          )}
+
+          <ArchiveMonths archive={archive} currentWeek={view.weekStart} href={href} today={today} />
         </div>
       </div>
+      )}
     </>
   )
 }
@@ -150,23 +232,43 @@ function ArchiveMonths({
   archive,
   currentWeek,
   href,
+  today,
 }: {
   archive: Awaited<ReturnType<typeof listAgendaWeeks>>
   currentWeek: string
   href: (w: string) => string
+  today: string
 }) {
-  if (archive.length === 0) {
-    return (
-      <Card title="Archive" icon={<CalendarDays className="h-4 w-4" aria-hidden />}>
-        <p className="text-[12.5px] text-parch-500">No weeks saved yet. Fill one in and it will appear here.</p>
-      </Card>
-    )
-  }
+  // F0218 — the accordion listed only weeks that had been **saved**, so a
+  // future week was reachable by URL and by the date picker but appeared
+  // nowhere in the year overview: a servant planning ahead could not see what
+  // was left to fill. The school year is laid out in full and the saved weeks
+  // joined onto it, exactly as the prototype's overview did. Weeks saved
+  // outside this school year are kept too, rather than vanishing from their
+  // own archive.
+  const saved = new Map(archive.map((w) => [w.weekStart, w]))
+  const yearWeeks = schoolYearWeeks(today)
+  const blank = (weekStart: string, ordinal: string | null): (typeof archive)[number] => ({
+    weekStart,
+    label: weekLabel(weekStart),
+    ordinal,
+    filledCount: 0,
+    leadServantName: null,
+    backupServantName: null,
+    hasSlides: false,
+    slideLink: null,
+    topics: [],
+    searchText: '',
+  })
+  const all = [
+    ...yearWeeks.map((w) => saved.get(w.key) ?? blank(w.key, w.label)),
+    ...archive.filter((w) => !yearWeeks.some((y) => y.key === w.weekStart)),
+  ].sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
 
-  // Group by calendar month, newest month first (the list already arrives desc).
+  // Group by calendar month, newest month first.
   const months: Array<{ key: string; label: string; weeks: typeof archive }> = []
   const byKey = new Map<string, (typeof months)[number]>()
-  for (const w of archive) {
+  for (const w of all) {
     const key = w.weekStart.slice(0, 7)
     let group = byKey.get(key)
     if (!group) {
@@ -182,11 +284,44 @@ function ArchiveMonths({
     group.weeks.push(w)
   }
 
-  const currentMonth = currentWeek.slice(0, 7)
-
   return (
     <div className="space-y-2.5">
-      <SectionTitle hint={`${archive.length} weeks`}>Archive</SectionTitle>
+      <SectionTitle hint={`${archive.length} of ${all.length} weeks filled`}>Archive</SectionTitle>
+
+      {/* F0591 — the prototype searched the saved topics, which is how a
+          servant looks for a week: "when did we do St. Moses?". */}
+      <ArchiveSearch
+        rows={archive.map((w) => ({
+          weekStart: w.weekStart,
+          label: w.label,
+          ordinal: w.ordinal,
+          searchText: w.searchText,
+          filledCount: w.filledCount,
+          href: href(w.weekStart),
+          slideLink: w.slideLink,
+          topics: w.topics,
+        }))}
+      >
+        <ArchiveAccordion archive={all} currentWeek={currentWeek} href={href} months={months} />
+      </ArchiveSearch>
+    </div>
+  )
+}
+
+function ArchiveAccordion({
+  archive,
+  currentWeek,
+  href,
+  months,
+}: {
+  archive: Awaited<ReturnType<typeof listAgendaWeeks>>
+  currentWeek: string
+  href: (w: string) => string
+  months: Array<{ key: string; label: string; weeks: Awaited<ReturnType<typeof listAgendaWeeks>> }>
+}) {
+  const currentMonth = currentWeek.slice(0, 7)
+  return (
+    <div className="space-y-2.5">
 
       {months.map((g) => {
         const filledCount = g.weeks.filter((w) => w.filledCount > 0 || w.hasSlides).length
@@ -227,7 +362,7 @@ function ArchiveMonths({
                     <li key={w.weekStart}>
                       <Link
                         href={href(w.weekStart)}
-                        title={`${w.label} · ${w.filledCount}/10 filled${w.leadServantName ? ` · Lead ${w.leadServantName}` : ''}`}
+                        title={`${w.ordinal ? `${w.ordinal} — ` : ''}${w.label} · ${w.filledCount}/10 filled${w.leadServantName ? ` · Lead ${w.leadServantName}` : ''}`}
                         className={cn(
                           'flex min-h-[64px] flex-col items-center justify-center rounded-[10px] border-[1.5px] px-1.5 py-2.5 text-center transition-colors',
                           filled

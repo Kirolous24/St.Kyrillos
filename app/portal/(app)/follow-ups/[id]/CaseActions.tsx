@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { PhoneCall, CircleCheck, RotateCcw } from 'lucide-react'
 import { logContact, resolveCase, reopenCase } from '@/lib/portal/actions/followups'
+import { RESOLVE_REASONS, type ResolveReasonKey } from '@/lib/portal/followups'
 import { Card, Callout, Field, inputClass, selectClass, textareaClass, buttonClass } from '@/components/portal/ui'
 
 export function CaseActions({ caseId, status }: { caseId: string; status: 'OPEN' | 'DONE' }) {
@@ -14,7 +15,10 @@ export function CaseActions({ caseId, status }: { caseId: string; status: 'OPEN'
   const [result, setResult] = useState<'reached' | 'no_answer' | 'left_message' | 'will_come' | 'other'>('reached')
   const [note, setNote] = useState('')
   const [next, setNext] = useState('')
-  const [reason, setReason] = useState<'attending_again' | 'moved' | 'sick' | 'family' | 'lost_interest' | 'other'>('attending_again')
+  // F0110 — "Attending again" was pre-selected, so the happiest possible
+  // outcome was one click away from being recorded for a child nobody had
+  // spoken to. Closing a case is a statement about a family; it starts blank.
+  const [reason, setReason] = useState<ResolveReasonKey | ''>('')
   const [resolveNote, setResolveNote] = useState('')
 
   if (status === 'DONE') {
@@ -92,6 +96,10 @@ export function CaseActions({ caseId, status }: { caseId: string; status: 'OPEN'
           onSubmit={(e) => {
             e.preventDefault()
             setError('')
+            if (!reason) return setError('Choose a reason for closing this case.')
+            if (reason === 'other' && !resolveNote.trim()) {
+              return setError('Say what happened when the reason is "Other".')
+            }
             startTransition(async () => {
               const r = await resolveCase({ caseId, reason, note: resolveNote })
               if (!r.ok) return setError(r.error)
@@ -100,19 +108,19 @@ export function CaseActions({ caseId, status }: { caseId: string; status: 'OPEN'
           }}
         >
           <Field label="Reason" htmlFor="resolve-reason">
-            <select id="resolve-reason" value={reason} onChange={(e) => setReason(e.target.value as typeof reason)} className={selectClass}>
-              <option value="attending_again">Attending again</option>
-              <option value="moved">Moved away</option>
-              <option value="sick">Sick</option>
-              <option value="family">Family reasons</option>
-              <option value="lost_interest">Lost interest</option>
-              <option value="other">Other</option>
+            <select id="resolve-reason" value={reason} onChange={(e) => setReason(e.target.value as typeof reason)} className={selectClass} required>
+              <option value="">Choose a reason…</option>
+              {RESOLVE_REASONS.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
             </select>
           </Field>
           <Field label="Note" htmlFor="resolve-note">
             <input id="resolve-note" value={resolveNote} onChange={(e) => setResolveNote(e.target.value)} className={inputClass} maxLength={1000} />
           </Field>
-          <button type="submit" disabled={pending} className={buttonClass('secondary')}>
+          <button type="submit" disabled={pending || !reason} className={buttonClass('secondary')}>
             Mark resolved
           </button>
         </form>

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { CountUp } from './CountUp'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { initials } from '@/lib/portal/format'
@@ -174,6 +175,33 @@ export function IconTile({
 }
 
 /** The stat card (.stat): gold left edge, icon tile, big number. */
+/**
+ * F0086 — whether a stat tile's value is a number worth counting up to, and how
+ * to print it at each step. Returns null for anything that is not.
+ *
+ * Kept narrow on purpose. A tile can hold "—", "82%", "8 of 10", a name or an
+ * element, and counting up to any of those is either meaningless or wrong: the
+ * OG animated integers and percentages and nothing else.
+ *
+ * Returns plain data — a number and a suffix string — not a formatter. A function
+ * cannot be passed to a client component, and doing so threw
+ * "Functions cannot be passed directly to Client Components" on every page that
+ * has a stat tile, which is all of them.
+ */
+function countableValue(value: React.ReactNode): { to: number; suffix: string } | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && Number.isInteger(value) && Math.abs(value) > 1
+      ? { to: value, suffix: '' }
+      : null
+  }
+  if (typeof value !== 'string') return null
+  const m = /^(-?\d[\d,]*)(%?)$/.exec(value.trim())
+  if (!m) return null
+  const to = Number(m[1]!.replace(/,/g, ''))
+  if (!Number.isFinite(to) || Math.abs(to) <= 1) return null
+  return { to, suffix: m[2] ?? '' }
+}
+
 export function StatCard({
   label,
   value,
@@ -197,9 +225,24 @@ export function StatCard({
     bad: '#DC2626',
   }[tone ?? 'default']
   const tile = accent ?? toneColor
+  // F0095 — the left edge was gold on every tile, so a red "12 open cases" and
+  // a green attendance rate read as the same kind of number down a row of five.
+  // The prototype had four semantic edges (.stat.bl/.gr/.gd/.nv). It follows the
+  // accent the call site already passes and falls back to gold when nothing
+  // semantic was said, so a tile with no tone and no accent looks as it did.
+  const edge = accent ?? (tone && tone !== 'default' ? toneColor : '#C89B3C')
+  const countable = countableValue(value)
 
   return (
-    <div className="portal-hover-lift flex items-center gap-4 rounded-[16px] border border-parch-200 border-l-4 border-l-brand-gold bg-parch-50 p-5 shadow-panel transition-[transform,box-shadow,border-color] duration-250 hover:-translate-y-[3px] hover:border-[#DCD4C4] hover:shadow-[0_10px_28px_-8px_rgba(20,20,15,.18)]">
+    // `data-stat` is a test hook. The label renders uppercase via CSS and the
+    // word "Attendance" also appears on class cards and buttons, so a text
+    // search cannot tell a stat tile from the rest of the page — a check that
+    // read the page text would pass with the tile missing.
+    <div
+      data-stat={label}
+      style={{ borderLeftColor: edge }}
+      className="portal-hover-lift flex items-center gap-4 rounded-[16px] border border-parch-200 border-l-4 bg-parch-50 p-5 shadow-panel transition-[transform,box-shadow,border-color] duration-250 hover:-translate-y-[3px] hover:border-[#DCD4C4] hover:shadow-[0_10px_28px_-8px_rgba(20,20,15,.18)]"
+    >
       {icon && <IconTile accent={tile}>{icon}</IconTile>}
       <div className="min-w-0 flex-1">
         <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">{label}</span>
@@ -207,7 +250,9 @@ export function StatCard({
           className="mb-0.5 block text-[30px] font-bold leading-none tracking-[-0.5px] tabular-nums"
           style={{ color: toneColor }}
         >
-          {value}
+          {/* F0086 — counts up on screen, prints and server-renders as the final
+              number, and does neither for a reader who asked for less motion. */}
+          {countable ? <CountUp value={countable.to} suffix={countable.suffix} /> : value}
         </span>
         {hint && <span className="block text-[12px] text-parch-500">{hint}</span>}
       </div>
@@ -250,6 +295,8 @@ export function ClassCard({
   name,
   accent,
   icon,
+  photo,
+  note,
   rows,
   actions,
 }: {
@@ -257,15 +304,46 @@ export function ClassCard({
   name: string
   accent: string
   icon: React.ReactNode
+  /**
+   * F0153 — the class's own photo, when it has one. Without this the upload
+   * control on the class page stored an image that was never drawn anywhere,
+   * which is worse than not offering the control at all. The coloured tile stays
+   * as the fallback, so a class with no photo looks exactly as it did.
+   */
+  photo?: string | null
+  /**
+   * F0535 / F0538 — the class's own notes line, under its name.
+   *
+   * The prototype showed a caption such as "Ages 9 to 11" beneath each class.
+   * An admin can already write exactly that in the class's Description, and it
+   * was visible only on the admin screen — so the church had the information
+   * and the servants opening these cards never saw it. A caption under a class
+   * name does not justify a new column on live classes; it justifies showing
+   * the one that already holds it.
+   */
+  note?: string | null
   rows: { key: string; value: React.ReactNode }[]
   actions?: React.ReactNode
 }) {
   const head = (
     <div className="flex items-center gap-3 px-4 pb-3 pt-4">
-      <IconTile accent={accent} size="sm" solid>
-        {icon}
-      </IconTile>
-      <p className="truncate font-serif text-[14px] font-bold text-parch-900">{name}</p>
+      {photo ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={photo}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-[10px] border border-parch-200 object-cover"
+          style={{ borderLeftWidth: 3, borderLeftColor: accent }}
+        />
+      ) : (
+        <IconTile accent={accent} size="sm" solid>
+          {icon}
+        </IconTile>
+      )}
+      <div className="min-w-0">
+        <p className="truncate font-serif text-[14px] font-bold text-parch-900">{name}</p>
+        {note && <p className="truncate text-[11.5px] text-parch-500">{note}</p>}
+      </div>
     </div>
   )
   return (
@@ -381,6 +459,45 @@ export function ProgressBar({ value, tone = 'brand', label }: { value: number; t
   )
 }
 
+/**
+ * A short confirmation that something was saved, shown where the control that
+ * saved it was (F0506, and the pattern F0505 introduced on the feed composer).
+ *
+ * Deliberately NOT a floating toast. Three reasons, all learned here:
+ *   - `position: fixed` inside page content is trapped by `.portal-enter`'s
+ *     transform, so a real toast layer has to `createPortal` into the body;
+ *   - a notice that fades on a timer has told nobody anything if they looked
+ *     away, and these are confirmations a servant may need to act on;
+ *   - it survives the `router.refresh()` that follows a write, because it is
+ *     client state next to the button rather than a transient overlay.
+ *
+ * `role="status"` so a screen reader announces it without stealing focus.
+ */
+export function InlineNotice({
+  children,
+  tone = 'good',
+  className,
+}: {
+  children: React.ReactNode
+  tone?: 'good' | 'bad'
+  className?: string
+}) {
+  return (
+    <p
+      role={tone === 'bad' ? 'alert' : 'status'}
+      className={cn(
+        'rounded-[10px] border px-3 py-1.5 text-[12px] font-bold',
+        tone === 'good'
+          ? 'border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]'
+          : 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]',
+        className,
+      )}
+    >
+      {children}
+    </p>
+  )
+}
+
 /* ── Controls ─────────────────────────────────────────────────────────────── */
 
 export function LinkButton({
@@ -389,15 +506,18 @@ export function LinkButton({
   variant = 'primary',
   size = 'md',
   className,
+  title,
 }: {
   href: string
   children: React.ReactNode
   variant?: 'primary' | 'secondary' | 'gold' | 'ghost' | 'danger'
   size?: 'sm' | 'md'
   className?: string
+  /** Supplementary only — every caller also says the same thing in visible text. */
+  title?: string
 }) {
   return (
-    <Link href={href} className={cn(buttonClass(variant, size), className)}>
+    <Link href={href} title={title} className={cn(buttonClass(variant, size), className)}>
       {children}
     </Link>
   )
@@ -465,10 +585,12 @@ export function TableWrap({ children, className }: { children: React.ReactNode; 
   )
 }
 
-export function Th({ children, className, align = 'left' }: { children?: React.ReactNode; className?: string; align?: 'left' | 'right' | 'center' }) {
+export function Th({ children, className, align = 'left', colSpan, rowSpan }: { children?: React.ReactNode; className?: string; align?: 'left' | 'right' | 'center'; colSpan?: number; rowSpan?: number }) {
   return (
     <th
-      scope="col"
+      scope={colSpan && colSpan > 1 ? 'colgroup' : 'col'}
+      colSpan={colSpan}
+      rowSpan={rowSpan}
       className={cn(
         'border-b border-parch-200 px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500',
         align === 'right' && 'text-right',

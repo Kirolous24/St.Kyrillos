@@ -130,6 +130,41 @@ export async function createActivity(raw: z.infer<typeof ActivitySchema>): Promi
   })
 }
 
+const UpdateActivitySchema = z.object({
+  activityId: z.string().min(1),
+  label: z.string().trim().min(1).max(60),
+  points: z.number().int().min(-100).max(100),
+  icon: z.string().trim().max(8).optional(),
+})
+
+/**
+ * Rename an activity or change what it is worth.
+ *
+ * The port could create and delete activities but never edit one, so fixing a
+ * typo or adjusting a value meant deleting and recreating — which orphans the
+ * label already written onto every past point entry. The stable `key` is left
+ * alone deliberately: it is what past entries were recorded against.
+ */
+export async function updateActivity(raw: z.infer<typeof UpdateActivitySchema>): Promise<ActionResult> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = UpdateActivitySchema.parse(raw)
+    const act = await prisma.pointActivity.findUnique({
+      where: { id: input.activityId },
+      select: { id: true, classId: true, label: true },
+    })
+    if (!act || !act.classId) throw new PortalError('Activity not found.')
+    const cls = await assertClassAction(user, act.classId, 'points.write')
+    await prisma.pointActivity.update({
+      where: { id: act.id },
+      data: { label: input.label, points: input.points, icon: input.icon || null },
+    })
+    await audit(user, 'activity.update', 'class', cls.id, `${cls.name}: activity "${act.label}" → "${input.label}" (${input.points})`)
+    revalidatePath(`/portal/classes/${cls.id}/points`)
+    return undefined
+  })
+}
+
 export async function removeActivity(activityId: string): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requirePortalUser()

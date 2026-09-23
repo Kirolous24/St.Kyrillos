@@ -11,6 +11,14 @@ import {
   monthRange,
   monthLabel,
   sundaysInMonth,
+  weekdaysInMonth,
+  dominantWeekday,
+  headlineSession,
+  sessionTrend,
+  headlineRows,
+  buildMultiSessionMatrix,
+  weeksOverlappingMonth,
+  sessionAbbr,
   shiftMonth,
   buildMonthMatrix,
   classSummary,
@@ -154,10 +162,13 @@ describe('bands', () => {
     expect(attendanceBand(null)).toBeNull()
   })
 
-  it('uses the §5 quiz bands', () => {
+  // F0035 — "good" is the pass mark, so the report card and the child's quiz
+  // card cannot disagree about the same score.
+  it('uses the §5 quiz bands, floored at the pass mark', () => {
     expect(quizBand(90)).toBe('excellent')
-    expect(quizBand(60)).toBe('good')
-    expect(quizBand(59)).toBe('low')
+    expect(quizBand(70)).toBe('good')
+    expect(quizBand(69)).toBe('low')
+    expect(quizBand(65)).toBe('low')
     expect(quizBand(null)).toBeNull()
   })
 
@@ -188,6 +199,22 @@ describe('month helpers', () => {
   it('lists the Sundays for a blank form', () => {
     expect(sundaysInMonth('2026-09')).toEqual(SUN)
   })
+
+  // The blank paper form printed Sunday dates whatever session you picked, so a
+  // Wednesday Bible-study roll came back with every mark under the wrong day.
+  it('walks any weekday, not just Sunday', () => {
+    expect(weekdaysInMonth('2026-09', 3)).toEqual(['2026-09-02', '2026-09-09', '2026-09-16', '2026-09-23', '2026-09-30'])
+    expect(weekdaysInMonth('2026-09', 0)).toEqual(sundaysInMonth('2026-09'))
+    expect(weekdaysInMonth('2026-02', 6)).toEqual(['2026-02-07', '2026-02-14', '2026-02-21', '2026-02-28'])
+  })
+
+  it('learns the session weekday from the dates a class already recorded', () => {
+    // Three Wednesdays and one stray Sunday makes it a Wednesday session.
+    expect(dominantWeekday(['2026-09-02', '2026-09-09', '2026-09-16', '2026-09-06'])).toBe(3)
+    // No history at all keeps the old Sunday behaviour.
+    expect(dominantWeekday([])).toBe(0)
+    expect(dominantWeekday(['2026-09-06', '2026-09-13'])).toBe(0)
+  })
 })
 
 describe('buildMonthMatrix', () => {
@@ -208,7 +235,23 @@ describe('buildMonthMatrix', () => {
     )
     expect(matrix.dates).toEqual([SUN[0], SUN[1]])
     expect(matrix.rows[0]!.marks).toEqual(['PRESENT', 'EXCUSED'])
-    expect(matrix.rows[1]!.marks).toEqual(['ABSENT', null])
+    // F0204 — Sara has no row of her own for the second Sunday, but a column
+    // only exists because somebody in the class was marked that day, so she was
+    // absent rather than "not marked". This used to print an empty box while
+    // the absence count beside it already said 2, and on a QR Sunday — where a
+    // row is written only for the children who scanned — that was every child
+    // who did not scan, which reads as a servant who never took the register.
+    expect(matrix.rows[1]!.marks).toEqual(['ABSENT', 'ABSENT'])
+    // The grid and the number beside it now say the same thing.
+    expect(matrix.rows[1]!.absent).toBe(2)
+  })
+
+  it('leaves a cell blank only when the class met on no such day', () => {
+    // One Sunday recorded, so the matrix has one column: nothing can be
+    // inferred about a day the class never met, and nothing is.
+    const matrix = buildMonthMatrix(students, [{ studentId: 'a', date: SUN[0]!, status: 'PRESENT' }], '2026-09')
+    expect(matrix.dates).toEqual([SUN[0]])
+    expect(matrix.rows[1]!.marks).toEqual(['ABSENT'])
   })
 
   it('scores a student over the dates the class met, excused dropping out', () => {
@@ -223,7 +266,7 @@ describe('buildMonthMatrix', () => {
     )
     const [mina, sara] = matrix.rows
     expect(mina!.rate).toBe(100) // 1 present of 1 counted (the excused day drops out)
-    expect(sara!.rate).toBe(0) // absent, then not marked at all
+    expect(sara!.rate).toBe(0) // absent on both Sundays the class met
     expect(sara!.absent).toBe(2)
   })
 
@@ -398,5 +441,204 @@ describe('countAttendanceCells', () => {
     ])
     expect(countAttendanceCells(marks, { studentIds: ['a'] })).toEqual({ present: 0, excused: 1 })
     expect(countAttendanceCells(marks, { occasions: ['liturgy@2026-09-21'] })).toEqual({ present: 0, excused: 0 })
+  })
+})
+
+// The prototype's attendance report was one month grid carrying all six weekly
+// sessions (OG renderAttendanceMonthTable). The port showed one session at a
+// time, so a month meant running and printing the report six times.
+describe('buildMultiSessionMatrix', () => {
+  const SESSIONS = [
+    { key: 'bible', label: 'Bible Study' },
+    { key: 'sunday', label: 'Sunday School' },
+    { key: 'hymns', label: 'Hymns' },
+  ]
+  const students = [
+    { id: 'a', name: 'Mina' },
+    { id: 'b', name: 'Mariam' },
+  ]
+
+  it('walks every Monday-to-Sunday week that overlaps the month', () => {
+    // September 2026 starts on a Tuesday, so the first week begins in August.
+    expect(weeksOverlappingMonth('2026-09')).toEqual([
+      '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28',
+    ])
+  })
+
+  it('makes a column per week per session the class actually held', () => {
+    const m = buildMultiSessionMatrix(
+      students,
+      [
+        { studentId: 'a', date: '2026-09-06', sessionKey: 'sunday', status: 'PRESENT' },
+        { studentId: 'a', date: '2026-09-02', sessionKey: 'bible', status: 'PRESENT' },
+        { studentId: 'a', date: '2026-09-13', sessionKey: 'sunday', status: 'ABSENT' },
+      ],
+      SESSIONS,
+      '2026-09',
+    )
+    // Week of Aug 31 held bible + sunday; week of Sep 7 held sunday only.
+    expect(m.columns.map((c) => `${c.week}:${c.abbr}`)).toEqual([
+      '2026-08-31:BS', '2026-08-31:SS', '2026-09-07:SS',
+    ])
+    expect(m.weeks.map((w) => w.span)).toEqual([2, 1])
+  })
+
+  it('keeps sessions in the order they were given, not the order recorded', () => {
+    const m = buildMultiSessionMatrix(
+      students,
+      [
+        { studentId: 'a', date: '2026-09-06', sessionKey: 'hymns', status: 'PRESENT' },
+        { studentId: 'a', date: '2026-09-02', sessionKey: 'bible', status: 'PRESENT' },
+      ],
+      SESSIONS,
+      '2026-09',
+    )
+    expect(m.columns.map((c) => c.sessionKey)).toEqual(['bible', 'hymns'])
+  })
+
+  it('leaves an excused cell out of that student\'s denominator', () => {
+    const m = buildMultiSessionMatrix(
+      students,
+      [
+        { studentId: 'a', date: '2026-09-06', sessionKey: 'sunday', status: 'PRESENT' },
+        { studentId: 'b', date: '2026-09-06', sessionKey: 'sunday', status: 'EXCUSED' },
+        { studentId: 'a', date: '2026-09-02', sessionKey: 'bible', status: 'PRESENT' },
+        { studentId: 'b', date: '2026-09-02', sessionKey: 'bible', status: 'ABSENT' },
+      ],
+      SESSIONS,
+      '2026-09',
+    )
+    const mina = m.rows.find((r) => r.studentId === 'a')!
+    const mariam = m.rows.find((r) => r.studentId === 'b')!
+    expect(mina.rate).toBe(100)
+    // One of Mariam's two columns was excused, so she is scored 0 of 1.
+    expect(mariam.held).toBe(1)
+    expect(mariam.rate).toBe(0)
+  })
+
+  it('counts a student with no row at all as absent, like the rest of the module', () => {
+    const m = buildMultiSessionMatrix(
+      students,
+      [{ studentId: 'a', date: '2026-09-06', sessionKey: 'sunday', status: 'PRESENT' }],
+      SESSIONS,
+      '2026-09',
+    )
+    const mariam = m.rows.find((r) => r.studentId === 'b')!
+    expect(mariam.marks).toEqual([null])
+    expect(mariam.rate).toBe(0)
+  })
+
+  it('takes the best of two rows for the same session in one week', () => {
+    const m = buildMultiSessionMatrix(
+      students,
+      [
+        { studentId: 'a', date: '2026-09-02', sessionKey: 'bible', status: 'ABSENT' },
+        { studentId: 'a', date: '2026-09-04', sessionKey: 'bible', status: 'PRESENT' },
+      ],
+      SESSIONS,
+      '2026-09',
+    )
+    expect(m.columns).toHaveLength(1)
+    expect(m.rows.find((r) => r.studentId === 'a')!.marks).toEqual(['PRESENT'])
+  })
+
+  it('forces the full session set for a blank form', () => {
+    const m = buildMultiSessionMatrix(students, [], SESSIONS, '2026-09', {
+      sessionKeys: ['bible', 'sunday'],
+    })
+    expect(m.weeks).toHaveLength(5)
+    expect(m.columns).toHaveLength(10)
+    expect(m.rows[0]!.marks.every((v) => v === null)).toBe(true)
+  })
+
+  it('abbreviates the six the prototype knew, and initials anything new', () => {
+    expect(sessionAbbr('sunday', 'Sunday School')).toBe('SS')
+    expect(sessionAbbr('liturgy', 'Liturgy')).toBe('SL')
+    expect(sessionAbbr('youth-night', 'Youth Night Meeting')).toBe('YNM')
+  })
+})
+
+// Every stat card hardcoded 'sunday', so a class whose register is Bible Study
+// read "No sessions yet" on every card while its attendance sat in the reports.
+describe('headlineSession', () => {
+  it('stays on Sunday School when the class records it', () => {
+    const rows = [{ sessionKey: 'sunday' }, { sessionKey: 'bible' }]
+    expect(headlineSession(rows)).toBe('sunday')
+    expect(headlineRows(rows)).toEqual([{ sessionKey: 'sunday' }])
+  })
+
+  it('falls back to every session when there is no Sunday at all', () => {
+    const rows = [{ sessionKey: 'bible' }, { sessionKey: 'liturgy' }]
+    expect(headlineSession(rows)).toBeNull()
+    expect(headlineRows(rows)).toHaveLength(2)
+  })
+
+  it('has nothing to fall back to when nothing is recorded', () => {
+    expect(headlineSession([])).toBeNull()
+    expect(headlineRows([])).toEqual([])
+  })
+})
+
+// The prototype showed a ring per recent date with a one-tap "who was missing".
+// The port showed one date and nothing around it, so a child sliding away was
+// invisible without opening four separate dates.
+describe('sessionTrend', () => {
+  const roster = [
+    { id: 'a', name: 'Mina' },
+    { id: 'b', name: 'Mariam' },
+    { id: 'c', name: 'Youssef' },
+  ]
+
+  it('names who was not in the room, newest date first', () => {
+    const t = sessionTrend(
+      ['2026-09-06', '2026-09-13'],
+      [
+        { studentId: 'a', date: '2026-09-06', status: 'PRESENT' },
+        { studentId: 'b', date: '2026-09-06', status: 'ABSENT' },
+        { studentId: 'a', date: '2026-09-13', status: 'PRESENT' },
+        { studentId: 'b', date: '2026-09-13', status: 'PRESENT' },
+      ],
+      roster,
+    )
+    expect(t.map((d) => d.date)).toEqual(['2026-09-13', '2026-09-06'])
+    // Youssef has no row at all on either date, so he was not there.
+    expect(t[0]!.missing).toEqual(['Youssef'])
+    expect(t[1]!.missing).toEqual(['Mariam', 'Youssef'])
+  })
+
+  // Different question from the scored rate: "who was not in the room" counts
+  // an excused child as away, while the scored rate drops them entirely.
+  it('counts an excused student as not in the room', () => {
+    const t = sessionTrend(
+      ['2026-09-06'],
+      [
+        { studentId: 'a', date: '2026-09-06', status: 'PRESENT' },
+        { studentId: 'b', date: '2026-09-06', status: 'EXCUSED' },
+        { studentId: 'c', date: '2026-09-06', status: 'ABSENT' },
+      ],
+      roster,
+    )
+    expect(t[0]!.present).toBe(1)
+    expect(t[0]!.excused).toBe(1)
+    expect(t[0]!.absent).toBe(1)
+    expect(t[0]!.missing).toEqual(['Mariam', 'Youssef'])
+    expect(t[0]!.rate).toBe(33)
+  })
+
+  it('takes the best of two rows for one student on one day', () => {
+    const t = sessionTrend(
+      ['2026-09-06'],
+      [
+        { studentId: 'a', date: '2026-09-06', status: 'ABSENT' },
+        { studentId: 'a', date: '2026-09-06', status: 'PRESENT' },
+      ],
+      [{ id: 'a', name: 'Mina' }],
+    )
+    expect(t[0]!.present).toBe(1)
+    expect(t[0]!.missing).toEqual([])
+  })
+
+  it('has no rate for a class with nobody on the roster', () => {
+    expect(sessionTrend(['2026-09-06'], [], [])[0]!.rate).toBeNull()
   })
 })

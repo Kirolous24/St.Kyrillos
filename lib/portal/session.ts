@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { portalSessionExpired } from '@/lib/auth.config'
 import { prisma } from '@/lib/prisma'
 import type { PortalUser } from './permissions'
 
@@ -13,6 +14,9 @@ export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
   const session = await auth()
   const accountId = session?.user?.kind === 'portal' ? session.user.accountId : undefined
   if (!accountId) return null
+  // F0047 — a child's session is capped from sign-in. Checked here as well as
+  // in the middleware because server actions are not routed through it.
+  if (portalSessionExpired(session?.user?.role, session?.user?.signedInAt)) return null
 
   const account = await prisma.account.findUnique({
     where: { id: accountId },
@@ -20,6 +24,7 @@ export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
       id: true,
       role: true,
       displayName: true,
+      photo: true,
       isActive: true,
       student: { select: { id: true, classId: true } },
       servant: {
@@ -43,8 +48,13 @@ export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
     accountId: account.id,
     role: account.role,
     displayName: account.displayName,
+    photo: account.photo,
     servantId: account.servant?.id,
-    studentId: account.student?.id,
+    // F0850 — a servant who grew up here keeps their Student row so their years
+    // as a child stay readable, but they are not a child any more: the
+    // child-only pages (their own badges, their own QR card) key off this, and
+    // a servant holding a student QR could scan themselves points.
+    studentId: account.role === 'STUDENT' ? account.student?.id : undefined,
     classIds,
     coordinatorOf: account.servant
       ? account.servant.classes.filter((c) => c.title === 'COORDINATOR').map((c) => c.classId)

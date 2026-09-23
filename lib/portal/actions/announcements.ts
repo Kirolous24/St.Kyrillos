@@ -6,13 +6,20 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseDateOnly, toUTCDate } from '../dates'
-import { canManageAnnouncement } from '../data/community'
+import { canManageAnnouncement, announceableStage } from '../data/community'
 import { audit } from '../audit'
 import type { PortalUser } from '../permissions'
 
 const AnnouncementSchema = z.object({
   title: z.string().trim().min(1, 'Give the announcement a title.').max(140),
-  body: z.string().trim().min(1, 'Write something to announce.').max(4000),
+  /**
+   * F0655 — optional. The prototype allowed a title-only announcement, and the
+   * most common one in a Sunday School is exactly that: "No class this Sunday"
+   * needs no second sentence. Requiring a body made an admin type the title
+   * twice. Empty string rather than null, so the column stays non-nullable and
+   * no migration is needed; every reader guards against the empty case.
+   */
+  body: z.string().trim().max(4000).default(''),
   emoji: z.string().trim().max(8).optional(),
   date: z.string().trim().optional(),
   sortOrder: z.coerce.number().int().min(-999).max(999).optional(),
@@ -34,15 +41,24 @@ async function resolveTarget(user: PortalUser, input: z.infer<typeof Announcemen
   const classId = input.classId ? input.classId : null
   const stage = input.stage ? input.stage : null
 
-  if (!canManageAnnouncement(user, classId)) {
+  // F0285 — a stage coordinator may address her own stage. Checked before the
+  // class rule, because she has no classes for that rule to let her through.
+  const ownStage = announceableStage(user)
+  const coordinatorPost = !!stage && stage === ownStage
+
+  if (!coordinatorPost && !canManageAnnouncement(user, classId)) {
     throw new PortalError(
       classId
         ? 'You can only post announcements for your own classes.'
         : 'Only admins and pastors can post church-wide announcements.',
     )
   }
-  if (stage && user.role !== 'ADMIN' && user.role !== 'PASTOR') {
-    throw new PortalError('Only admins and pastors can target a whole stage.')
+  if (stage && !coordinatorPost && user.role !== 'ADMIN' && user.role !== 'PASTOR') {
+    throw new PortalError(
+      ownStage
+        ? 'You can only post to your own stage.'
+        : 'Only admins and pastors can target a whole stage.',
+    )
   }
   if (classId) {
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true } })
@@ -97,7 +113,7 @@ export type UpdateAnnouncementInput = z.input<typeof UpdateSchema>
 async function loadAnnouncement(id: string) {
   const row = await prisma.announcement.findUnique({
     where: { id },
-    select: { id: true, title: true, classId: true, isActive: true, class: { select: { name: true } } },
+    select: { id: true, title: true, classId: true, stage: true, isActive: true, class: { select: { name: true } } },
   })
   if (!row) throw new PortalError('That announcement is no longer there.')
   return row
@@ -108,8 +124,11 @@ export async function updateAnnouncement(raw: UpdateAnnouncementInput): Promise<
     const user = await requirePortalUser()
     const input = UpdateSchema.parse(raw)
     const existing = await loadAnnouncement(input.announcementId)
-    // Must be allowed to touch it where it is, and where it is going.
-    if (!canManageAnnouncement(user, existing.classId)) {
+    // Must be allowed to touch it where it is, and where it is going. F0285 — a
+    // stage coordinator's own post has no class, so the stage is what says it is
+    // hers.
+    const ownsByStage = !!existing.stage && existing.stage === announceableStage(user)
+    if (!ownsByStage && !canManageAnnouncement(user, existing.classId)) {
       throw new PortalError('You do not have permission to edit this announcement.')
     }
     const target = await resolveTarget(user, input)

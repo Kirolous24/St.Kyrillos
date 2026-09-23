@@ -3,7 +3,8 @@ import { ClipboardList, Link2, Users } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses, requireClassAccess } from '@/lib/portal/data/classes'
 import { loadAgendaWeek } from '@/lib/portal/data/agenda'
-import { normaliseWeekStart } from '@/lib/portal/agenda'
+import { normaliseWeekStart, schoolYearWeeks } from '@/lib/portal/agenda'
+import { WeekSheetPicker } from './WeekSheetPicker'
 import { mondayOf, todayInNewYork } from '@/lib/portal/dates'
 import { Avatar, PageHeader, Card, EmptyState, Badge, LinkButton } from '@/components/portal/ui'
 import { PrintButton } from '@/components/portal/PrintButton'
@@ -32,7 +33,8 @@ export default async function AgendaWeekPage({
 
   const classId = classes.some((c) => c.id === searchParams.class) ? searchParams.class! : classes[0]!.id
   const cls = await requireClassAccess(user, classId, 'class.read')
-  const week = normaliseWeekStart(searchParams.week) ?? mondayOf(todayInNewYork())
+  const today = todayInNewYork()
+  const week = normaliseWeekStart(searchParams.week) ?? mondayOf(today)
   const view = await loadAgendaWeek(cls.id, week)
 
   const assigned = view.grid.rows.filter((r) => r.servantName)
@@ -58,6 +60,13 @@ export default async function AgendaWeekPage({
             <PrintButton label="Print" />
           </>
         }
+      />
+
+      <WeekSheetPicker
+        classId={cls.id}
+        classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+        week={view.weekStart}
+        weeks={schoolYearWeeks(today)}
       />
 
       <div className="grid gap-4 lg:grid-cols-3">

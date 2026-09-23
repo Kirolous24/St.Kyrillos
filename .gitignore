@@ -42,3 +42,15 @@ _incoming/
 
 # local-only portal test credentials (real PINs — never commit)
 portal-preview-logins.txt
+
+# Verification screenshots from the OG-parity browser suite — 9MB of PNGs that
+# every run regenerates. The written record in .audit/*.md is what is worth
+# keeping; the pictures are not.
+.audit/shots/
+# Raw agent sweep output — 670K of machine-generated JSON that the markdown
+# record above already summarises in readable form.
+.audit/*.json
+
+# Uncompressed leftovers from the "public/ 72MB -> 13MB" pass. The site uses the
+# .jpg; a stray .png twin is the pre-compression original.
+public/images/clergy/*.png
