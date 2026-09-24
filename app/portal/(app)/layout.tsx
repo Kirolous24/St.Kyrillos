@@ -54,14 +54,17 @@ export default async function PortalAppLayout({ children }: { children: React.Re
    */
   /**
    * The one class whose identity crowns a servant's rail — their own, when there
-   * is exactly one answer. A servant on two classes, or a stage coordinator,
-   * keeps the person crest: the prototype assumed one class per servant and this
-   * portal does not, so there is no honest single class to name for them.
+   * is exactly one answer. A servant on two classes keeps the person crest,
+   * because the prototype assumed one class per servant and this portal does
+   * not, so there is no honest single class to name for them.
    *
-   * Mirrors the rule the "Class Profile" nav row already follows.
+   * A stage coordinator who teaches exactly one class does get it. They used to
+   * be excluded, which meant the servants with the most classes in view were
+   * the ones with nothing on the rail telling them which was their own.
+   * Overseeing a stage is a second job, not a different home class.
    */
   const crestClassId =
-    user.role === 'SERVANT' && user.classIds.length === 1 && !user.stageOversight ? user.classIds[0]! : null
+    user.role === 'SERVANT' && user.classIds.length === 1 ? user.classIds[0]! : null
 
   /**
    * Class identities the rail may need: every class for an admin (so opening any
