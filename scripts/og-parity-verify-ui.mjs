@@ -59,6 +59,19 @@ const textOf = async (locator) => (await locator.innerText()).replace(/\s+/g, ' 
  * says "the tile is there" when the tile is gone. Three Wave 21 checks were
  * written that way and would have passed with an empty stat row.
  */
+/**
+ * The labels of the dashboard's TOP stat row only.
+ *
+ * `statLabels` below reads every `data-stat` in `main`, which is right for the
+ * "does this page have a tile called X" checks but wrong for the one that
+ * asserts the row is exactly five: StatCard is used further down the dashboard
+ * too, so adding the Registers panel turned five into six and the failure named
+ * a class rather than the real cause.
+ */
+const statRowLabels = async () =>
+  (await page.locator('main [data-stat-row] [data-stat]').evaluateAll((els) => els.map((e) => e.getAttribute('data-stat'))))
+    .map((l) => (l || '').toLowerCase())
+
 const statLabels = async () =>
   (await page.locator('main [data-stat]').evaluateAll((els) => els.map((e) => e.getAttribute('data-stat'))))
     .map((l) => (l || '').toLowerCase())
@@ -694,6 +707,13 @@ try {
     check('pastor dashboard has an Attendance overview', await page.getByText('Attendance overview').count() > 0)
     const aoRows = page.locator('main ul li', { has: page.locator('[role="progressbar"]') })
     check('the overview lists every class on one bar chart', await aoRows.count() > 0, String(await aoRows.count()))
+    /* F0164 — the pastor reads every class and takes no register, so the
+       Registers panel must inform him and offer him nothing. The pick list
+       that offered him an action he would be refused was the 404 fixed in
+       4113742; this is the same mistake one panel to the left. */
+    check('the pastor sees the Registers panel', await page.getByText('Registers').count() > 0)
+    check('but is never offered a register to take',
+      await page.locator('main [data-register]').getByRole('link', { name: /Take it/ }).count() === 0)
     await shot('20-pastor-dashboard')
 
     // F0759 — the roster is reachable, read-only, and does not link into a 404
@@ -870,6 +890,58 @@ try {
   check('dashboard has the Attendance overview', await page.getByText('Attendance overview').count() > 0)
   check('overview draws a bar per class', await page.locator('main [role="progressbar"]').count() > 0)
   await shot('26-attendance-overview')
+
+  /* ── F0164 — the Registers panel ────────────────────────────────────────
+   *
+   * The dashboard's "the register was not taken" notice was Sunday-only: a
+   * badge until 1pm, a banner after it. A coordinator saw it on the Sunday and
+   * could not find it again on the Wednesday, which is the day there is time to
+   * chase it. This panel judges a fixed date instead, so it persists.
+   *
+   * The suite runs on whatever day it runs, and that is the point: unless today
+   * happens to be a Sunday, the panel being here at all is the fix.
+   */
+  const registerDow = new Date(`${churchToday()}T12:00:00Z`).getUTCDay()
+  const registerDash = (await page.locator('main').innerText()).replace(/\s+/g, ' ')
+  check('the dashboard carries a Registers panel', /Registers/.test(registerDash), registerDash.slice(0, 120))
+  if (registerDow !== 0) {
+    check('…on a day that is not Sunday, which is the whole point',
+      await page.locator('main [data-register]').count() > 0, `day ${registerDow}`)
+  } else {
+    console.log('        (today is Sunday — the persistence check needs another day)')
+  }
+
+  const registerStates = await page
+    .locator('main [data-register]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('data-register')))
+  check('every register row carries a state the UI knows',
+    registerStates.length > 0 &&
+      registerStates.every((r) => ['taken', 'missing', 'other-day', 'no-students', 'servants'].includes(r)),
+    JSON.stringify(registerStates))
+
+  // Missing first: the panel exists to surface what still needs doing, and a
+  // list in class order buries it among the classes already done.
+  const RANK = { missing: 0, 'other-day': 1, taken: 2, 'no-students': 3, servants: 4 }
+  const classStates = registerStates.filter((r) => r !== 'servants')
+  check('classes that never took it are listed first',
+    classStates.every((r, i) => i === 0 || RANK[classStates[i - 1]] <= RANK[r]), JSON.stringify(classStates))
+
+  const missingRow = page.locator('main [data-register="missing"]').first()
+  if (await missingRow.count() === 1) {
+    check('a missing register offers the way to take it',
+      await missingRow.getByRole('link', { name: /Take it/ }).count() === 1)
+  } else {
+    console.log('        SKIP no class is missing its register in this database')
+  }
+  const takenRow = page.locator('main [data-register="taken"]').first()
+  if (await takenRow.count() === 1) {
+    const takenText = (await takenRow.innerText()).replace(/\s+/g, ' ')
+    check('one already taken shows a count and stops prompting',
+      /\d+\/\d+/.test(takenText) && await takenRow.getByRole('link', { name: /Take it/ }).count() === 0, takenText)
+  } else {
+    console.log('        SKIP no class has taken its register in this database')
+  }
+  await shot('28-registers')
 
   // ── Wave 14 ──────────────────────────────────────────────────────────────
   console.log('\nwave 14 — follow-ups, the points ledger, attendance integrity')
@@ -1579,7 +1651,7 @@ try {
     await signInAs(svUser)
     await go('/portal')
     const sv = await textOf(page.locator('main'))
-    const svTiles = await statLabels()
+    const svTiles = await statRowLabels()
     check('servant stat row is the prototype\u2019s five',
       svTiles.length === 5, svTiles.join(' | ') || '(no stat tiles)')
     check('servant dashboard carries the Attendance tile', svTiles.includes('attendance'), svTiles.join(' | '))

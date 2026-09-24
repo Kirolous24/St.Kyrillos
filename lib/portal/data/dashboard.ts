@@ -1,10 +1,10 @@
 import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/prisma'
-import { todayInNewYork, addDays, formatDateOnly, toUTCDate, mondayOf, newYorkDayStart } from '../dates'
+import { todayInNewYork, addDays, formatDateOnly, toUTCDate, mondayOf, newYorkDayStart, sundayOnOrBefore } from '../dates'
 import { upcomingBirthdays, birthdaysInWeek } from '../birthdays'
 import { rankStudents } from '../points-math'
 import { presentStreak } from '../achievements'
-import { attendanceRate, headlineRows, heldOccasions, topQuizPerformers, attendanceDelta } from '../reports'
+import { attendanceRate, headlineRows, heldOccasions, topQuizPerformers, attendanceDelta, registerStatus, type RegisterStatus } from '../reports'
 import type { PortalUser } from '../permissions'
 import { listVisibleClasses } from './classes'
 import { examScopeWhere, studentExams } from './exams'
@@ -59,11 +59,25 @@ export async function staffOverview(user: PortalUser) {
   for (const s of students) studentIdsByClass.set(s.classId!, [...(studentIdsByClass.get(s.classId!) ?? []), s.id])
 
   const rateByClass = new Map<string, number | null>()
+  /**
+   * F0164 — did each class take its register for the most recent Sunday?
+   *
+   * Free: the 28-day window above already holds every row this needs, and the
+   * most recent Sunday is always inside it. The dashboard could only answer
+   * this on a Sunday, which is not the day a coordinator has time to chase it.
+   */
+  const sunday = sundayOnOrBefore(today)
+  const registerByClass = new Map<string, RegisterStatus>()
   for (const id of classIds) {
     const rows = recentSundays
       .filter((r) => r.classId === id)
       .map((r) => ({ studentId: r.studentId, date: formatDateOnly(r.date), sessionKey: r.sessionKey, status: r.status }))
     rateByClass.set(id, attendanceRate(headlineRows(rows), { studentIds: studentIdsByClass.get(id) ?? [] }).rate)
+    registerByClass.set(id, registerStatus({
+      sunday,
+      rosterSize: (studentIdsByClass.get(id) ?? []).length,
+      rows,
+    }))
   }
 
   // A trend line over the four weeks already fetched above — no extra query.
@@ -231,7 +245,10 @@ export async function staffOverview(user: PortalUser) {
       quizAverage: quizAvgByClass.get(c.id) ?? null,
       servantNames: servantNamesByClass.get(c.id) ?? [],
       topStudent: topByClass.get(c.id) ?? null,
+      register: registerByClass.get(c.id) ?? null,
     })),
+    /** The Sunday every class's `register` above is judged on. */
+    registerSunday: sunday,
     totals: {
       students: students.length,
       // Distinct servant accounts, not the sum of class assignments: a servant

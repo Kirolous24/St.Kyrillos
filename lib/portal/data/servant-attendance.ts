@@ -396,3 +396,69 @@ export async function loadMyServantHistory(servantId: string, fromWeek: string) 
 
   return { activities, overall: attendanceRate(cells), byWeek }
 }
+
+/**
+ * The most recent servants' meeting that was actually marked, for the dashboard.
+ *
+ * F0164 — a coordinator asked for the servants' own check-in beside the
+ * classes', so the whole Sunday reads in one place. Deliberately leaner than
+ * `listMeetingHistory`: no attendee names and no scan receipts, because a
+ * dashboard tile shows a count and the page one click away shows the rest.
+ *
+ * Returns null when this account oversees no servants or none has ever been
+ * marked, and the caller shows nothing rather than an empty tile.
+ */
+export interface ServantCheckIn {
+  activityKey: string
+  label: string
+  weekStart: string
+  present: number
+  /** The servants in view, not the rows marked: an unmarked servant is absent. */
+  total: number
+}
+
+export async function latestServantCheckIn(user: PortalUser): Promise<ServantCheckIn | null> {
+  const [activities, scope] = await Promise.all([listServantActivities(), loadServantScope(user)])
+  const ids = scope.servants.map((s) => s.id)
+  if (ids.length === 0) return null
+
+  const label = new Map(activities.map((a) => [a.key, a.label]))
+  const held = await prisma.servantAttendance.groupBy({
+    by: ['activityKey', 'weekStart'],
+    where: { servantId: { in: ids } },
+    orderBy: { weekStart: 'desc' },
+    take: 8,
+  })
+
+  /*
+   * `take` is applied before the retired activities are dropped, so the newest
+   * meeting still on the books may not be in the first row. Sorted the same way
+   * the history page sorts — newest week, then label — so both name the same
+   * meeting rather than disagreeing about which one was last.
+   */
+  const latest = held
+    .filter((h) => label.has(h.activityKey))
+    .map((h) => ({ activityKey: h.activityKey, weekStart: formatDateOnly(h.weekStart) }))
+    .sort((a, b) =>
+      a.weekStart === b.weekStart
+        ? (label.get(a.activityKey) ?? '').localeCompare(label.get(b.activityKey) ?? '')
+        : a.weekStart < b.weekStart
+          ? 1
+          : -1,
+    )[0]
+  if (!latest) return null
+
+  const counts = await prisma.servantAttendance.groupBy({
+    by: ['status'],
+    where: { servantId: { in: ids }, weekStart: toUTCDate(latest.weekStart), activityKey: latest.activityKey },
+    _count: { _all: true },
+  })
+
+  return {
+    activityKey: latest.activityKey,
+    label: label.get(latest.activityKey) ?? latest.activityKey,
+    weekStart: latest.weekStart,
+    present: counts.find((c) => c.status === 'PRESENT')?._count._all ?? 0,
+    total: ids.length,
+  }
+}

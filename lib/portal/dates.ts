@@ -136,6 +136,20 @@ export function daysBetween(a: string, b: string): number {
 export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 
 /**
+ * The most recent Sunday on or before a date — the Sunday a register belongs to.
+ * On a Sunday that is the day itself.
+ *
+ * F0164 — the dashboard's "the register has not been taken" note existed only
+ * *on* Sundays, so a coordinator who saw it on Sunday could not find it again
+ * on the Wednesday, which is when there is actually time to chase it up.
+ * Anchoring the question to this date instead of to "today" is what lets the
+ * answer survive the week.
+ */
+export function sundayOnOrBefore(dateStr: string): string {
+  return addDays(dateStr, -toUTCDate(dateStr).getUTCDay())
+}
+
+/**
  * F0354 — the hour of the day in church time, 0–23.
  *
  * Used to decide when Sunday's "attendance has not been taken" reminder stops

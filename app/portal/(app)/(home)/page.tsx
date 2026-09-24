@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { staffOverview, studentOverview } from '@/lib/portal/data/dashboard'
+import { latestServantCheckIn } from '@/lib/portal/data/servant-attendance'
+import type { RegisterState } from '@/lib/portal/reports'
 import { can } from '@/lib/portal/permissions'
 import {
   HeroBanner, Card, StatCard, ClassCard, ActionCard, Badge, EmptyState, LinkButton, SectionTitle, ProgressBar, IconTile, Avatar,
@@ -28,9 +30,16 @@ export default async function PortalHome() {
   return <StaffHome />
 }
 
+/**
+ * F0164 — what needs doing comes first. The panel exists to surface the class
+ * nobody marked, so a full list sorted by class order would bury it among the
+ * ones already done.
+ */
+const REGISTER_RANK: Record<RegisterState, number> = { missing: 0, 'other-day': 1, taken: 2, 'no-students': 3 }
+
 async function StaffHome() {
   const user = await requirePortalUser()
-  const data = await staffOverview(user)
+  const [data, servantCheckIn] = await Promise.all([staffOverview(user), latestServantCheckIn(user)])
   const isSunday = new Date(`${data.today}T12:00:00Z`).getUTCDay() === 0
   /**
    * F0354 — when the reminder stops being a note and becomes a banner.
@@ -43,6 +52,9 @@ async function StaffHome() {
    */
   const afterClasses = isSunday && hourInNewYork() >= 13
   const unmarkedToday = data.classes.filter((c) => c.sessionsToday.length === 0)
+  const registers = data.classes
+    .flatMap((c) => (c.register ? [{ c, r: c.register }] : []))
+    .sort((a, b) => REGISTER_RANK[a.r.state] - REGISTER_RANK[b.r.state] || a.c.sortOrder - b.c.sortOrder)
   // One instant for every "3h ago" on the page, so the server's render and
   // the browser's hydration cannot disagree about what "now" is.
   const now = new Date()
@@ -115,7 +127,11 @@ async function StaffHome() {
           Classes / Servants / Students — which are not their job. The
           prototype's servant row was about their own teaching: how the class is
           scoring, how many children are new, who needs a check-in. */}
-      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      {/* `data-stat-row` scopes the check that this row is exactly the
+          prototype's five. `data-stat` marks every StatCard anywhere, so a
+          page-wide count of them silently became a count of the Registers
+          panel's tiles too. */}
+      <div data-stat-row className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {churchWide ? (
           <>
             <StatCard label="Classes" value={data.classes.length} icon={<GraduationCap className="h-6 w-6" />} accent="#4F46E5" />
@@ -338,6 +354,78 @@ async function StaffHome() {
               </div>
             )}
           </div>
+
+          {/*
+            F0164 — Registers.
+
+            The two notices above are Sunday-only by design: a badge until 1pm,
+            a banner after it. A coordinator saw "5th & 6th Boys did not take
+            attendance" on the Sunday and could not find it again on the
+            Wednesday, which is the day there is time to chase it. This panel
+            answers the same question for a fixed date — the most recent Sunday
+            — so the answer survives the week, and it says who did come rather
+            than only who did not.
+
+            Scoped by `listVisibleClasses`, so a servant sees their own classes
+            and a coordinator sees their stage. That is what puts every middle
+            school class in front of both coordinators without either of them
+            borrowing the admin login.
+          */}
+          {registers.length > 0 && (
+            <div>
+              <SectionTitle hint={formatShortDate(data.registerSunday)}>Registers</SectionTitle>
+              <Card bodyClassName="space-y-3.5 p-[18px]">
+                {registers.map(({ c, r }) => (
+                  <div key={c.id} data-register={r.state} data-register-class={c.id} className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <StatCard
+                        label={c.name}
+                        accent={accentByOrder(c.sortOrder)}
+                        icon={<ClipboardList className="h-5 w-5" aria-hidden />}
+                        tone={r.state === 'taken' ? 'good' : r.state === 'missing' ? 'warn' : 'default'}
+                        value={r.state === 'missing' ? 'Not taken' : r.state === 'no-students' ? '—' : `${r.present}/${r.total}`}
+                        hint={
+                          r.state === 'taken'
+                            ? 'marked present'
+                            : r.state === 'missing'
+                              ? 'nobody was marked that Sunday'
+                              : r.state === 'other-day'
+                                ? `this class last recorded ${formatShortDate(r.date!)}`
+                                : 'No students yet'
+                        }
+                      />
+                    </div>
+                    {/* Offered only to someone who may actually write it — the
+                        pastor reads every class and takes no register, and the
+                        pick list that offered him one was the 404 fixed in
+                        4113742. */}
+                    {r.state === 'missing' && can(user, 'attendance.write', { classId: c.id, classStage: c.stage }) && (
+                      <LinkButton href={`/portal/classes/${c.id}/attendance`} variant="secondary" size="sm">
+                        Take it
+                      </LinkButton>
+                    )}
+                  </div>
+                ))}
+
+                {servantCheckIn && (
+                  <div data-register="servants">
+                    <StatCard
+                      label={servantCheckIn.label}
+                      icon={<UserCog className="h-5 w-5" aria-hidden />}
+                      tone={servantCheckIn.present > 0 ? 'good' : 'default'}
+                      value={`${servantCheckIn.present}/${servantCheckIn.total}`}
+                      hint={`servants checked in — week of ${formatShortDate(servantCheckIn.weekStart)}`}
+                    />
+                    <div className="mt-2">
+                      <LinkButton href="/portal/servant-attendance" variant="secondary" size="sm">
+                        Servants Attendance
+                      </LinkButton>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
 
           {/* Attendance Overview — the prototype's own section on the pastor and
               admin overview (OG L15394-15409): every class on one bar chart, so

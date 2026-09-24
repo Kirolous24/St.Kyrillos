@@ -9,6 +9,7 @@ import {
   formatDateOnly,
   newYorkDayStart,
   weekdayName,
+  sundayOnOrBefore,
 } from '@/lib/portal/dates'
 
 describe('parseDateOnly', () => {
@@ -124,5 +125,36 @@ describe('weekdayName', () => {
     expect(weekdayName('')).toBeNull()
     expect(weekdayName('not a date')).toBeNull()
     expect(weekdayName('2026-13-45')).toBeNull()
+  })
+})
+
+/**
+ * F0164 — the Sunday a register belongs to.
+ *
+ * The dashboard's "the register was not taken" notice was tied to `isSunday`,
+ * so it existed only on the day itself and a coordinator could not find it
+ * again on the Wednesday. Anchoring on this date is what lets it persist.
+ */
+describe('sundayOnOrBefore', () => {
+  it('returns the day itself on a Sunday', () => {
+    expect(sundayOnOrBefore('2026-09-20')).toBe('2026-09-20')
+  })
+
+  it('walks back to the Sunday just gone on any other day', () => {
+    expect(sundayOnOrBefore('2026-09-21')).toBe('2026-09-20') // Monday
+    expect(sundayOnOrBefore('2026-09-24')).toBe('2026-09-20') // Thursday
+    expect(sundayOnOrBefore('2026-09-26')).toBe('2026-09-20') // Saturday
+  })
+
+  it('crosses a month and a year boundary', () => {
+    expect(sundayOnOrBefore('2026-10-01')).toBe('2026-09-27')
+    expect(sundayOnOrBefore('2027-01-01')).toBe('2026-12-27')
+  })
+
+  it('is not moved by a machine behind UTC', () => {
+    // The same trap weekdayName carries: a naive local parse can roll a date
+    // back a day on a server west of Greenwich and answer the wrong Sunday.
+    expect(sundayOnOrBefore('2026-03-01')).toBe('2026-03-01')
+    expect(sundayOnOrBefore('2026-01-01')).toBe('2025-12-28')
   })
 })

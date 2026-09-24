@@ -559,6 +559,68 @@ export function headlineRows<T extends { sessionKey: string }>(rows: readonly T[
   return key ? rows.filter((r) => r.sessionKey === key) : [...rows]
 }
 
+/**
+ * Whether a class took its register for a given Sunday, and how it went.
+ *
+ * F0164 — a coordinator's question midweek is "which of my classes never took
+ * last Sunday's register", and the dashboard could only answer it *on* the
+ * Sunday. Judging a fixed date rather than "today" is what lets the answer
+ * survive to the Wednesday, when there is time to chase it.
+ *
+ * `other-day` is the state worth being careful about. Not every class's
+ * register is a Sunday one — `headlineSession` above exists precisely because
+ * classes recording only Bible Study read "No sessions yet" on every card they
+ * looked at. Flagging such a class amber every week for missing a Sunday it
+ * never holds is a false alarm, and a panel of false alarms stops being read.
+ */
+export type RegisterState = 'taken' | 'missing' | 'other-day' | 'no-students'
+
+export interface RegisterStatus {
+  state: RegisterState
+  /** The Sunday the class is being judged on. */
+  sunday: string
+  /** The date the counts belong to: the Sunday, or the last day it did record. */
+  date: string | null
+  present: number
+  /** The roster, not the rows: a child with no row at all was still expected. */
+  total: number
+}
+
+export function registerStatus(args: {
+  sunday: string
+  rosterSize: number
+  rows: readonly AttendanceRow[]
+}): RegisterStatus {
+  const { sunday, rosterSize, rows } = args
+
+  /** Distinct children marked present that day, on that day's headline session. */
+  const presentOn = (date: string) =>
+    new Set(
+      headlineRows(rows.filter((r) => r.date === date))
+        .filter((r) => r.status === 'PRESENT')
+        .map((r) => r.studentId),
+    ).size
+
+  if (rosterSize === 0) return { state: 'no-students', sunday, date: null, present: 0, total: 0 }
+
+  if (rows.some((r) => r.date === sunday)) {
+    return { state: 'taken', sunday, date: sunday, present: presentOn(sunday), total: rosterSize }
+  }
+
+  /*
+   * Does this class record on Sundays at all? Asked of the dates it has
+   * actually recorded rather than of its session names — a class can hold
+   * "Sunday School" on a Saturday, and `sessionKey` would say Sunday either
+   * way. A class that never meets on a Sunday must not be nagged about one.
+   */
+  if (rows.length > 0 && !rows.some((r) => toUTCDate(r.date).getUTCDay() === 0)) {
+    const last = rows.reduce((latest, r) => (r.date > latest ? r.date : latest), rows[0]!.date)
+    return { state: 'other-day', sunday, date: last, present: presentOn(last), total: rosterSize }
+  }
+
+  return { state: 'missing', sunday, date: null, present: 0, total: rosterSize }
+}
+
 export interface SessionTrendDay {
   date: string
   present: number

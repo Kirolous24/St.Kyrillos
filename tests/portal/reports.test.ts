@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  registerStatus,
   occasionKey,
   heldOccasions,
   rateFromCounts,
@@ -668,5 +669,103 @@ describe('sessionTrend', () => {
 
   it('has no rate for a class with nobody on the roster', () => {
     expect(sessionTrend(['2026-09-06'], [], [])[0]!.rate).toBeNull()
+  })
+})
+
+/**
+ * F0164 — was last Sunday's register taken?
+ *
+ * A coordinator saw "5th & 6th Boys did not take attendance" on the Sunday and
+ * could not find it again on the Wednesday, because the dashboard asked the
+ * question of *today* rather than of a fixed date. This rule asks it of one
+ * Sunday, so the answer keeps until somebody acts on it.
+ */
+describe('registerStatus', () => {
+  const sunday = '2026-09-20'
+  const roster = ['a', 'b', 'c', 'd']
+  const mark = (studentId: string, date: string, status: 'PRESENT' | 'EXCUSED' | 'ABSENT', sessionKey = 'sunday') =>
+    ({ studentId, date, sessionKey, status }) as const
+
+  it('counts who came when the register was taken', () => {
+    const r = registerStatus({
+      sunday,
+      rosterSize: roster.length,
+      rows: [mark('a', sunday, 'PRESENT'), mark('b', sunday, 'PRESENT'), mark('c', sunday, 'ABSENT')],
+    })
+    expect(r.state).toBe('taken')
+    expect(r.present).toBe(2)
+    // The roster, not the rows: 'd' got no row at all and was still expected.
+    expect(r.total).toBe(4)
+  })
+
+  it('an excused child is not counted present', () => {
+    const r = registerStatus({
+      sunday,
+      rosterSize: 2,
+      rows: [mark('a', sunday, 'PRESENT'), mark('b', sunday, 'EXCUSED')],
+    })
+    expect(r.present).toBe(1)
+  })
+
+  it('counts a child once when two sessions were recorded the same day', () => {
+    // Headline session only, as every other figure on the dashboard is scored.
+    const r = registerStatus({
+      sunday,
+      rosterSize: 2,
+      rows: [mark('a', sunday, 'PRESENT'), mark('a', sunday, 'PRESENT', 'liturgy')],
+    })
+    expect(r.present).toBe(1)
+  })
+
+  it('says so when nothing was recorded that Sunday', () => {
+    const r = registerStatus({
+      sunday,
+      rosterSize: 4,
+      rows: [mark('a', '2026-09-13', 'PRESENT')], // the Sunday before
+    })
+    expect(r.state).toBe('missing')
+    expect(r.total).toBe(4)
+  })
+
+  it('and when the class has never recorded anything at all', () => {
+    expect(registerStatus({ sunday, rosterSize: 4, rows: [] }).state).toBe('missing')
+  })
+
+  /**
+   * The false alarm this rule exists to avoid. `headlineSession` is in this
+   * file because classes recording only Bible Study read "No sessions yet" on
+   * every card; nagging such a class every week for missing a Sunday it never
+   * holds would make the whole panel wallpaper, which is the one way a
+   * chase-up list fails.
+   */
+  it('does not nag a class that does not meet on Sundays', () => {
+    const r = registerStatus({
+      sunday,
+      rosterSize: 3,
+      rows: [
+        mark('a', '2026-09-18', 'PRESENT', 'bible-study'), // Friday
+        mark('b', '2026-09-18', 'PRESENT', 'bible-study'),
+        mark('a', '2026-09-11', 'PRESENT', 'bible-study'),
+      ],
+    })
+    expect(r.state).toBe('other-day')
+    expect(r.date).toBe('2026-09-18')
+    expect(r.present).toBe(2)
+  })
+
+  it('but does flag a Sunday class that missed this one', () => {
+    // Same shape as above, except these dates are Sundays — so the class does
+    // meet on Sundays and skipping one is worth saying.
+    const r = registerStatus({
+      sunday,
+      rosterSize: 3,
+      rows: [mark('a', '2026-09-13', 'PRESENT'), mark('b', '2026-09-06', 'PRESENT')],
+    })
+    expect(r.state).toBe('missing')
+  })
+
+  it('stays quiet about a class with nobody in it', () => {
+    const r = registerStatus({ sunday, rosterSize: 0, rows: [] })
+    expect(r.state).toBe('no-students')
   })
 })
