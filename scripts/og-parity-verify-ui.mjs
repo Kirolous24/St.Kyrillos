@@ -300,8 +300,14 @@ try {
       check('Cancel closes the composer', await page.locator('[role="dialog"]').count() === 0)
       await shot('12-followup-row-actions')
 
-      // delete really deletes
-      await page.getByRole('button', { name: /Delete the case/ }).first().click()
+      // Delete really deletes — and it must be THIS case's button. `.first()`
+      // used to be enough because the seeded case was the only one on the page;
+      // since a case now opens on the first missed Sunday there can be several,
+      // and the first trash icon may belong to a real child. The aria-label
+      // names the student, and a student never holds two open cases at once.
+      const trash = page.getByRole('button', { name: `Delete the case for ${name}` })
+      check('exactly one trash button belongs to the seeded case', (await trash.count()) === 1, `${await trash.count()} found`)
+      await trash.first().click()
       await page.waitForTimeout(2500)
       const still = await prisma.followUpCase.findUnique({ where: { id: seededCase.id }, select: { id: true } })
       check('the trash button deletes the case', still === null)

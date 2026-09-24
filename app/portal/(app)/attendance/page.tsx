@@ -7,7 +7,7 @@ export const metadata = { title: 'Attendance' }
 
 export default async function AttendanceEntryPage() {
   const user = await requirePortalUser()
-  const classes = await resolveClassEntry(user, '/attendance')
+  const classes = await resolveClassEntry(user, '/attendance', 'attendance.write')
   return (
     <ClassChoice
       title="Take Attendance"

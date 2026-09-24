@@ -7,7 +7,7 @@ export const metadata = { title: 'Points' }
 
 export default async function PointsEntryPage() {
   const user = await requirePortalUser()
-  const classes = await resolveClassEntry(user, '/points')
+  const classes = await resolveClassEntry(user, '/points', 'points.write')
   return (
     <ClassChoice
       title="Points"

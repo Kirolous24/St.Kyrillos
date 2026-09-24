@@ -98,7 +98,19 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
         case 'attendance.write':
         case 'points.write':
         case 'followup.write':
-          return assigned
+          /**
+           * A stage coordinator acts on their stage exactly as a servant acts
+           * on their own class. It used to be read-only here, which matched the
+           * prototype — its coordinator scope fed the stage Reports view and
+           * nothing else (OG getMyScopedClassIds, L2390, called once at L7346).
+           *
+           * The church widened it on 2026-09-24: when a class's servant does
+           * not turn up, the coordinator is the person standing there, and
+           * "only an admin may take that register" meant the coordinators
+           * sharing the admin login to do their own job. Every mark still
+           * records who made it, and the reach is one stage, not the church.
+           */
+          return assigned || stageRead
         default:
           return false
       }

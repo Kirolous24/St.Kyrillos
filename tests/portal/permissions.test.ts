@@ -38,10 +38,30 @@ describe('can', () => {
     expect(can(servant, 'points.write', { classId: 'kg' })).toBe(true)
     expect(can(servant, 'points.write', { classId: '1st' })).toBe(false)
   })
-  it('stage oversight grants read but not write across the stage', () => {
-    expect(can(stageLead, 'class.read', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(true)
-    expect(can(stageLead, 'attendance.write', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
-    expect(can(stageLead, 'class.read', { classId: 'hs-girls', classStage: 'HIGH_SCHOOL' })).toBe(false)
+  /**
+   * The church widened this on 2026-09-24. A coordinator used to be read-only
+   * across their stage, which matched the prototype — but it meant that when a
+   * class's servant did not turn up, only an admin could take that register,
+   * and the coordinators were sharing the admin login to do their own job.
+   */
+  it('a coordinator acts on their stage as a servant acts on their own class', () => {
+    for (const action of ['class.read', 'student.write', 'attendance.write', 'points.write', 'followup.write'] as const) {
+      expect(can(stageLead, action, { classId: '1st', classStage: 'ELEMENTARY' }), action).toBe(true)
+    }
+  })
+
+  it('but only their own stage, and never the admin screens', () => {
+    for (const action of ['class.read', 'student.write', 'attendance.write', 'points.write', 'followup.write'] as const) {
+      expect(can(stageLead, action, { classId: 'hs-girls', classStage: 'HIGH_SCHOOL' }), action).toBe(false)
+    }
+    expect(can(stageLead, 'admin.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
+  })
+
+  it('a stage is not inferred from the class id when no stage is given', () => {
+    // `can` is told the stage by its caller. A context without one must not
+    // quietly grant the coordinator anything — every call site passes it, and a
+    // new one that forgets should fail closed.
+    expect(can(stageLead, 'attendance.write', { classId: '1st' })).toBe(false)
   })
   it('students can read their own class and profile but never write', () => {
     expect(can(student, 'class.read', { classId: 'kg' })).toBe(true)
