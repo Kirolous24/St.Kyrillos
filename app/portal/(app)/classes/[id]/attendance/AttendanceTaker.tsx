@@ -8,6 +8,8 @@ import { saveAttendance } from '@/lib/portal/actions/attendance'
 import { attendanceChanges } from '@/lib/portal/attendance-rules'
 import { Avatar, buttonClass, inputClass, Card } from '@/components/portal/ui'
 import { formatShortDate, formatDateTime } from '@/lib/portal/format'
+import { useChime } from '@/hooks/useChime'
+import { SoundToggle } from '@/components/portal/SoundToggle'
 import { cn } from '@/lib/utils'
 
 type Status = 'PRESENT' | 'EXCUSED' | 'ABSENT'
@@ -27,6 +29,15 @@ interface Props {
 }
 
 const NEXT: Record<Status, Status> = { ABSENT: 'PRESENT', PRESENT: 'EXCUSED', EXCUSED: 'ABSENT' }
+
+/**
+ * F0008 — taking the register by tapping names made no sound, while scanning
+ * the same children's cards made one for every scan. Tapping is the commoner
+ * path and the one where you are looking at the class rather than the screen,
+ * so it needed it more. A tone per status means a mis-tap is audible: rising
+ * for present, one flat note for excused, one low note for absent.
+ */
+const STATUS_TONE = { PRESENT: 'ok', EXCUSED: 'neutral', ABSENT: 'low' } as const
 
 const REASON_LABEL: Record<Reason, string> = { sick: '🤒 Sick', travel: '✈️ Travel', other: '📋 Other' }
 
@@ -50,6 +61,7 @@ export function AttendanceTaker(props: Props) {
   }, [props.students, props.existing])
 
   const [marks, setMarks] = useState(initial)
+  const chime = useChime()
   const [confirming, setConfirming] = useState(false)
   // createPortal needs document, absent during the server render.
   const [mounted, setMounted] = useState(false)
@@ -110,11 +122,17 @@ export function AttendanceTaker(props: Props) {
   }
 
   function cycle(id: string) {
+    const cur = marks.get(id)
+    if (!cur) return
+    // Worked out here rather than inside the updater so the sound and the state
+    // can never disagree: an updater may be called twice, and a side effect in
+    // one would chime twice for a single tap.
+    const status = NEXT[cur.status]
+    chime(STATUS_TONE[status])
     setMarks((prev) => {
       const next = new Map(prev)
-      const cur = prev.get(id)!
-      const status = NEXT[cur.status]
-      next.set(id, { status, reason: status === 'EXCUSED' ? cur.reason ?? 'other' : null })
+      const p = prev.get(id)
+      next.set(id, { status, reason: status === 'EXCUSED' ? p?.reason ?? 'other' : null })
       return next
     })
   }
@@ -128,6 +146,8 @@ export function AttendanceTaker(props: Props) {
   }
 
   function markAll(status: Status) {
+    // One tone for the whole class, not one per child.
+    chime(STATUS_TONE[status])
     setMarks((prev) => {
       const next = new Map(prev)
       for (const id of Array.from(prev.keys())) next.set(id, { status, reason: status === 'EXCUSED' ? 'other' : null })
@@ -157,9 +177,11 @@ export function AttendanceTaker(props: Props) {
         marks: Array.from(marks.entries()).map(([studentId, m]) => ({ studentId, status: m.status, reason: m.reason })),
       })
       if (!result.ok) {
+        chime('err')
         setMessage({ kind: 'err', text: result.error })
         return
       }
+      chime('ok')
       const extra = [
         result.data?.opened ? `${result.data.opened} follow-up case${result.data.opened > 1 ? 's' : ''} opened` : null,
         result.data?.closed ? `${result.data.closed} follow-up case${result.data.closed > 1 ? 's' : ''} closed` : null,
@@ -255,6 +277,7 @@ export function AttendanceTaker(props: Props) {
           <div className="flex gap-2 print:hidden">
             <button type="button" onClick={() => markAll('PRESENT')} className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}>✓ All present</button>
             <button type="button" onClick={() => markAll('ABSENT')} className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}>✕ Clear</button>
+            <SoundToggle />
           </div>
         </div>
 

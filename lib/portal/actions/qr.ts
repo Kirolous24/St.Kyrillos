@@ -435,7 +435,7 @@ async function redeemStudent(accountId: string, studentId: string, name: string,
       await syncAutoFollowUps({
         classId,
         studentIds: [student.id],
-        threshold: cls?.visitationThreshold ?? 2,
+        threshold: cls?.visitationThreshold ?? 1,
         asOf: date,
       })
       revalidatePath('/portal/follow-ups')

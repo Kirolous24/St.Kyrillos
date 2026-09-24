@@ -7,6 +7,8 @@ import { Trophy, Star, History, Plus, X, Search, Pencil, Eye } from 'lucide-reac
 import { givePoints, undoPoints, createActivity, removeActivity, updateActivity } from '@/lib/portal/actions/points'
 import { Avatar, buttonClass, inputClass, selectClass, Card, Field, EmptyState } from '@/components/portal/ui'
 import { formatDateTime } from '@/lib/portal/format'
+import { useChime } from '@/hooks/useChime'
+import { SoundToggle } from '@/components/portal/SoundToggle'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -88,6 +90,7 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const chime = useChime()
   const [activityId, setActivityId] = useState<string>(activities[0]?.id ?? 'custom')
   const [customLabel, setCustomLabel] = useState('')
   const [customPoints, setCustomPoints] = useState(2)
@@ -175,6 +178,10 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
   const effectiveReason = mode === 'remove' ? (removeReason === 'other' ? reason.trim() : removeReason) : reason.trim()
 
   function toggle(id: string) {
+    // Derived here, not in the updater, so one tap is exactly one tone even if
+    // React calls the updater twice.
+    const picking = !selected.has(id)
+    chime(picking ? 'ok' : 'low')
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -214,7 +221,11 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
               : undefined
             : effectiveReason || undefined,
       })
-      if (!result.ok) return setMessage({ kind: 'err', text: result.error })
+      if (!result.ok) {
+        chime('err')
+        return setMessage({ kind: 'err', text: result.error })
+      }
+      chime('ok')
       setMessage({ kind: 'ok', text: `${points > 0 ? 'Added' : 'Removed'} ${magnitude} point${magnitude === 1 ? '' : 's'} for ${result.data?.count} student${result.data?.count === 1 ? '' : 's'}.` })
       setSelected(new Set())
       setReason('')
@@ -480,6 +491,7 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
             </div>
             <button type="button" className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')} onClick={() => setSelected(new Set(students.map((s) => s.id)))}>✓ Select all</button>
             <button type="button" className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')} onClick={() => setSelected(new Set())}>✕ Clear</button>
+            <SoundToggle />
           </div>
         }
       >

@@ -222,7 +222,9 @@ export default async function StudentPage({ params }: { params: { id: string } }
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {rank && <Badge tone="gold">Rank #{rank}{classmates.length ? ` of ${classmates.length}` : ''}</Badge>}
-            {streak >= (s.class?.visitationThreshold ?? 2) && <Badge tone="bad">{streak} missed in a row</Badge>}
+            {streak >= (s.class?.visitationThreshold ?? 1) && (
+              <Badge tone="bad">{streak === 1 ? 'Missed last Sunday' : `${streak} missed in a row`}</Badge>
+            )}
             {!isSelf && <Badge tone="neutral">ID {s.account.loginId}</Badge>}
           </div>
         </div>
@@ -283,9 +285,9 @@ export default async function StudentPage({ params }: { params: { id: string } }
         <StatCard
           label="Missed in a row"
           value={streak}
-          tone={streak >= (s.class?.visitationThreshold ?? 2) ? 'bad' : streak > 0 ? 'warn' : 'good'}
+          tone={streak >= (s.class?.visitationThreshold ?? 1) ? 'bad' : streak > 0 ? 'warn' : 'good'}
           icon={<AlertTriangle className="h-6 w-6" />}
-          accent={streak >= (s.class?.visitationThreshold ?? 2) ? '#DC2626' : streak > 0 ? '#D97706' : '#16A34A'}
+          accent={streak >= (s.class?.visitationThreshold ?? 1) ? '#DC2626' : streak > 0 ? '#D97706' : '#16A34A'}
         />
       </div>
 

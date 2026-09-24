@@ -639,6 +639,20 @@ export const SESSION_ABBR: Readonly<Record<string, string>> = {
   hymns: 'H',
 }
 
+/**
+ * The prototype's palette for the six session pills, applied in session order
+ * (OG `wrColors`, L6230). The two spare colours are there because the church
+ * can add sessions the prototype never had.
+ */
+const SESSION_PALETTE = [
+  '#16A34A', '#EA580C', '#2563EB', '#DC2626', '#CA8A04', '#7C3AED', '#0891B2', '#DB2777',
+] as const
+
+/** The colour for a session, by its position in the church's session list. */
+export function sessionColor(index: number): string {
+  return SESSION_PALETTE[index % SESSION_PALETTE.length]!
+}
+
 /** Falls back to initials for a session the church added after the prototype. */
 export function sessionAbbr(key: string, label: string): string {
   const known = SESSION_ABBR[key]
@@ -661,6 +675,13 @@ export interface GridColumn {
   sessionKey: string
   abbr: string
   label: string
+  /**
+   * True when the class actually recorded this session in this week. The grid
+   * draws every week × every session regardless, as the prototype did, and a
+   * column that was never held shows a dash — but only held columns count
+   * towards anybody's rate.
+   */
+  held: boolean
 }
 
 export interface GridWeek {
@@ -716,10 +737,20 @@ function weekLabelFor(monday: string): string {
  * it to a single session at a time, so seeing a month properly meant running
  * and printing the report six times.
  *
- * A (week, session) pair becomes a column when the class recorded that session
- * in that week — the same held rule the rest of this module works to, so a
- * session nobody took is not held against anyone. `options.sessionKeys` forces
- * the full set instead, which is how the blank paper form gets its columns.
+ * Every week of the month gets every session as a column, always — the shape
+ * the prototype drew (`colspan=activities.length` over `weeks.forEach`, OG
+ * L8985-9005) — and a (week, session) the class never recorded is rendered as a
+ * dash, which is what its legend means by "Not held that week".
+ *
+ * Drawing only the columns that had records, as this did until now, collapsed a
+ * month with one register taken into a single column: the same data, a page
+ * nobody recognised. But the shape and the arithmetic have to stay separate —
+ * `column.held` says whether a cell is a real box or a dash, and **only held
+ * columns count towards a rate**, so drawing thirty boxes for one register
+ * cannot turn a child who came into 1/30.
+ *
+ * `options.sessionKeys` marks every column held, which is how the blank paper
+ * form gets a tickable box in every cell.
  */
 export function buildMultiSessionMatrix(
   students: readonly MatrixStudent[],
@@ -744,19 +775,23 @@ export function buildMultiSessionMatrix(
   const weekHeaders: GridWeek[] = []
   for (let i = 0; i < weeks.length; i++) {
     const week = weeks[i]!
-    const inWeek = sessions.filter((s) => heldPairs.has(`${s.key}@${week}`))
-    if (inWeek.length === 0) continue
     // F0443 — the church says "the 3rd week of October"; a bare date range made
     // a servant count Mondays to work out which week of the month they were
-    // looking at, which is the one thing this header exists to answer. The
-    // ordinal comes from the month's own week list, not from the rendered
-    // columns, so a week nobody recorded does not shift the numbering of the
-    // weeks after it.
-    weekHeaders.push({ week, label: `Week ${i + 1} (${weekLabelFor(week)})`, span: inWeek.length })
-    for (const s of inWeek) {
-      columns.push({ week, sessionKey: s.key, abbr: sessionAbbr(s.key, s.label), label: s.label })
+    // looking at, which is the one thing this header exists to answer.
+    weekHeaders.push({ week, label: `Week ${i + 1} (${weekLabelFor(week)})`, span: sessions.length })
+    for (const s of sessions) {
+      columns.push({
+        week,
+        sessionKey: s.key,
+        abbr: sessionAbbr(s.key, s.label),
+        label: s.label,
+        held: heldPairs.has(`${s.key}@${week}`),
+      })
     }
   }
+
+  // The denominator is the sessions actually taken, never the boxes drawn.
+  const heldColumns = columns.reduce((n, c) => (c.held ? n + 1 : n), 0)
 
   const columnIndex = new Map(columns.map((c, i) => [`${c.sessionKey}@${c.week}`, i]))
   const byStudent = new Map<string, (AttendanceStatusKey | null)[]>()
@@ -778,7 +813,7 @@ export function buildMultiSessionMatrix(
       if (mark === 'PRESENT') present += 1
       else if (mark === 'EXCUSED') excused += 1
     }
-    const held = Math.max(0, columns.length - excused)
+    const held = Math.max(0, heldColumns - excused)
     return {
       studentId: s.id,
       name: s.name,
@@ -824,6 +859,22 @@ export const BAND_LABEL: Record<Band, string> = {
   excellent: 'Excellent',
   good: 'Can do better',
   low: 'Needs attention',
+}
+
+/**
+ * The month grid's marks (OG legend: "✓ Present  ✗ Absent  — Not held that
+ * week"). Separate from STATUS_MARK because the CSV export and the
+ * single-session table both need plain letters.
+ *
+ * EXCUSED is the one thing the prototype's grid could not say — it read
+ * `present ? 'present' : 'absent'` and nothing else, so an excused child was
+ * printed as absent. Ours keeps a distinct mark rather than copy that, because
+ * this report goes home to parents.
+ */
+export const GRID_MARK: Record<AttendanceStatusKey, string> = {
+  PRESENT: '\u2713',
+  EXCUSED: 'E',
+  ABSENT: '\u2717',
 }
 
 export const STATUS_MARK: Record<AttendanceStatusKey, string> = {

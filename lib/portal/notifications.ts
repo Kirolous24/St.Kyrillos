@@ -152,7 +152,10 @@ export function buildNotifications(role: Role, facts: NotificationFacts): Portal
       if (s.streak < STREAK_ALERT) continue
       items.push({
         key: `streak:${s.studentId}:${s.streak}`,
-        title: `${s.name} has missed ${s.streak} Sundays in a row`,
+        title:
+          s.streak === 1
+            ? `${s.name} missed last Sunday`
+            : `${s.name} has missed ${s.streak} Sundays in a row`,
         detail: 'Worth a phone call this week.',
         href: `/portal/students/${s.studentId}`,
         tone: 'bad',

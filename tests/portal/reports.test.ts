@@ -465,7 +465,11 @@ describe('buildMultiSessionMatrix', () => {
     ])
   })
 
-  it('makes a column per week per session the class actually held', () => {
+  // The grid draws the whole month — every week, every session — and flags the
+  // (week, session) pairs that were actually taken. It used to draw only the
+  // pairs with records, which collapsed a month holding one register into a
+  // single column: the same data, a page nobody recognised.
+  it('draws every week and every session, flagging the ones actually held', () => {
     const m = buildMultiSessionMatrix(
       students,
       [
@@ -476,11 +480,13 @@ describe('buildMultiSessionMatrix', () => {
       SESSIONS,
       '2026-09',
     )
+    // Five weeks overlap September 2026, three sessions in each.
+    expect(m.columns).toHaveLength(15)
+    expect(m.weeks.map((w) => w.span)).toEqual([3, 3, 3, 3, 3])
     // Week of Aug 31 held bible + sunday; week of Sep 7 held sunday only.
-    expect(m.columns.map((c) => `${c.week}:${c.abbr}`)).toEqual([
+    expect(m.columns.filter((c) => c.held).map((c) => `${c.week}:${c.abbr}`)).toEqual([
       '2026-08-31:BS', '2026-08-31:SS', '2026-09-07:SS',
     ])
-    expect(m.weeks.map((w) => w.span)).toEqual([2, 1])
   })
 
   it('keeps sessions in the order they were given, not the order recorded', () => {
@@ -493,7 +499,7 @@ describe('buildMultiSessionMatrix', () => {
       SESSIONS,
       '2026-09',
     )
-    expect(m.columns.map((c) => c.sessionKey)).toEqual(['bible', 'hymns'])
+    expect(m.columns.filter((c) => c.held).map((c) => c.sessionKey)).toEqual(['bible', 'hymns'])
   })
 
   it('leaves an excused cell out of that student\'s denominator', () => {
@@ -524,7 +530,10 @@ describe('buildMultiSessionMatrix', () => {
       '2026-09',
     )
     const mariam = m.rows.find((r) => r.studentId === 'b')!
-    expect(mariam.marks).toEqual([null])
+    expect(mariam.marks).toHaveLength(15)
+    expect(mariam.marks.every((mark) => mark === null)).toBe(true)
+    // One session was held all month, and she was not marked at it.
+    expect(mariam.held).toBe(1)
     expect(mariam.rate).toBe(0)
   })
 
@@ -538,16 +547,35 @@ describe('buildMultiSessionMatrix', () => {
       SESSIONS,
       '2026-09',
     )
-    expect(m.columns).toHaveLength(1)
-    expect(m.rows.find((r) => r.studentId === 'a')!.marks).toEqual(['PRESENT'])
+    expect(m.columns.filter((c) => c.held)).toHaveLength(1)
+    expect(m.rows.find((r) => r.studentId === 'a')!.marks.filter(Boolean)).toEqual(['PRESENT'])
   })
 
-  it('forces the full session set for a blank form', () => {
+  // The trap in drawing the whole month: the denominator must stay the sessions
+  // actually taken. Counting the boxes instead would read a child who came to
+  // the one register held all month as 1-of-15.
+  it('divides a rate by the sessions held, never by the boxes drawn', () => {
+    const m = buildMultiSessionMatrix(
+      students,
+      [{ studentId: 'a', date: '2026-09-06', sessionKey: 'sunday', status: 'PRESENT' }],
+      SESSIONS,
+      '2026-09',
+    )
+    expect(m.columns).toHaveLength(15)
+    expect(m.rows.find((r) => r.studentId === 'a')!.held).toBe(1)
+    expect(m.rows.find((r) => r.studentId === 'a')!.rate).toBe(100)
+  })
+
+  // A blank form has no records to derive "held" from, so the caller names the
+  // sessions the church runs and every one of their cells becomes a tickable
+  // box rather than a dash.
+  it('marks the named sessions held for a blank form', () => {
     const m = buildMultiSessionMatrix(students, [], SESSIONS, '2026-09', {
       sessionKeys: ['bible', 'sunday'],
     })
     expect(m.weeks).toHaveLength(5)
-    expect(m.columns).toHaveLength(10)
+    expect(m.columns).toHaveLength(15)
+    expect(m.columns.filter((c) => c.held)).toHaveLength(10)
     expect(m.rows[0]!.marks.every((v) => v === null)).toBe(true)
   })
 

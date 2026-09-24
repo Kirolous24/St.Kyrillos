@@ -242,7 +242,7 @@ export function transformBackup(backup: BackupJson): ImportResult {
       stage: stage ?? 'ELEMENTARY',
       sortOrder: classSortOrder(id),
       description: text(c.description),
-      visitationThreshold: typeof c.visitationThreshold === 'number' && c.visitationThreshold > 0 ? c.visitationThreshold : 2,
+      visitationThreshold: typeof c.visitationThreshold === 'number' && c.visitationThreshold > 0 ? c.visitationThreshold : 1,
       curriculumLinkedToId: c.curriculumLinkedTo ? slugifyClassId(c.curriculumLinkedTo) : null,
       createdAt: c.createdAt ?? null,
     }

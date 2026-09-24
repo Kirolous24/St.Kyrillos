@@ -239,7 +239,7 @@ model SchoolClass {
   stage                Stage
   sortOrder            Int      @default(0)
   description          String?
-  visitationThreshold  Int      @default(2) // consecutive Sunday-School absences before a case opens
+  visitationThreshold  Int      @default(1) // consecutive Sunday-School absences before a case opens
   photo                String? // small data-URL class photo
   curriculumLinkedToId String?
   isActive             Boolean  @default(true)

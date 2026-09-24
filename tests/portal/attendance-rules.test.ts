@@ -33,6 +33,22 @@ describe('decideFollowUp', () => {
   it('opens a case when the streak reaches the class threshold and none is open', () => {
     expect(decideFollowUp({ streak: 2, threshold: 2, hasOpenAutoCase: false, latestHeld: 'ABSENT' })).toBe('open')
   })
+  // The church moved to one missed Sunday on 2026-09-23, so this is the live
+  // rule rather than an edge case — a single absence has to raise a case, and
+  // an excused Sunday still must not.
+  it('opens on the very first miss when the threshold is 1', () => {
+    expect(decideFollowUp({ streak: 1, threshold: 1, hasOpenAutoCase: false, latestHeld: 'ABSENT' })).toBe('open')
+  })
+
+  it('does not open on an excused Sunday, even at a threshold of 1', () => {
+    // An excused week never enters the streak, so there is nothing to act on.
+    expect(decideFollowUp({ streak: 0, threshold: 1, hasOpenAutoCase: false, latestHeld: 'EXCUSED' })).toBe('none')
+  })
+
+  it('closes on the first Sunday back when the threshold is 1', () => {
+    expect(decideFollowUp({ streak: 0, threshold: 1, hasOpenAutoCase: true, latestHeld: 'PRESENT' })).toBe('close')
+  })
+
   it('does nothing below the threshold', () => {
     expect(decideFollowUp({ streak: 1, threshold: 2, hasOpenAutoCase: false, latestHeld: 'ABSENT' })).toBe('none')
   })

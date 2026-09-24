@@ -364,7 +364,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
         ? 'sunday'
         : sessions[0]?.key
   const blank = searchParams.blank === '1'
-  const view = searchParams.view === 'all' ? 'all' : 'one'
+  // Every session, unless one is asked for. The prototype opened straight onto
+  // the month grid; defaulting to a single session meant a servant clicked the
+  // "Attendance Report" row they remembered, met one register out of six, and
+  // concluded the report had been lost in the port.
+  const view = searchParams.view === 'one' ? 'one' : 'all'
 
   // The prototype's report was one month grid with all six sessions side by
   // side (OG renderAttendanceMonthTable). The port could only show one at a
@@ -375,10 +379,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
     return (
       <div className="portal-print-page portal-print-landscape">
         <PageHeader
-          title={blank ? `${monthLabel(month)} — blank form` : `Attendance · ${monthLabel(month)}`}
+          title={blank ? 'Attendance Report — blank form' : 'Attendance Report'}
           icon={<CalendarCheck className="h-5 w-5" />}
-          subtitle={`${all.cls.name} · every session`}
-          actions={<PrintButton label={blank ? 'Print blank form' : 'Print'} />}
+          subtitle={`${all.cls.name} · ${monthLabel(month)} · Present / Absent across the ${sessions.length} weekly sessions`}
+          actions={<PrintButton label={blank ? 'Print blank form' : 'Print Report'} />}
         />
         {tabs}
         <ReportFilters

@@ -83,7 +83,9 @@ describe('transformBackup', () => {
     const kg = out.classes.find((c) => c.id === 'kg')!
     expect(kg).toMatchObject({ name: 'KG', stage: 'ELEMENTARY', visitationThreshold: 1, sortOrder: 1 })
     const boys = out.classes.find((c) => c.id === '5th-6th-boys')!
-    expect(boys).toMatchObject({ stage: 'MIDDLE_SCHOOL', visitationThreshold: 2, curriculumLinkedToId: '5th-6th-girls' })
+    // The backup names no threshold for this class, so it falls back to the
+    // church's rule — one missed Sunday, not the prototype's two.
+    expect(boys).toMatchObject({ stage: 'MIDDLE_SCHOOL', visitationThreshold: 1, curriculumLinkedToId: '5th-6th-girls' })
   })
 
   it('creates one account per user with a login, keeping ids and PINs', () => {

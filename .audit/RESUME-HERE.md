@@ -1,7 +1,8 @@
 # Resume the OG-parity restoration
 
-Last updated 2026-09-23 after Wave 30. **The audit is closed.** Everything below is **local and
-uncommitted** — nothing has been pushed or deployed.
+Last updated 2026-09-23 after Wave 34. **The audit is closed, and the work is shipped** —
+commit `d9dc6fb`, 218 files, pushed to `main` on 2026-09-23. Production runs it. `schema.prisma`
+was untouched, so there was no migration and reverting that single commit is a clean rollback.
 
 ## Where it stands
 
@@ -46,11 +47,15 @@ predicate, the conversion would have been undone every September. It is now guar
 
 ## Verification state
 
-`tsc` clean · `npm test` **652** · `lint` clean · `build` exit 0 ·
-`smoke` 126/126 · `smoke:write` 16/16 · `verify:ui` **416/416**.
+Green at the moment of push: `tsc` clean · `npm test` **671** · `lint` clean · `build` exit 0 ·
+`smoke` 126/126 · `smoke:write` 16/16 · `verify:ui` **418/418**.
 
-Everything is **local and uncommitted** — 31 waves, **zero commits**. Production is still serving
-`cb72b26`, which has none of this. Committing and pushing needs the user to ask.
+One check skipped itself rather than passing: F0535 (class descriptions) cannot run because no class
+in the dev database has a description. The harness prints it as neither pass nor fail. That item is
+**unverified**, not verified.
+
+34 waves landed as one commit, `d9dc6fb`, replacing `cb72b26`. **Pushing still needs the user to
+ask** — that rule did not change, this push was explicitly requested.
 
 **The ~98 untracked iCloud duplicate files are gone.** They were being typechecked, so
 `npm run build` broke the moment a real file changed and its stale copy did not. All 98 were
@@ -87,6 +92,21 @@ Wave 31 closed the six that had never been part of the audit. All answered by th
 - **F0571** — per-row delete restored on the All Students cards, behind a confirmation that names
   everything it destroys and points at "switch off login" instead.
 
+
+## Wave 34 — a PIN reset must lift the lockout too
+
+`lib/auth.ts` asks the in-process limiter whether a login ID has spent its budget **before** it
+compares a PIN. So clearing the database lockout is only half a reset. `resetServantPin` had always
+cleared both; `resetStudentPin` and `resetClassPins` cleared only the database — so a child whose
+servant had just reset their PIN was refused for up to fifteen more minutes, with the message "that
+ID and PIN do not match", which reads as the servant having misread the number. Proved live against
+the dev server before fixing. `tests/portal/pin-reset-unlocks.test.ts` now enforces the rule for
+**any** action that clears a lockout, and was canary-tested.
+
+That limiter is an in-memory `Map`, so on Vercel it is per-instance: if the failures land on one
+lambda and the reset is served by another, the fix clears the wrong map. Moving the limiter into
+Postgres or Upstash is the complete answer, and it is the same change as the per-IP limiter the
+sign-in still lacks.
 
 ## Rules that must not be dropped
 
@@ -126,8 +146,8 @@ Every one was fixed at the check, never by loosening what it asserts.
 
 ## Verification battery
 
-`npx tsc --noEmit` · `npm test` (652) · `npx next lint` · `npm run build` ·
-`npm run smoke` (126) · `npm run smoke:write` (16) · `npm run verify:ui` (416)
+`npx tsc --noEmit` · `npm test` (671) · `npx next lint` · `npm run build` ·
+`npm run smoke` (126) · `npm run smoke:write` (16) · `npm run verify:ui` (418)
 
 `verify:ui` takes 10–15 minutes. Start `next dev`, wait for the first compile, then run it — and
 never while a build is in flight.

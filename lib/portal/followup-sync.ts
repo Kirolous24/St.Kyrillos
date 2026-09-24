@@ -78,7 +78,7 @@ export async function syncAutoFollowUps(input: {
           studentId: id,
           classId,
           origin: 'AUTO',
-          title: `Missed ${streak} Sunday${streak > 1 ? 's' : ''} in a row`,
+          title: streak === 1 ? 'Missed last Sunday' : `Missed ${streak} Sundays in a row`,
           consecutiveAbsences: streak,
           lastSeen: lastSeen ? toUTCDate(lastSeen) : null,
         },

@@ -761,8 +761,29 @@ try {
     check('sessions are abbreviated with a title', await page.locator('main table thead abbr[title]').count() > 0)
     const legend = (await page.locator('main ul li').allInnerTexts()).join(' ')
     check('a legend explains the abbreviations', legend.trim().length > 0, legend.slice(0, 60))
-    // Two sessions in two different weeks means two week groups.
-    check('each week gets its own group header', spanning === 2, String(spanning))
+    // The grid draws the whole month, as the prototype did (OG L8985-9005):
+    // every week of it gets a header, every header spans every session, and a
+    // (week, session) nobody took reads as a dash. It used to draw only the
+    // pairs that had records, which collapsed a month holding one register
+    // into a single column — the same data, a page nobody recognised.
+    const activeSessions = await prisma.attendanceSession.count({ where: { isActive: true } })
+    check('every week of the month gets a header, not just the recorded ones',
+      spanning >= 4, `${spanning} week headers`)
+    const spans = await page.locator('main table thead th[colspan]')
+      .evaluateAll((els) => els.map((el) => Number(el.getAttribute('colspan'))))
+    check('and each header spans every session',
+      spans.length > 0 && spans.every((n) => n === activeSessions),
+      `colspans ${spans.join(',')} vs ${activeSessions} sessions`)
+    const gridBody = await page.locator('main table tbody').innerText()
+    check('a session never held that week reads as a dash', gridBody.includes('\u2014'))
+    check('while a recorded session still shows a tick or a cross',
+      /[\u2713\u2717]/.test(gridBody), gridBody.slice(0, 40).replace(/\n/g, ' '))
+    // The rate must divide by the sessions taken, not the boxes drawn — 30
+    // boxes for one register would otherwise read as 3%.
+    const rates = await page.locator('main table tbody tr td:last-child')
+      .allInnerTexts()
+    check('and nobody is scored against a session that was never held',
+      rates.some((r) => r.trim() === '100%'), rates.slice(0, 6).join(' '))
     await shot('22-all-sessions-grid')
   } finally {
     if (seededMarks.length) {
@@ -1188,7 +1209,14 @@ try {
   } else {
     check('scanning can be queued for review', /Review before saving/i.test(scanText), scanText.slice(0, 80))
     const toggle = page.getByLabel('Queue scans and save them together')
-    check('the review toggle is off by default', !(await toggle.isChecked()))
+    // ON by default, because the prototype had no other mode: every scan went
+    // into `_qrBatchList` and nothing reached the database until
+    // `confirmBatchSave()` (OG L14009, L14104). The port defaulted it off, so a
+    // mis-scan at the door became a row in the register and a point in a
+    // child's ledger with only an after-the-fact Undo. A servant working a fast
+    // queue can still turn it off, and that choice is remembered per device.
+    check('the review toggle is ON by default, as the prototype was',
+      await toggle.isChecked())
   }
 
   // F0804 — per-lesson copy selection
@@ -2477,8 +2505,11 @@ try {
   // F0103 — the threshold that raises follow-ups, on the page that lists them.
   await go('/portal/follow-ups')
   const w30FollowBody = await textOf(page.locator('main'))
+  // The sentence names the rule, and the rule changed on 2026-09-23 from two
+  // missed Sundays to one — so match the part that does not move. "after N in
+  // a row" is not a sentence at N=1, which is why the wording differs there.
   check('the follow-ups page says what opens a case',
-    w30FollowBody.includes('a case opens automatically after'), w30FollowBody.slice(0, 140))
+    w30FollowBody.includes('a case opens automatically'), w30FollowBody.slice(0, 140))
   check('and the backdate field is on the new-case form',
     (await page.locator('#case-opened').count()) === 1)
   check('and a case can be recorded as already sorted out',

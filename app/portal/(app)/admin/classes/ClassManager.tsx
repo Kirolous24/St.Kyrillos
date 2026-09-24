@@ -44,7 +44,7 @@ type Row = {
  */
 type ClassForm = Omit<ClassInput, 'stage'> & { stage: ClassInput['stage'] | '' }
 
-const EMPTY: ClassForm = { name: '', stage: '', visitationThreshold: 2, description: '' }
+const EMPTY: ClassForm = { name: '', stage: '', visitationThreshold: 1, description: '' }
 
 /** Small square icon button, as the prototype's card-head pencil/trash. */
 function iconButtonClass(tone: 'neutral' | 'gold' | 'danger') {

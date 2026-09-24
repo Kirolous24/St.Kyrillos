@@ -134,7 +134,9 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
     thresholdValues.length === 0
       ? null
       : thresholdValues.length === 1
-        ? `A case opens automatically after ${thresholdValues[0]} missed Sunday${thresholdValues[0] === 1 ? '' : 's'} in a row.`
+        ? thresholdValues[0] === 1
+          ? 'A case opens automatically the first Sunday a child is missed.'
+          : `A case opens automatically after ${thresholdValues[0]} missed Sundays in a row.`
         : `A case opens automatically after ${thresholdValues.join(' or ')} missed Sundays in a row, depending on the class.`
 
   const students = canCreate

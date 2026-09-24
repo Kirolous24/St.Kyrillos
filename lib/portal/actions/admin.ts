@@ -190,7 +190,7 @@ export async function createStandardGradeClasses(): Promise<ActionResult<{ added
         id: gradeSlug(g.name),
         name: g.name,
         stage: g.stage,
-        visitationThreshold: 2,
+        visitationThreshold: 1,
         sortOrder: base + i + 1,
       })),
     })

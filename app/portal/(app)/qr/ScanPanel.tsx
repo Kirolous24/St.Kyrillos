@@ -1,10 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { Check, Keyboard, ListChecks, ScanLine, SlidersHorizontal, Undo2, X } from 'lucide-react'
 import { scanStudent, resolveScan, undoScan } from '@/lib/portal/actions/qr'
 import { QrScanner } from '@/components/portal/QrScanner'
+import { useChime } from '@/hooks/useChime'
+import { SoundToggle } from '@/components/portal/SoundToggle'
+import { createLocalToggle } from '@/hooks/localToggle'
 import { Card, Field, EmptyState, Badge, Callout, buttonClass, checkboxClass, inputClass, selectClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -43,6 +46,20 @@ const TONE_STYLE: Record<Row['tone'], { tile: string; text: string }> = {
   err: { tile: 'bg-[#FEE2E2] text-[#DC2626]', text: 'text-[#B91C1C]' },
 }
 
+/**
+ * Queue scans and confirm them, or write each one as the card is read.
+ *
+ * **On by default**, because that is what the prototype did and it had no other
+ * mode: every scan went into `_qrBatchList` and nothing reached the database
+ * until `confirmBatchSave()` (OG L14009, L14104). The port defaulted this off,
+ * so a mis-scan at the door was a row in the register and a point in a child's
+ * ledger before anyone could look at it — with only an after-the-fact Undo.
+ *
+ * Remembered per device: a servant working a long queue at the door may well
+ * want the fast path, and should not have to untick this every Sunday.
+ */
+const scanReview = createLocalToggle('portal:scanReview', true)
+
 export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTENDANCE' }: Props) {
   const [pending, startTransition] = useTransition()
   const [classId, setClassId] = useState(classes[0]?.id ?? '')
@@ -53,7 +70,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
   const [rows, setRows] = useState<Row[]>([])
   // Review-before-saving. Off by default: on a busy Sunday most servants want
   // the card to mark the child the moment it is scanned.
-  const [review, setReview] = useState(false)
+  const review = scanReview.use()
   const [queue, setQueue] = useState<Array<{ code: string; name: string; already: boolean }>>([])
   const [queueError, setQueueError] = useState<string | null>(null)
   const busyRef = useRef(false)
@@ -68,45 +85,9 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
 
   const classActivities = activities.filter((a) => a.classId === null || a.classId === classId)
 
-  /**
-   * F0007 — a scan makes a sound again. A servant scanning at the door is
-   * watching the child and the queue behind them, not the tablet: without a
-   * sound they have to look down at every single card to find out whether it
-   * counted. Two rising notes mean it went in, two falling notes mean it did
-   * not — the prototype's own intervals (OG L9491-9509 and L9515-9530).
-   *
-   * The AudioContext is created on the first result rather than on mount, by
-   * which point the servant has pressed Record or started the camera, so the
-   * browser's autoplay rule has the user gesture it wants. Every line is inside
-   * a try/catch: a browser that refuses audio must not stop the register.
-   */
-  const audioRef = useRef<AudioContext | null>(null)
-  const chime = useCallback((tone: Row['tone']) => {
-    try {
-      const Ctor =
-        window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      if (!Ctor) return
-      const ctx = audioRef.current ?? (audioRef.current = new Ctor())
-      if (ctx.state === 'suspended') void ctx.resume()
-      const notes = tone === 'ok' ? [587.33, 880] : [523.25, 349.23]
-      notes.forEach((freq, i) => {
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.type = 'triangle'
-        osc.frequency.value = freq
-        const at = ctx.currentTime + i * 0.08
-        gain.gain.setValueAtTime(0, at)
-        gain.gain.linearRampToValueAtTime(0.22, at + 0.01)
-        gain.gain.exponentialRampToValueAtTime(0.001, at + 0.35)
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.start(at)
-        osc.stop(at + 0.4)
-      })
-    } catch {
-      // Audio is a convenience; the result row is still the record of truth.
-    }
-  }, [])
+  // F0007 / F0008 — see hooks/useChime.ts for why a scan and a tap both
+  // make a sound, and why the AudioContext is built lazily.
+  const chime = useChime()
 
   const pushRow = useCallback(
     (row: Omit<Row, 'key'>) => {
@@ -280,6 +261,26 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
     else submitCode(code)
   }
 
+  /**
+   * Scanning children and then walking away is the hazard that comes with
+   * reviewing before saving: the queue is not a record of anything until Save
+   * is pressed, and a servant who assumes otherwise loses the whole register.
+   *
+   * This catches a refresh, a close and the browser's back button. It cannot
+   * catch a tap on a sidebar link — the App Router gives no way to block one —
+   * which is why the count and the Save button sit together above, rather than
+   * relying on this.
+   */
+  useEffect(() => {
+    if (queue.length === 0) return
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [queue.length])
+
   const recorded = rows.filter((r) => r.tone === 'ok' && !r.undone).length
 
   const reviewPanel = (
@@ -290,7 +291,17 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
           className={checkboxClass}
           checked={review}
           onChange={(e) => {
-            setReview(e.target.checked)
+            // Turning this off writes every later scan straight away — but the
+            // cards already collected here have not been written at all, and
+            // dropping them without a word is the exact loss this panel exists
+            // to prevent.
+            if (!e.target.checked && queue.length > 0) {
+              const ok = window.confirm(
+                `${queue.length} scanned card${queue.length === 1 ? '' : 's'} ${queue.length === 1 ? 'has' : 'have'} not been saved yet. Turning off review will discard ${queue.length === 1 ? 'it' : 'them'}. Continue?`,
+              )
+              if (!ok) return
+            }
+            scanReview.set(e.target.checked)
             setQueue([])
             setQueueError(null)
           }}
@@ -446,7 +457,10 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
             <p className="text-[12px] text-parch-500">
               <span className="text-[18px] font-extrabold text-brand-800 tabular-nums">{recorded}</span> recorded
             </p>
-            {rows.length > 0 && <span className="text-[11px] text-parch-500">{rows.length} scan{rows.length === 1 ? '' : 's'}</span>}
+            <div className="flex items-center gap-2.5">
+              {rows.length > 0 && <span className="text-[11px] text-parch-500">{rows.length} scan{rows.length === 1 ? '' : 's'}</span>}
+              <SoundToggle />
+            </div>
           </div>
           <div className="p-[18px]">
             {rows.length === 0 ? (
