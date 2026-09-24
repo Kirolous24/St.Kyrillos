@@ -1223,6 +1223,141 @@ try {
     // queue can still turn it off, and that choice is remembered per device.
     check('the review toggle is ON by default, as the prototype was',
       await toggle.isChecked())
+
+    /* ── F0162 / F0163 — a scan has to answer, on the picture ──────────────
+     *
+     * The manual-ID box feeds the very same `queueCode` the camera calls, so
+     * this drives the real scan path with no camera. Queueing only *resolves* a
+     * card — `resolveScan` reads and returns a name; nothing is written until
+     * Save — so this keeps the file's read-only promise. It must never press
+     * Save, and it clears the queue on the way out.
+     *
+     * The sound cannot be observed here at all; tests/portal/scan-feedback.ts
+     * guards that half at the source.
+     */
+    const scanClassId = await page.locator('main select').first().inputValue()
+    const scanKid = await prisma.student.findFirst({
+      where: { classId: scanClassId, account: { isActive: true } },
+      select: { firstName: true, lastName: true, account: { select: { loginId: true } } },
+    })
+    if (!scanKid) {
+      console.log(`  SKIP  scan feedback — no active student in the selected class (${scanClassId})`)
+    } else {
+      const first = scanKid.firstName.toLowerCase()
+      /**
+       * Watch for the toast from inside the page. It clears itself after
+       * FLASH_MS, and a locator round-trip per assertion is slow enough to miss
+       * it — a check that races the thing it measures is worse than no check.
+       * Polls on a timer rather than rAF, which a headless tab may throttle.
+       */
+      const watchFlash = () =>
+        page.evaluate(
+          () =>
+            new Promise((resolve) => {
+              const deadline = Date.now() + 8000
+              const tick = () => {
+                const el = document.querySelector('[data-scan-flash]')
+                if (el) return resolve({ tone: el.getAttribute('data-scan-flash'), text: (el.textContent || '').trim() })
+                if (Date.now() > deadline) return resolve(null)
+                setTimeout(tick, 40)
+              }
+              tick()
+            }),
+        )
+
+      await page.locator('#manual-id').fill(scanKid.account.loginId)
+      const watching = watchFlash()
+      await page.getByRole('button', { name: /Record/ }).click()
+      const flash = await watching
+      await shot('26-scan-toast')
+
+      check('a scan answers with a toast on the camera picture',
+        flash !== null, 'no [data-scan-flash] appeared within 8s')
+      check('the toast names the child who just scanned',
+        !!flash && flash.text.toLowerCase().includes(first), flash ? flash.text : '(none)')
+      // 'err' here would mean the scan was refused — the class picker and the
+      // card disagreeing, which is its own bug and worth failing on.
+      check('and it is a tone that means the card was read',
+        !!flash && ['ok', 'warn'].includes(flash.tone), flash ? flash.tone : '(none)')
+
+      const count = () => page.locator('main [data-scan-count]').first().getAttribute('data-scan-count')
+      check('the count under the camera moved with it', (await count()) === '1', String(await count()))
+      const stripText = await textOf(page.locator('main [data-scan-strip]'))
+      check('and the name sits under the camera, not only in the far column',
+        stripText.includes(first), stripText)
+
+      /**
+       * The names must come before the switch inside the review card. The
+       * switch and its three lines of explanation are what pushed the first
+       * name off a phone screen, and nothing else about this card records that.
+       */
+      const order = await page.evaluate(() => {
+        const list = document.querySelector('main [data-scan-queue]')
+        const setting = document.querySelector('main [data-scan-setting]')
+        if (!list || !setting) return `missing: ${list ? 'setting' : 'queue list'}`
+        // eslint-disable-next-line no-bitwise
+        return list.compareDocumentPosition(setting) & Node.DOCUMENT_POSITION_FOLLOWING ? 'names first' : 'switch first'
+      })
+      check('the queued names come before the switch that controls them', order === 'names first', String(order))
+
+      // Wait for the first toast to go before watching for the second, or the
+      // watcher resolves instantly on the one already there.
+      await page.locator('[data-scan-flash]').waitFor({ state: 'detached', timeout: 10000 })
+      await page.locator('#manual-id').fill(scanKid.account.loginId)
+      const watchingAgain = watchFlash()
+      await page.getByRole('button', { name: /Record/ }).click()
+      const again = await watchingAgain
+      check('reading the same card twice says so instead of going quiet',
+        !!again && /already/i.test(again.text), again ? again.text : '(none)')
+      check('and does not queue the same child twice', (await count()) === '1', String(await count()))
+
+      // Leave nothing queued. Clear writes nothing; Save would, and is never
+      // pressed here.
+      await page.getByRole('button', { name: /^Clear$/ }).click()
+      check('clearing the queue empties it', (await count()) === '0', String(await count()))
+    }
+
+    /*
+     * The ask was "see the camera and the names", so the requirement is that
+     * whatever scroll position shows the picture also shows the names.
+     *
+     * It is NOT that the names sit above the fold at the top of the page: the
+     * class and session pickers are above the camera and belong there, because
+     * a servant who cannot see which class is selected can queue a whole
+     * register into the wrong one. A first draft of this check asserted that
+     * and failed on a working fix.
+     */
+    await page.setViewportSize({ width: 390, height: 844 })
+    await go('/portal/qr?tab=scan')
+    // Scroll the way a servant does: the picture up to the top of the screen.
+    await page.locator('main [data-camera-well]').evaluate((el) => el.scrollIntoView({ block: 'start' }))
+    await page.waitForTimeout(400)
+    const geom = await page.evaluate(() => {
+      const well = document.querySelector('main [data-camera-well]')
+      const strip = document.querySelector('main [data-scan-strip]')
+      if (!well || !strip) return null
+      // The floor is the top of the fixed bottom nav, not the viewport edge —
+      // 64px of it sits over the page on a phone.
+      const bar = Array.from(document.querySelectorAll('nav')).find(
+        (n) => getComputedStyle(n).position === 'fixed' && n.getBoundingClientRect().height > 0,
+      )
+      const w = well.getBoundingClientRect()
+      const s = strip.getBoundingClientRect()
+      return {
+        wellTop: Math.round(w.top),
+        stripBottom: Math.round(s.bottom),
+        gap: Math.round(s.top - w.bottom),
+        floor: Math.round(bar ? bar.getBoundingClientRect().top : window.innerHeight),
+      }
+    })
+    check('on a phone the names are in the same view as the picture',
+      !!geom && geom.wellTop >= 0 && geom.stripBottom <= geom.floor, JSON.stringify(geom))
+    // The regression guard: the manual-ID form used to sit in this gap, putting
+    // the first name the better part of a screen below the picture.
+    check('and directly under it, not a screen away', !!geom && geom.gap < 120, JSON.stringify(geom))
+    await shot('27-scan-phone')
+    // Restore, or every check after this one runs at phone width.
+    await page.setViewportSize({ width: 1380, height: 1000 })
   }
 
   // F0804 — per-lesson copy selection

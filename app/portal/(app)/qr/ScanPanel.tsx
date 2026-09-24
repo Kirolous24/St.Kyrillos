@@ -46,6 +46,39 @@ const TONE_STYLE: Record<Row['tone'], { tile: string; text: string }> = {
   err: { tile: 'bg-[#FEE2E2] text-[#DC2626]', text: 'text-[#B91C1C]' },
 }
 
+/* ── the per-scan toast ───────────────────────────────────────────────────
+ *
+ * F0163 — "I need to be able to see the camera and the names."
+ *
+ * The prototype answered every scan with a coloured strip laid over the camera
+ * picture (`showBatchToast`, OG L14019), so confirming that the right child had
+ * just gone in cost no scrolling and no looking away from the card. The port
+ * put the names in the next column instead, which on a phone means below the
+ * picture, the Stop button, the manual-ID form and a paragraph of explanation —
+ * several hundred pixels down, out of sight exactly while you are aiming.
+ */
+interface Flash {
+  tone: Row['tone']
+  text: string
+}
+
+/** The prototype's toast colours, at its own 95% opacity (OG L14021-14023). */
+const FLASH_STYLE: Record<Flash['tone'], string> = {
+  ok: 'bg-[#16A34A]/95',
+  warn: 'bg-[#D97706]/95',
+  err: 'bg-[#DC2626]/95',
+}
+
+const FLASH_MARK: Record<Flash['tone'], string> = { ok: '✓', warn: '⚠', err: '✕' }
+
+/**
+ * How long a toast stays up. The prototype used 500ms for a good scan, but only
+ * because hiding the toast was also what re-armed its scanner (OG L14033); ours
+ * re-arms when the card leaves the frame, so the toast is free to stay up long
+ * enough to actually read a name at arm's length.
+ */
+const FLASH_MS = 1600
+
 /**
  * Queue scans and confirm them, or write each one as the card is read.
  *
@@ -68,11 +101,14 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
   const [activityId, setActivityId] = useState(activities[0]?.id ?? '')
   const [manual, setManual] = useState('')
   const [rows, setRows] = useState<Row[]>([])
-  // Review-before-saving. Off by default: on a busy Sunday most servants want
-  // the card to mark the child the moment it is scanned.
+  // On by default — the reasoning is on `scanReview` above. This comment said
+  // the opposite until 2026-09-24, left behind when the default was flipped: a
+  // stale rationale is how the divergence it describes survived an audit.
   const review = scanReview.use()
   const [queue, setQueue] = useState<Array<{ code: string; name: string; already: boolean }>>([])
   const [queueError, setQueueError] = useState<string | null>(null)
+  const [flash, setFlash] = useState<Flash | null>(null)
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const busyRef = useRef(false)
   /**
    * Payloads already awarded under the current selection. Marking present is
@@ -89,13 +125,28 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
   // make a sound, and why the AudioContext is built lazily.
   const chime = useChime()
 
+  /** Put a toast on the camera picture, replacing whatever is already there. */
+  const showFlash = useCallback((tone: Flash['tone'], text: string) => {
+    setFlash({ tone, text })
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = setTimeout(() => setFlash(null), FLASH_MS)
+  }, [])
+
+  useEffect(() => () => void (flashTimer.current && clearTimeout(flashTimer.current)), [])
+
+  /**
+   * `quiet` suppresses the sound and the toast for a row that is one of many —
+   * see `commitQueue`, which answers a whole batch with a single tone.
+   */
   const pushRow = useCallback(
-    (row: Omit<Row, 'key'>) => {
+    (row: Omit<Row, 'key'>, opts?: { quiet?: boolean }) => {
       const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       setRows((prev) => [{ ...row, key }, ...prev].slice(0, 40))
+      if (opts?.quiet) return
       chime(row.tone)
+      showFlash(row.tone, row.tone === 'ok' && row.name ? row.name : row.message)
     },
-    [chime],
+    [chime, showFlash],
   )
 
   /**
@@ -107,7 +158,15 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
   const queueCode = useCallback(
     (code: string) => {
       if (busyRef.current) return
-      if (queue.some((q) => q.code === code)) return
+      const seen = queue.find((q) => q.code === code)
+      if (seen) {
+        // The prototype answered a second read of the same card with an amber
+        // toast (OG L13999). This returned in silence, so a servant re-scanning
+        // a child could not tell it from a camera that had stopped working.
+        chime('warn')
+        showFlash('warn', `Already scanned — ${seen.name}`)
+        return
+      }
       busyRef.current = true
       startTransition(async () => {
         const result = await resolveScan({
@@ -117,17 +176,29 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
           sessionKey: mode === 'ATTENDANCE' ? sessionKey : undefined,
           activityId: mode === 'POINTS' ? activityId : undefined,
         })
+        /**
+         * F0162 — the sound. `chime` used to live only on the write path, so
+         * turning review on by default (51e46dc) silenced the scanner for
+         * everyone: the card read, the name appeared somewhere off-screen, and
+         * nothing was heard. The prototype played its tone when the card
+         * *joined the batch* (OG L14012), not when the batch was saved.
+         */
         if (result.ok && result.data) {
-          setQueue((prev) =>
-            prev.some((q) => q.code === code) ? prev : [...prev, { code, name: result.data!.name, already: result.data!.already }],
-          )
+          const { name, already } = result.data
+          setQueue((prev) => (prev.some((q) => q.code === code) ? prev : [...prev, { code, name, already }]))
+          setQueueError(null)
+          chime(already ? 'warn' : 'ok')
+          showFlash(already ? 'warn' : 'ok', already ? `Already in — ${name}` : name)
         } else {
-          setQueueError(result.ok ? 'Could not read that card.' : result.error)
+          const message = result.ok ? 'Could not read that card.' : result.error
+          setQueueError(message)
+          chime('err')
+          showFlash('err', message)
         }
         busyRef.current = false
       })
     },
-    [classId, mode, sessionKey, activityId, queue],
+    [classId, mode, sessionKey, activityId, queue, chime, showFlash],
   )
 
   const submitCode = useCallback(
@@ -192,10 +263,18 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
     [classId, mode, sessionKey, activityId, pushRow],
   )
 
-  /** Write everything in the queue, one scan at a time, then clear it. */
+  /**
+   * Write everything in the queue, one scan at a time, then clear it.
+   *
+   * The batch gets **one** tone, not one per card: each row used to chime as it
+   * landed, so saving a dozen children fired a dozen overlapping tones and the
+   * one that mattered — did anything fail? — was lost in them.
+   */
   function commitQueue() {
-    if (queue.length === 0) return
+    const total = queue.length
+    if (total === 0) return
     setQueueError(null)
+    let failed = 0
     startTransition(async () => {
       for (const item of queue) {
         const result = await scanStudent({
@@ -205,6 +284,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
           sessionKey: mode === 'ATTENDANCE' ? sessionKey : undefined,
           activityId: mode === 'POINTS' ? activityId : undefined,
         })
+        if (!result.ok || !result.data) failed += 1
         pushRow(
           result.ok && result.data
             ? {
@@ -225,9 +305,15 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
                 code: item.code,
                 signature: `${classId}|${mode}|${mode === 'ATTENDANCE' ? sessionKey : activityId}`,
               },
+          { quiet: true },
         )
       }
       setQueue([])
+      chime(failed ? 'err' : 'ok')
+      showFlash(
+        failed ? 'err' : 'ok',
+        failed ? `${failed} of ${total} could not be saved` : `Saved ${total} scan${total === 1 ? '' : 's'}`,
+      )
     })
   }
 
@@ -283,9 +369,34 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
 
   const recorded = rows.filter((r) => r.tone === 'ok' && !r.undone).length
 
-  const reviewPanel = (
-    <Card title="Review before saving" icon={<ListChecks className="h-4 w-4" aria-hidden />}>
-      <label className="flex min-h-[40px] cursor-pointer items-center gap-2 text-[12.5px] font-semibold text-parch-700">
+  /**
+   * What the bar under the picture shows: the queue while reviewing, the rows
+   * already written when not. Three names is what fits on a phone without
+   * pushing the manual-ID form back off the screen.
+   */
+  const strip = review
+    ? { count: queue.length, noun: 'scanned', names: queue.slice(-3).reverse().map((q) => q.name) }
+    : {
+        count: recorded,
+        noun: 'recorded',
+        names: rows
+          .filter((r) => r.tone === 'ok' && !r.undone)
+          .slice(0, 3)
+          .map((r) => r.name),
+      }
+
+  /**
+   * The switch and its explanation. These sit *under* the names rather than
+   * over them: the switch is set once per device, the names are read on every
+   * scan, and these three lines of explanation were the last of the furniture
+   * standing between the camera and the first name on a phone.
+   */
+  const reviewSetting = (
+    <>
+      <label
+        data-scan-setting
+        className="flex min-h-[40px] cursor-pointer items-center gap-2 text-[12.5px] font-semibold text-parch-700"
+      >
         <input
           type="checkbox"
           className={checkboxClass}
@@ -312,19 +423,23 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
         Off, each scan is written the moment the card is read. On, cards are collected here and
         nothing is written until you press Save — a mis-scan is removed before it becomes a record.
       </p>
+    </>
+  )
 
-      {review && (
+  const reviewPanel = (
+    <Card title="Review before saving" icon={<ListChecks className="h-4 w-4" aria-hidden />}>
+      {review ? (
         <>
           {queueError && (
-            <div className="mt-3">
+            <div className="mb-3">
               <Callout tone="bad">{queueError}</Callout>
             </div>
           )}
           {queue.length === 0 ? (
-            <p className="mt-3 text-[12.5px] text-parch-500">Nothing scanned yet.</p>
+            <p className="text-[12.5px] text-parch-500">Nothing scanned yet.</p>
           ) : (
             <>
-              <ul className="mt-3 max-h-[220px] space-y-1.5 overflow-y-auto">
+              <ul data-scan-queue className="max-h-[220px] space-y-1.5 overflow-y-auto">
                 {queue.map((q) => (
                   <li
                     key={q.code}
@@ -353,7 +468,10 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
               </div>
             </>
           )}
+          <div className="mt-4 border-t border-[#F3F0EB] pt-3">{reviewSetting}</div>
         </>
+      ) : (
+        reviewSetting
       )}
     </Card>
   )
@@ -426,7 +544,44 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
         </Card>
 
         <Card title="Camera" icon={<ScanLine className="h-4 w-4" aria-hidden />}>
-          <QrScanner onScan={review ? queueCode : submitCode} paused={pending} />
+          <QrScanner
+            onScan={review ? queueCode : submitCode}
+            paused={pending}
+            overlay={
+              flash && (
+                <div
+                  role="status"
+                  data-scan-flash={flash.tone}
+                  className={cn(
+                    'pointer-events-none absolute inset-x-4 bottom-4 z-10 rounded-[12px] px-4 py-3 text-center text-[13px] font-bold text-white',
+                    FLASH_STYLE[flash.tone],
+                  )}
+                >
+                  {FLASH_MARK[flash.tone]} {flash.text}
+                </div>
+              )
+            }
+          />
+
+          {/* The prototype's batch bar (OG L19040-19046): the count and the
+              names sat immediately under the picture, so a servant at the door
+              read them without leaving the camera. Ours kept them in the next
+              column, which on a phone is far below the fold. */}
+          <div
+            data-scan-strip
+            className="mt-3 flex items-center gap-3 rounded-[10px] border border-[#EFE9DC] bg-parch-100 px-3 py-2"
+          >
+            <p className="shrink-0 text-[11.5px] text-parch-500">
+              <span data-scan-count={strip.count} className="text-[15px] font-extrabold text-brand-800 tabular-nums">
+                {strip.count}
+              </span>{' '}
+              {strip.noun}
+            </p>
+            <p className="min-w-0 flex-1 truncate text-right text-[12px] font-semibold text-parch-700">
+              {strip.names.length > 0 ? strip.names.join(' · ') : 'Point the camera at a student card.'}
+            </p>
+          </div>
+
           <form onSubmit={submitManual} className="mt-4 border-t border-[#F3F0EB] pt-4">
             <Field label="No camera? Type the student's 4-digit ID" htmlFor="manual-id">
               <div className="flex gap-2">

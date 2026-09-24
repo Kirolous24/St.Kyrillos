@@ -39,10 +39,18 @@ export function QrScanner({
   onScan,
   paused = false,
   cooldownMs = 2500,
+  overlay,
 }: {
   onScan: (text: string) => void
   paused?: boolean
   cooldownMs?: number
+  /**
+   * Rendered inside the camera well, which is the positioning context — so an
+   * `absolute` node here lands on the picture rather than under the buttons.
+   * The scan panel uses it for the prototype's per-scan toast: the name of the
+   * child who just scanned has to appear where the servant is already looking.
+   */
+  overlay?: React.ReactNode
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -158,6 +166,7 @@ export function QrScanner({
       {/* The prototype's camera well: black ground, the picture filling it, and a
           gold reticle with the surround dimmed by a huge shadow spread. */}
       <div
+        data-camera-well
         className={cn(
           'relative aspect-[4/3] w-full overflow-hidden rounded-[14px] border border-parch-200 bg-[#1A0A0A]',
           !running && 'flex items-center justify-center',
@@ -189,6 +198,7 @@ export function QrScanner({
             </p>
           </div>
         )}
+        {overlay}
       </div>
       <canvas ref={canvasRef} className="hidden" />
       <div className="mt-3 flex flex-wrap items-center gap-2">
