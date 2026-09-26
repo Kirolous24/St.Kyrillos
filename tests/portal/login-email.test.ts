@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emailRouting, buildLoginEmails, LOGIN_EMAIL_FROM } from '@/lib/portal/login-email'
+import { emailRouting, buildLoginEmails, resendApiKey, LOGIN_EMAIL_FROM } from '@/lib/portal/login-email'
 import { LOGIN_EMAIL_SUBJECT } from '@/lib/portal/login-share'
 
 const item = { accountId: 'a1', name: 'Mina Saad', email: 'mina@example.com', loginId: '1234', pin: '0042' }
@@ -32,5 +32,12 @@ describe('login emails', () => {
     const [m] = buildLoginEmails([item], { mode: 'redirect', to: 'me@example.com' })
     expect(m!.to).toBe('me@example.com')
     expect(m!.subject).toBe(`[TEST for mina@example.com] ${LOGIN_EMAIL_SUBJECT}`)
+  })
+
+  it('finds the Resend key under either name, as the Resend library itself does', () => {
+    expect(resendApiKey({ RESEND_API_KEY2: 're_two', RESEND_API_KEY: 're_one' })).toBe('re_two')
+    expect(resendApiKey({ RESEND_API_KEY: 're_one' })).toBe('re_one')
+    expect(resendApiKey({ RESEND_API_KEY2: '', RESEND_API_KEY: 're_one' })).toBe('re_one')
+    expect(resendApiKey({})).toBeNull()
   })
 })

@@ -11,7 +11,7 @@ import { LOGIN_ID_RE, PIN_RE } from '../login'
 import { CONFIRM_PHRASE, reportFilename } from '../reports'
 import { randomPin } from '../credentials'
 import { issuedPinFields } from '../pin-issue'
-import { buildLoginEmails, emailRouting, sendLoginEmails } from '../login-email'
+import { buildLoginEmails, emailRouting, resendApiKey, sendLoginEmails } from '../login-email'
 import { clearRateLimit } from '@/lib/rate-limit'
 import { formatDateOnly } from '../dates'
 import { ROLE_LABEL } from '../format'
@@ -210,8 +210,8 @@ export async function emailLogins(
     if (routing.mode === 'off') {
       throw new PortalError('Emails are only sent from the live site. To test here, set PORTAL_EMAIL_REDIRECT.')
     }
-    const apiKey = process.env.RESEND_API_KEY2
-    if (!apiKey) throw new PortalError('Email is not set up on this site (RESEND_API_KEY2 is missing).')
+    const apiKey = resendApiKey({ RESEND_API_KEY2: process.env.RESEND_API_KEY2, RESEND_API_KEY: process.env.RESEND_API_KEY })
+    if (!apiKey) throw new PortalError('Email is not set up on this site (no RESEND_API_KEY or RESEND_API_KEY2).')
     const ids = cleanIds(accountIds, 200)
     if (ids.length === 0) throw new PortalError('Nobody was selected.')
     const accounts = await prisma.account.findMany({
