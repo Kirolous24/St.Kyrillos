@@ -5,6 +5,8 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { PageHeader } from '@/components/portal/ui'
 import { onFileAccountIds } from '@/lib/portal/data/logins'
 import { pinVaultEnabled } from '@/lib/portal/pin-vault'
+import { resendApiKey } from '@/lib/portal/login-email'
+import { fetchSentLoginEmails, loginEmailStates, type LoginEmailState } from '@/lib/portal/login-email-status'
 import { SendLogins, type Candidate } from './SendLogins'
 
 export const metadata = { title: 'Send logins' }
@@ -18,9 +20,25 @@ export default async function SendLoginsPage() {
   const accounts = await prisma.account.findMany({
     where: { role: { in: ['SERVANT', 'PASTOR', 'ADMIN'] }, isActive: true },
     orderBy: { displayName: 'asc' },
-    select: { id: true, displayName: true, role: true, loginId: true, email: true, phone: true, lastLoginAt: true },
+    select: { id: true, displayName: true, role: true, loginId: true, email: true, phone: true, lastLoginAt: true, pinIssuedAt: true },
   })
   const onFile = await onFileAccountIds(accounts.map((a) => a.id))
+  // Who already has their login by email, asked of Resend (which also knows
+  // about bounces). If Resend cannot be reached the page still works; it just
+  // cannot tell who was emailed.
+  let states: Map<string, LoginEmailState> | null = null
+  const key = resendApiKey({ RESEND_API_KEY2: process.env.RESEND_API_KEY2, RESEND_API_KEY: process.env.RESEND_API_KEY })
+  if (key) {
+    try {
+      states = loginEmailStates(accounts, await fetchSentLoginEmails(key))
+    } catch (err) {
+      console.error('Could not read sent login emails from Resend:', err)
+    }
+  }
+  const emailedAtOf = (id: string) => {
+    const s = states?.get(id)
+    return s && s.state !== 'none' ? s.at.toISOString() : null
+  }
   const candidates: Candidate[] = accounts.map((a) => ({
     accountId: a.id,
     name: a.displayName,
@@ -31,6 +49,8 @@ export default async function SendLoginsPage() {
     neverSignedIn: !a.lastLoginAt,
     onFile: onFile.has(a.id),
     isSelf: a.id === user.accountId,
+    emailState: states ? (states.get(a.id)?.state ?? 'none') : null,
+    emailedAt: emailedAtOf(a.id),
   }))
   return (
     <>
@@ -40,7 +60,7 @@ export default async function SendLoginsPage() {
         subtitle="Give each servant their own ID and PIN by email, text, WhatsApp or a printed slip."
         back={{ href: '/portal/admin/servants', label: 'Servants' }}
       />
-      <SendLogins candidates={candidates} vaultEnabled={pinVaultEnabled()} />
+      <SendLogins candidates={candidates} vaultEnabled={pinVaultEnabled()} emailCheck={states !== null} />
     </>
   )
 }

@@ -16,7 +16,11 @@ import { sealPin } from './pin-vault'
  * No `@/` imports: scripts/import-firebase.ts loads this through a relative path.
  */
 
-export type PinFields = { pinHash: string; pinSealed: string | null }
+/**
+ * `pinIssuedAt` marks when the portal handed out this PIN: a login email sent
+ * before it carries an older PIN and no longer counts (lib/portal/login-email-status).
+ */
+export type PinFields = { pinHash: string; pinSealed: string | null; pinIssuedAt: Date }
 
 /** bcrypt on its own, so a batch can hash in parallel before its login IDs are known. */
 export function hashPin(pin: string): Promise<string> {
@@ -25,7 +29,7 @@ export function hashPin(pin: string): Promise<string> {
 
 /** issuedPinFields for a PIN whose hash was made earlier with hashPin. */
 export function issuedPinFieldsFromHash(pin: string, pinHash: string, loginId: string): PinFields {
-  return { pinHash, pinSealed: sealPin(pin, loginId) }
+  return { pinHash, pinSealed: sealPin(pin, loginId), pinIssuedAt: new Date() }
 }
 
 export async function issuedPinFields(pin: string, loginId: string): Promise<PinFields> {

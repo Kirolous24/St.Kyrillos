@@ -195,6 +195,7 @@ model Account {
   loginId        String     @unique // 4-digit ID typed at sign-in
   pinHash        String
   pinSealed      String? // encrypted copy of a PIN the portal issued (lib/portal/pin-vault.ts); null once the owner sets their own
+  pinIssuedAt    DateTime? // when the portal last issued this PIN; login emails sent before it no longer count
   role           PortalRole
   displayName    String
   email          String?

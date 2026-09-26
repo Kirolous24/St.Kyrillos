@@ -32,4 +32,18 @@ describe('issuing a PIN', () => {
     expect(await bcrypt.compare('9876', f.pinHash)).toBe(true)
     expect(f.pinSealed).toBeNull()
   })
+
+  it('stamps when the portal issued a PIN, so an older login email stops counting', async () => {
+    const before = Date.now()
+    const f = await issuedPinFields('1111', '2222')
+    expect(f.pinIssuedAt).toBeInstanceOf(Date)
+    expect(f.pinIssuedAt.getTime()).toBeGreaterThanOrEqual(before)
+    expect(issuedPinFieldsFromHash('1111', f.pinHash, '2222').pinIssuedAt).toBeInstanceOf(Date)
+  })
+
+  it('does not stamp a PIN somebody chose: they know it, so their emailed login still counts', async () => {
+    const f = await selfSetPinFields('3333')
+    expect('pinIssuedAt' in f).toBe(false)
+  })
 })
+

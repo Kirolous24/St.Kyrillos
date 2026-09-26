@@ -20,7 +20,13 @@ export interface Candidate {
   neverSignedIn: boolean
   onFile: boolean
   isSelf: boolean
+  /** From Resend: emailed their current login, bounced, or not yet. Null when Resend could not be asked. */
+  emailState: 'emailed' | 'bounced' | 'none' | null
+  emailedAt: string | null
 }
+
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
 
 type EmailStatus = 'sent' | 'no-email' | 'not-on-file' | 'failed'
 type SheetRow = Candidate & { pin: string | null; emailStatus?: EmailStatus; emailError?: string }
@@ -38,8 +44,17 @@ const EMAIL_BADGE: Record<EmailStatus, { tone: 'good' | 'bad' | 'neutral' | 'war
  * after a typed confirmation. The sheet then emails everyone with an address,
  * opens Messages or WhatsApp per person, and prints slips for the rest.
  */
-export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate[]; vaultEnabled: boolean }) {
-  const [scope, setScope] = useState<'never' | 'all'>('never')
+export function SendLogins({
+  candidates,
+  vaultEnabled,
+  emailCheck,
+}: {
+  candidates: Candidate[]
+  vaultEnabled: boolean
+  /** True when Resend answered, so who was already emailed is known. */
+  emailCheck: boolean
+}) {
+  const [scope, setScope] = useState<'notEmailed' | 'never' | 'all'>(emailCheck ? 'notEmailed' : 'never')
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [typed, setTyped] = useState('')
@@ -50,7 +65,10 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
   const phrase = CONFIRM_PHRASE.reissuePins
 
   const inScope = useMemo(
-    () => candidates.filter((c) => !c.isSelf && (scope === 'all' || c.neverSignedIn)),
+    () =>
+      candidates.filter(
+        (c) => !c.isSelf && (scope === 'all' || (scope === 'never' ? c.neverSignedIn : c.emailState !== 'emailed')),
+      ),
     [candidates, scope],
   )
   const chosen = inScope.filter((c) => !unchecked.has(c.accountId))
@@ -232,6 +250,9 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
         <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Who">
           {(
             [
+              ...(emailCheck
+                ? ([['notEmailed', `Not emailed yet (${candidates.filter((c) => !c.isSelf && c.emailState !== 'emailed').length})`]] as const)
+                : []),
               ['never', `Never signed in (${candidates.filter((c) => !c.isSelf && c.neverSignedIn).length})`],
               ['all', `Everyone (${candidates.filter((c) => !c.isSelf).length})`],
             ] as const
@@ -250,6 +271,9 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
             </button>
           ))}
         </div>
+        {!emailCheck && (
+          <p className="mb-2 text-[11.5px] text-[#D97706]">Could not check with Resend who has already been emailed, so everyone is shown.</p>
+        )}
         <p className="text-[12px] text-parch-700" data-testid="send-summary">
           <strong>{chosen.length}</strong> selected · {withEmail} by email · {phoneOnly} by phone only · {neither} need a
           printed slip{needNew.length ? ` · ${needNew.length} need a new PIN` : ''}
@@ -287,6 +311,8 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
                 <span className="truncate">{c.name}</span>
               </label>
               <span className="text-[11px] text-parch-500">{c.email ? 'Email' : c.phone ? 'Phone' : 'No contact'}</span>
+              {c.emailState === 'emailed' && c.emailedAt && <Badge tone="good">Emailed {shortDate(c.emailedAt)}</Badge>}
+              {c.emailState === 'bounced' && <Badge tone="bad">Email bounced</Badge>}
               {c.onFile ? <Badge tone="good">PIN on file</Badge> : <Badge tone="warn">Needs a new PIN</Badge>}
             </li>
           ))}
