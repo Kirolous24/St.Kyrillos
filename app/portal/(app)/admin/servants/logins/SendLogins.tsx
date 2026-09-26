@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { KeyRound, Mail, Printer, RotateCcw } from 'lucide-react'
+import { KeyRound, Mail, Printer, RotateCcw, Search } from 'lucide-react'
 import { emailLogins, reissuePins, revealLogins } from '@/lib/portal/actions/logins'
 import { CONFIRM_PHRASE } from '@/lib/portal/reports'
 import { LOGIN_URL } from '@/lib/portal/login-share'
@@ -41,6 +41,7 @@ const EMAIL_BADGE: Record<EmailStatus, { tone: 'good' | 'bad' | 'neutral' | 'war
 export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate[]; vaultEnabled: boolean }) {
   const [scope, setScope] = useState<'never' | 'all'>('never')
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
   const [typed, setTyped] = useState('')
   const [sheet, setSheet] = useState<SheetRow[] | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -53,6 +54,19 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
     [candidates, scope],
   )
   const chosen = inScope.filter((c) => !unchecked.has(c.accountId))
+  // Search narrows what is shown; it never changes who is selected. So you can
+  // unselect everyone, search for one person and tick them.
+  const q = query.trim().toLowerCase()
+  const digits = q.replace(/\D/g, '')
+  const shown = q
+    ? inScope.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.loginId.includes(q) ||
+          (c.email ?? '').toLowerCase().includes(q) ||
+          (digits.length >= 3 && (c.phone ?? '').includes(digits)),
+      )
+    : inScope
   const needNew = chosen.filter((c) => !c.onFile)
   const withEmail = chosen.filter((c) => c.email).length
   const phoneOnly = chosen.filter((c) => !c.email && c.phone).length
@@ -65,6 +79,18 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
         nothing to send.
       </Callout>
     )
+  }
+
+  /** Select or unselect everybody the list is showing right now. */
+  function selectShown(on: boolean) {
+    setUnchecked((prev) => {
+      const next = new Set(prev)
+      for (const c of shown) {
+        if (on) next.delete(c.accountId)
+        else next.add(c.accountId)
+      }
+      return next
+    })
   }
 
   function toggle(id: string) {
@@ -228,8 +254,27 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
           <strong>{chosen.length}</strong> selected · {withEmail} by email · {phoneOnly} by phone only · {neither} need a
           printed slip{needNew.length ? ` · ${needNew.length} need a new PIN` : ''}
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="relative min-w-[200px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-parch-500" aria-hidden />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name, ID, email or phone"
+              aria-label="Search servants"
+              className={cn(inputClass, 'pl-8')}
+            />
+          </label>
+          <button type="button" onClick={() => selectShown(true)} disabled={shown.length === 0} className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px]')}>
+            {q ? `Select these ${shown.length}` : 'Select all'}
+          </button>
+          <button type="button" onClick={() => selectShown(false)} disabled={shown.length === 0} className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px]')}>
+            {q ? `Unselect these ${shown.length}` : 'Unselect all'}
+          </button>
+        </div>
         <ul className="mt-3 divide-y divide-parch-200 rounded-[12px] border border-parch-200">
-          {inScope.map((c) => (
+          {shown.map((c) => (
             <li key={c.accountId} className="flex flex-wrap items-center gap-2 px-3 py-2">
               <label className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] font-semibold text-parch-900">
                 <input
@@ -245,7 +290,9 @@ export function SendLogins({ candidates, vaultEnabled }: { candidates: Candidate
               {c.onFile ? <Badge tone="good">PIN on file</Badge> : <Badge tone="warn">Needs a new PIN</Badge>}
             </li>
           ))}
-          {inScope.length === 0 && <li className="px-3 py-3 text-[12px] text-parch-500">Nobody here.</li>}
+          {shown.length === 0 && (
+            <li className="px-3 py-3 text-[12px] text-parch-500">{q ? `Nobody matches “${query.trim()}”.` : 'Nobody here.'}</li>
+          )}
         </ul>
       </Card>
 
