@@ -20,6 +20,9 @@ import { accentFor } from '@/lib/portal/accents'
 import { RosterExportButton } from './RosterExportButton'
 import { RosterFilter } from './RosterFilter'
 import { formatDateOnly, todayInNewYork, ageOn } from '@/lib/portal/dates'
+import { ensureInitialSplits, loadClassGroups } from '@/lib/portal/data/groups'
+import { effectiveServant, groupHealth } from '@/lib/portal/groups'
+import { GroupsPanel } from './GroupsPanel'
 
 export default async function ClassPage({ params, searchParams }: { params: { id: string }; searchParams: { q?: string } }) {
   const user = await requirePortalUser()
@@ -31,6 +34,10 @@ export default async function ClassPage({ params, searchParams }: { params: { id
   const ctx = { classId: cls.id, classStage: cls.stage }
   const canWrite = can(user, 'attendance.write', ctx)
   const canEditStudents = can(user, 'student.write', ctx)
+  const canManageGroups = can(user, 'group.manage', ctx)
+  // Follow-up groups: split on first use, then read this class's groups.
+  await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
+  const [classGroups] = await loadClassGroups([cls.id])
 
   const [students, servants, openCases, sundayRows, quizByStudent, recentPoints] = await Promise.all([
     prisma.student.findMany({
@@ -327,6 +334,28 @@ export default async function ClassPage({ params, searchParams }: { params: { id
           ))}
         </dl>
       </Card>
+
+      {classGroups && (() => {
+        const active = new Set(classGroups.servants.map((sv) => sv.id))
+        const byServant = new Map(classGroups.servants.map((sv) => [sv.id, [] as Array<{ id: string; name: string }>]))
+        const unassigned: Array<{ id: string; name: string }> = []
+        for (const k of classGroups.kids) {
+          const owner = effectiveServant(k.groupServantId, active)
+          if (owner) byServant.get(owner)!.push({ id: k.id, name: k.name })
+          else unassigned.push({ id: k.id, name: k.name })
+        }
+        return (
+          <div className="mb-5">
+            <GroupsPanel
+              classId={cls.id}
+              canManage={canManageGroups}
+              servants={classGroups.servants.map((sv) => ({ id: sv.id, name: sv.name, kids: byServant.get(sv.id)! }))}
+              unassigned={unassigned}
+              health={groupHealth(classGroups.kids, classGroups.servants)}
+            />
+          </div>
+        )
+      })()}
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">

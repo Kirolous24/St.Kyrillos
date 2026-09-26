@@ -8,7 +8,7 @@ import {
   Menu, X, LogOut, LayoutDashboard, Users, UserCog, GraduationCap, CalendarCheck,
   Trophy, Cake, ClipboardList, BookOpen, CalendarDays, Megaphone, MessageSquare,
   QrCode, Music, FileBarChart, Settings, ScrollText, Award, HeartHandshake,
-  BookMarked, Sparkles, Library, LifeBuoy, Layers, ChevronDown, Camera, User, ArrowLeft,
+  BookMarked, Sparkles, Library, LifeBuoy, Layers, ChevronDown, Camera, User, ArrowLeft, UsersRound,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 // Pure route table — no server imports, so a client component may call it.
@@ -26,7 +26,7 @@ const NAV_ICONS = {
   exams: ClipboardList, lessons: BookOpen, agenda: CalendarDays, announcements: Megaphone,
   feed: MessageSquare, events: CalendarDays, qr: QrCode, hymns: Music, reports: FileBarChart,
   settings: Settings, audit: ScrollText, achievements: Award, readings: BookMarked, points: Sparkles,
-  curriculum: Library, help: LifeBuoy, stage: Layers, photo: Camera, profile: User,
+  curriculum: Library, help: LifeBuoy, stage: Layers, photo: Camera, profile: User, group: UsersRound,
 } as const
 
 export type NavIcon = keyof typeof NAV_ICONS

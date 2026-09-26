@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { UserPlus } from 'lucide-react'
 import { PageHeader } from '@/components/portal/ui'
 import { ServantForm } from '@/components/portal/ServantForm'
+import { pinVaultEnabled } from '@/lib/portal/pin-vault'
 
 export const metadata = { title: 'Add servant' }
 
@@ -19,7 +20,7 @@ export default async function NewServantPage() {
         icon={<UserPlus className="h-5 w-5" />}
         back={{ href: '/portal/admin/servants', label: 'Servants' }}
       />
-      <ServantForm mode="create" classes={classes} />
+      <ServantForm mode="create" classes={classes} pinKept={pinVaultEnabled()} />
     </>
   )
 }

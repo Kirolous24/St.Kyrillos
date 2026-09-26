@@ -7,6 +7,7 @@ import { presentStreak } from '../achievements'
 import { attendanceRate, headlineRows, heldOccasions, topQuizPerformers, attendanceDelta, registerStatus, type RegisterStatus } from '../reports'
 import type { PortalUser } from '../permissions'
 import { listVisibleClasses } from './classes'
+import { followUpCaseWhere } from './groups'
 import { examScopeWhere, studentExams } from './exams'
 import { examStatusFor } from '../exams'
 import { studentName } from './students'
@@ -24,11 +25,14 @@ export async function staffOverview(user: PortalUser) {
   const today = todayInNewYork()
   const classes = await listVisibleClasses(user)
   const classIds = classes.map((c) => c.id)
+  // The same scope as the Follow-ups page: the total and each class's chip
+  // link there, so a plain servant counts their own group's cases.
+  const caseScope = await followUpCaseWhere(user, classes)
 
   const [openCases, takenToday, students, recentSundays] = await Promise.all([
     prisma.followUpCase.groupBy({
       by: ['classId'],
-      where: { classId: { in: classIds }, status: 'OPEN' },
+      where: { AND: [caseScope, { status: 'OPEN' }] },
       _count: { _all: true },
     }),
     prisma.attendanceRecord.groupBy({

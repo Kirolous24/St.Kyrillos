@@ -267,3 +267,31 @@ describe('withNavBadges', () => {
     expect(withNavBadges(nav, [])).toEqual(nav)
   })
 })
+
+describe('buildNotifications — follow-up groups', () => {
+  it('tells a coordinator which classes need their groups looked at', () => {
+    const items = buildNotifications('SERVANT', {
+      today: '2026-10-05',
+      groupAttention: [{ classId: '7th-8th-girls', name: '7th & 8th Girls' }],
+      groupAttentionHref: '/portal/classes/7th-8th-girls#groups',
+    })
+    const n = items.find((i) => i.key.startsWith('groups:attention'))!
+    expect(n.title).toBe('Groups need attention in 7th & 8th Girls')
+    expect(n.href).toBe('/portal/classes/7th-8th-girls#groups')
+    expect(n.tone).toBe('warn')
+  })
+  it('counts classes, and keys on the count so a new one is not silenced', () => {
+    const items = buildNotifications('ADMIN', {
+      today: '2026-10-05',
+      groupAttention: [{ classId: 'a', name: 'A' }, { classId: 'b', name: 'B' }],
+    })
+    const n = items.find((i) => i.key.startsWith('groups:attention'))!
+    expect(n.key).toBe('groups:attention:2')
+    expect(n.title).toBe('Groups need attention in 2 classes')
+    expect(n.count).toBe(2)
+  })
+  it('says nothing to a student', () => {
+    const items = buildNotifications('STUDENT', { today: '2026-10-05', groupAttention: [{ classId: 'a', name: 'A' }] })
+    expect(items.some((i) => i.key.startsWith('groups:attention'))).toBe(false)
+  })
+})

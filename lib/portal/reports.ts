@@ -1008,6 +1008,9 @@ export const CONFIRM_PHRASE = {
   clearPoints: 'CLEAR POINTS',
   deleteClassStudents: 'DELETE STUDENTS',
   resetClassPins: 'RESET PINS',
+  // Giving new PINs to a chosen set of people (Send logins, Class logins).
+  // Same words on purpose: to the person typing it, it is the same act.
+  reissuePins: 'RESET PINS',
   resetAllActivities: 'RESET ALL ACTIVITIES',
 } as const
 

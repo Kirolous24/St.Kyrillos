@@ -120,3 +120,20 @@ describe('mayModifyEvent', () => {
   })
 })
 
+
+describe('group.manage', () => {
+  it('the admin, the stage overseer and the class Coordinator may arrange groups', () => {
+    expect(can(admin, 'group.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(stageLead, 'group.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(coordinator, 'group.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+  })
+  it('a plain servant, the pastor and a student may not', () => {
+    expect(can(servant, 'group.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(pastor, 'group.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(student, 'group.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+  })
+  it("a Coordinator's reach is their own class, an overseer's their own stage", () => {
+    expect(can(coordinator, 'group.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(stageLead, 'group.manage', { classId: '5th-6th-boys', classStage: 'MIDDLE_SCHOOL' })).toBe(false)
+  })
+})

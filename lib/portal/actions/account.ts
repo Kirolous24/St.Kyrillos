@@ -7,6 +7,7 @@ import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { audit } from '../audit'
 import { PIN_RE } from '../login'
+import { selfSetPinFields } from '../pin-issue'
 import { parseDateOnly, toUTCDate } from '../dates'
 import { revalidatePath } from 'next/cache'
 
@@ -21,7 +22,8 @@ export async function changeOwnPin(raw: z.infer<typeof Schema>): Promise<ActionR
     if (input.newPin === input.currentPin) throw new PortalError('Choose a different PIN.')
     const account = await prisma.account.findUnique({ where: { id: user.accountId }, select: { pinHash: true } })
     if (!account || !(await bcrypt.compare(input.currentPin, account.pinHash))) throw new PortalError('Your current PIN is not correct.')
-    await prisma.account.update({ where: { id: user.accountId }, data: { pinHash: await bcrypt.hash(input.newPin, 10) } })
+    // A PIN somebody chose is theirs: the office's readable copy goes with the old one.
+    await prisma.account.update({ where: { id: user.accountId }, data: await selfSetPinFields(input.newPin) })
     await audit(user, 'account.changePin', 'account', user.accountId, 'Changed own PIN')
     return undefined
   })

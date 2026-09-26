@@ -99,14 +99,14 @@ const ROUTES = {
       '/portal/my-attendance', '/portal/announcements', '/portal/reports', '/portal/reports/cards',
       '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/reports?tab=church&period=all',
       '/portal/reports?tab=church&mode=exams', '/portal/reports?tab=church&mode=points',
-      '/portal/readings', '/portal/photo',
+      '/portal/readings', '/portal/photo', '/portal/admin/servants/logins', '/portal/my-group',
     ],
     gone: [],
   },
   pastor: {
     ok: [
       '/portal/classes', '/portal/follow-ups', '/portal/lessons', '/portal/exams', '/portal/announcements',
-      '/portal/reports', '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/readings',
+      '/portal/reports', '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/readings', '/portal/my-group',
     ],
     // /portal/admin/audit is deliberately open to the pastor as well as the admin
     // (see app/portal/(app)/admin/audit/page.tsx), so it is not listed here.
@@ -117,6 +117,7 @@ const ROUTES = {
     gone: [
       '/portal/admin/data',
       '/portal/admin/servants/new',
+      '/portal/admin/servants/logins',
       '/portal/admin/students',
       '/portal/admin/sessions',
     ],
@@ -126,9 +127,9 @@ const ROUTES = {
     ok: [
       '/portal/classes', '/portal/follow-ups', '/portal/exams', '/portal/lessons', '/portal/agenda',
       '/portal/assignments', '/portal/qr', '/portal/servant-attendance', '/portal/my-attendance',
-      '/portal/announcements', '/portal/reports', '/portal/reports?view=all', '/portal/readings', '/portal/photo',
+      '/portal/announcements', '/portal/reports', '/portal/reports?view=all', '/portal/readings', '/portal/photo', '/portal/my-group',
     ],
-    gone: ['/portal/admin/data', '/portal/admin/servants', '/portal/admin/students', '/portal/admin/audit', '/portal/admin/sessions'],
+    gone: ['/portal/admin/data', '/portal/admin/servants', '/portal/admin/servants/logins', '/portal/admin/students', '/portal/admin/audit', '/portal/admin/sessions'],
     notFound: [
       '/portal/classes/does-not-exist',
       '/portal/classes/high-school-girls',
@@ -140,9 +141,9 @@ const ROUTES = {
   student: {
     ok: ['/portal/quizzes', '/portal/achievements', '/portal/readings', '/portal/my-attendance', '/portal/my-qr'],
     gone: [
-      '/portal/admin/data', '/portal/admin/students', '/portal/admin/servants', '/portal/admin/audit',
+      '/portal/admin/data', '/portal/admin/students', '/portal/admin/servants', '/portal/admin/servants/logins', '/portal/admin/audit',
       '/portal/exams', '/portal/exams/new', '/portal/qr', '/portal/reports', '/portal/servant-attendance',
-      '/portal/agenda', '/portal/lessons', '/portal/assignments',
+      '/portal/agenda', '/portal/lessons', '/portal/assignments', '/portal/my-group',
     ],
   },
 }

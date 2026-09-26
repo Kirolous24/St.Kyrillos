@@ -194,6 +194,7 @@ model Account {
   id             String     @id @default(cuid())
   loginId        String     @unique // 4-digit ID typed at sign-in
   pinHash        String
+  pinSealed      String? // encrypted copy of a PIN the portal issued (lib/portal/pin-vault.ts); null once the owner sets their own
   role           PortalRole
   displayName    String
   email          String?
@@ -234,17 +235,18 @@ model Account {
 }
 
 model SchoolClass {
-  id                   String   @id // slug, e.g. "5th-6th-boys"
+  id                   String    @id // slug, e.g. "5th-6th-boys"
   name                 String
   stage                Stage
-  sortOrder            Int      @default(0)
+  sortOrder            Int       @default(0)
   description          String?
-  visitationThreshold  Int      @default(1) // consecutive Sunday-School absences before a case opens
+  visitationThreshold  Int       @default(1) // consecutive Sunday-School absences before a case opens
   photo                String? // small data-URL class photo
   curriculumLinkedToId String?
-  isActive             Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  groupsSplitAt        DateTime? // set once the class has been split into follow-up groups
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   students      Student[]
   servants      ClassServant[]
@@ -264,30 +266,37 @@ model SchoolClass {
 }
 
 model Student {
-  id           String       @id @default(cuid())
-  accountId    String       @unique
-  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  classId      String?
-  class        SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
-  firstName    String
-  lastName     String
-  gender       String?
-  dob          DateTime?    @db.Date
-  grade        String?
-  address      String?
-  fatherName   String?
-  fatherPhone  String?
-  motherName   String?
-  motherPhone  String?
-  parentEmails String[]     @default([])
-  notes        String?
-  importNotes  String? // data-quality flags from the migration, cleared once reviewed
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id              String       @id @default(cuid())
+  accountId       String       @unique
+  account         Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  classId         String?
+  class           SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  firstName       String
+  lastName        String
+  gender          String?
+  dob             DateTime?    @db.Date
+  grade           String?
+  address         String?
+  fatherName      String?
+  fatherPhone     String?
+  motherName      String?
+  motherPhone     String?
+  parentEmails    String[]     @default([])
+  notes           String?
+  importNotes     String? // data-quality flags from the migration, cleared once reviewed
+  // Follow-up group (2026-09-26): the servant who follows this child up.
+  // Resolved when read against the class's active servants (lib/portal/groups.ts),
+  // so a servant briefly removed from the class gets their group back.
+  groupServantId  String?
+  groupServant    Servant?     @relation("StudentGroup", fields: [groupServantId], references: [id], onDelete: SetNull)
+  groupAssignedAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
-  attendance AttendanceRecord[]
-  points     PointEntry[]
-  followUps  FollowUpCase[]
+  attendance  AttendanceRecord[]
+  points      PointEntry[]
+  followUps   FollowUpCase[]
+  contactLogs FollowUpLog[]
 
   quizResults   QuizResult[]
   bibleReadings BibleReadingLog[]
@@ -295,6 +304,7 @@ model Student {
 
   @@index([classId])
   @@index([lastName, firstName])
+  @@index([groupServantId])
 }
 
 model Servant {
@@ -309,6 +319,8 @@ model Servant {
 
   classes    ClassServant[]
   attendance ServantAttendance[]
+
+  groupStudents Student[] @relation("StudentGroup")
 
   agendaLead   AgendaWeek[] @relation("AgendaLead")
   agendaBackup AgendaWeek[] @relation("AgendaBackup")
@@ -435,18 +447,23 @@ model FollowUpCase {
   @@index([studentId, status])
 }
 
+// A contact with a child's family. Since 2026-09-26 any child can have one (a
+// check-in); `caseId` is set when it belongs to an open follow-up case.
 model FollowUpLog {
-  id     String       @id @default(cuid())
-  caseId String
-  case   FollowUpCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  method String // call | text | whatsapp | email | visit | other
-  note   String?
-  result String?
-  byId   String?
-  by     Account?     @relation("CaseLogBy", fields: [byId], references: [id], onDelete: SetNull)
-  at     DateTime     @default(now())
+  id        String        @id @default(cuid())
+  caseId    String?
+  case      FollowUpCase? @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  method    String // call | text | whatsapp | email | visit | other | resolved
+  note      String?
+  result    String?
+  byId      String?
+  by        Account?      @relation("CaseLogBy", fields: [byId], references: [id], onDelete: SetNull)
+  at        DateTime      @default(now())
 
   @@index([caseId, at(sort: Desc)])
+  @@index([studentId, at(sort: Desc)])
 }
 
 // Weekly servant activities (Fri Bible Study, Sat Vespers, Sun Liturgy, ...).

@@ -76,6 +76,12 @@ export function ChangePinForm() {
           {pending ? 'Saving…' : 'Change PIN'}
         </button>
       </form>
+      {/* Option B keeps a readable copy of the PINs the office hands out, and
+          none of a PIN somebody chooses (lib/portal/pin-issue.ts). Worth
+          saying, because it is the privacy a servant is choosing. */}
+      <p className="mt-3 text-[11.5px] text-parch-500">
+        Once you choose your own PIN, only you know it. The office can give you a new one, but can&rsquo;t look yours up.
+      </p>
     </Card>
   )
 }

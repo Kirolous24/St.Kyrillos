@@ -23,6 +23,7 @@ import { FeedWidget } from '@/components/portal/widgets/FeedWidget'
 import { NotCheckedInWidget, TopPerformersWidget, RecentActivityWidget } from '@/components/portal/widgets/ActivityWidgets'
 import { scoreBand, SCORE_BAND_TONE } from '@/lib/portal/exams'
 import { hourInNewYork } from '@/lib/portal/dates'
+import { ensureInitialSplits } from '@/lib/portal/data/groups'
 
 export default async function PortalHome() {
   const user = await requirePortalUser()
@@ -39,6 +40,10 @@ const REGISTER_RANK: Record<RegisterState, number> = { missing: 0, 'other-day': 
 
 async function StaffHome() {
   const user = await requirePortalUser()
+  // Follow-up groups: the first time the portal is used after the update, every
+  // class is split with nobody pressing anything. After that this finds nothing
+  // to do. A failure is logged and the dashboard still renders.
+  await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
   const [data, servantCheckIn] = await Promise.all([staffOverview(user), latestServantCheckIn(user)])
   const isSunday = new Date(`${data.today}T12:00:00Z`).getUTCDay() === 0
   /**

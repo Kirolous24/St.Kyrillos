@@ -34,6 +34,7 @@ export type Action =
   | 'followup.write'
   | 'servant.read'
   | 'admin.manage'
+  | 'group.manage'
 
 export interface ActionContext {
   classId?: string
@@ -50,6 +51,7 @@ const ALL_CLASS_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'followup.write',
   'servant.read',
   'admin.manage',
+  'group.manage',
 ])
 
 export function isAssigned(user: PortalUser, classId: string | undefined): boolean {
@@ -111,6 +113,12 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
            * records who made it, and the reach is one stage, not the church.
            */
           return assigned || stageRead
+        case 'group.manage':
+          // Arranging who follows whom is the coordinator's job: the stage
+          // overseer for their stage, the class Coordinator for their class.
+          // Plain servants and assistants follow their group; they do not
+          // rearrange everyone else's (follow-up groups, 2026-09-26).
+          return stageRead || (!!ctx.classId && user.coordinatorOf.includes(ctx.classId))
         default:
           return false
       }

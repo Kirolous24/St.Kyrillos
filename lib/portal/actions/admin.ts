@@ -2,7 +2,6 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
@@ -13,6 +12,7 @@ import { CONFIRM_PHRASE } from '../reports'
 import { DAY_NAMES } from '../dates'
 import { STANDARD_GRADES, pickNewGradeClasses, gradeSlug } from '../standard-grades'
 import { freeLoginId, randomPin } from '../credentials'
+import { issuedPinFields } from '../pin-issue'
 import type { PortalUser } from '../permissions'
 import { clearRateLimit } from '@/lib/rate-limit'
 import { isStandardSession, standardSessionLabel } from '../sessions'
@@ -63,7 +63,7 @@ export async function createServant(raw: ServantFormInput): Promise<ActionResult
     const account = await prisma.account.create({
       data: {
         loginId,
-        pinHash: await bcrypt.hash(pin, 10),
+        ...(await issuedPinFields(pin, loginId)),
         role: input.role,
         ...data.account,
         servant: input.role === 'SERVANT' || input.role === 'PASTOR' || input.role === 'ADMIN'
@@ -110,10 +110,10 @@ export async function updateServant(accountId: string, raw: ServantFormInput): P
 export async function resetServantPin(accountId: string): Promise<ActionResult<{ loginId: string; pin: string }>> {
   return runAction(async () => {
     const user = await requireAdmin()
-    const acc = await prisma.account.findUnique({ where: { id: accountId }, select: { role: true, displayName: true } })
+    const acc = await prisma.account.findUnique({ where: { id: accountId }, select: { role: true, displayName: true, loginId: true } })
     if (!acc || acc.role === 'STUDENT') throw new PortalError('Account not found.')
     const pin = randomPin()
-    const updated = await prisma.account.update({ where: { id: accountId }, data: { pinHash: await bcrypt.hash(pin, 10), failedAttempts: 0, lockedUntil: null }, select: { loginId: true } })
+    const updated = await prisma.account.update({ where: { id: accountId }, data: { ...(await issuedPinFields(pin, acc.loginId)), failedAttempts: 0, lockedUntil: null }, select: { loginId: true } })
     // Clearing the DB lockout is not enough: the in-process limiter is consulted
     // before the PIN is ever checked, so a locked-out servant could not reach the
     // success path that releases it. Without this, a reset cannot get them back
@@ -210,13 +210,14 @@ export interface ClassCredential {
 }
 
 /**
- * Reset every student's PIN in one class and return the new ones, once.
+ * Reset every student's PIN in one class and return the new ones.
  *
- * The prototype exported a plaintext PIN column (OG "Export All IDs & PINs"),
- * which is one of the four defects this restoration deliberately does not copy
- * — PINs are bcrypt hashes here, so no export can ever read them back. The
- * church's own answer to "how do we hand a class their logins" is this: mint a
- * fresh PIN for everyone, show it once, print it, and never store it readable.
+ * This used to be the only way to produce a class's login sheet, because PINs
+ * were stored as bcrypt hashes alone. Since option B (2026-09-26) every PIN the
+ * portal issues also keeps a sealed copy the admin can read (lib/portal/pin-vault),
+ * so the Class logins page can print the PINs in use without changing them.
+ * This stays for a fresh start: new PINs for the whole class, sealed like
+ * every other issued PIN.
  *
  * It invalidates the PINs currently in use, so it takes the same typed
  * confirmation the Danger Zone uses, and it is admin-only: one careless press
@@ -244,13 +245,13 @@ export async function resetClassPins(
     // Hash every PIN first: bcrypt is CPU-bound and gains nothing from being
     // awaited one student at a time, which is what made a big class crawl.
     const pins = students.map(() => randomPin())
-    const hashes = await Promise.all(pins.map((pin) => bcrypt.hash(pin, 10)))
+    const fields = await Promise.all(students.map((s, i) => issuedPinFields(pins[i]!, s.account.loginId)))
 
     await prisma.$transaction(
       students.map((s, i) =>
         prisma.account.update({
           where: { id: s.accountId },
-          data: { pinHash: hashes[i]!, failedAttempts: 0, lockedUntil: null },
+          data: { ...fields[i]!, failedAttempts: 0, lockedUntil: null },
         }),
       ),
     )

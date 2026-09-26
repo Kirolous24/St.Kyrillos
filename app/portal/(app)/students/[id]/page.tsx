@@ -15,6 +15,14 @@ import { formatLongDate, formatMonthDay, formatDateTime } from '@/lib/portal/for
 import { PageHeader, Card, StatCard, Avatar, Badge, Callout, LinkButton, buttonClass } from '@/components/portal/ui'
 import { accentFor } from '@/lib/portal/accents'
 import { StudentProfileActions } from './StudentProfileActions'
+import { LoginCard } from '@/components/portal/LoginCard'
+import { onFileAccountIds } from '@/lib/portal/data/logins'
+import { pinVaultEnabled } from '@/lib/portal/pin-vault'
+import { loadClassGroups } from '@/lib/portal/data/groups'
+import { effectiveServant } from '@/lib/portal/groups'
+import { contactMethodLabel, contactResultLabel } from '@/lib/portal/followups'
+import { CheckInButton } from '@/components/portal/CheckInButton'
+import { GroupPicker } from './GroupPicker'
 import { UndoEntryButton } from './PointsLedgerRow'
 import { cn } from '@/lib/utils'
 
@@ -32,8 +40,32 @@ export default async function StudentPage({ params }: { params: { id: string } }
   const s = await requireStudentRead(user, params.id)
   const ctx = { classId: s.classId ?? undefined, classStage: s.class?.stage, studentId: s.id }
   const canWrite = can(user, 'student.write', ctx)
+  const isAdmin = user.role === 'ADMIN'
+  // Option B: the admin sees and reissues this child's login from the Sign-in card.
+  const onFile = isAdmin ? (await onFileAccountIds([s.account.id])).has(s.account.id) : false
   const isSelf = user.studentId === s.id
   const today = todayInNewYork()
+  // Follow-up groups and contact history are the staff's pastoral record,
+  // never shown to the child.
+  const staff = user.role !== 'STUDENT'
+  const [classGroups, contactLog] = staff
+    ? await Promise.all([
+        s.classId ? loadClassGroups([s.classId]) : Promise.resolve([]),
+        prisma.followUpLog.findMany({
+          where: { studentId: s.id },
+          orderBy: { at: 'desc' },
+          take: 10,
+          select: { id: true, method: true, result: true, note: true, at: true, caseId: true, by: { select: { displayName: true } } },
+        }),
+      ])
+    : [[], []]
+  const myGroup = classGroups[0] ?? null
+  const groupOwner = myGroup
+    ? effectiveServant(myGroup.kids.find((k) => k.id === s.id)?.groupServantId ?? null, new Set(myGroup.servants.map((sv) => sv.id)))
+    : null
+  const groupOwnerName = groupOwner ? myGroup!.servants.find((sv) => sv.id === groupOwner)?.name ?? null : null
+  const canManageGroups = can(user, 'group.manage', ctx)
+  const canCheckIn = staff && can(user, 'followup.write', ctx)
 
   const [entries, attendance, sundayRows, cases, exams, classmates, heldSundays, readingDates] = await Promise.all([
     prisma.pointEntry.findMany({
@@ -484,8 +516,68 @@ export default async function StudentPage({ params }: { params: { id: string } }
             </Card>
           )}
 
+          {staff && !isSelf && s.classId && (
+            <Card title="Group & contacts" icon={<HeartHandshake className="h-[15px] w-[15px]" />}>
+              <p className="text-[12.5px] text-parch-800" data-testid="student-group">
+                {groupOwnerName ? (
+                  <>
+                    Followed up by <strong>{groupOwnerName}</strong>
+                  </>
+                ) : (
+                  <Badge tone="warn">No servant yet</Badge>
+                )}
+              </p>
+              {canManageGroups && myGroup && myGroup.servants.length > 0 && (
+                <GroupPicker studentId={s.id} current={groupOwner} servants={myGroup.servants} />
+              )}
+              {canCheckIn && (
+                <div className="mt-3">
+                  <CheckInButton studentId={s.id} studentName={`${s.firstName} ${s.lastName}`.trim()} />
+                </div>
+              )}
+              <div className="mt-3 border-t border-[#F5F2ED] pt-2.5">
+                <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.8px] text-parch-500">Contact history</p>
+                {contactLog.length === 0 ? (
+                  <p className="text-[12px] text-parch-500">Nobody has logged a call, text or visit yet.</p>
+                ) : (
+                  <ul className="space-y-2" data-testid="contact-history">
+                    {contactLog.map((l) => (
+                      <li key={l.id} className="text-[12px] text-parch-800">
+                        <span className="font-semibold">{contactMethodLabel(l.method)}</span>
+                        {contactResultLabel(l.result) ? ` · ${contactResultLabel(l.result)}` : ''}
+                        <span className="text-parch-500">
+                          {' '}
+                          · {formatMonthDay(todayInNewYork(l.at))}
+                          {l.by ? ` · ${l.by.displayName}` : ''}
+                        </span>
+                        {l.caseId && (
+                          <Link href={`/portal/follow-ups/${l.caseId}`} className="ml-1 text-[11px] font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
+                            case
+                          </Link>
+                        )}
+                        {l.note && <p className="text-[11.5px] text-parch-600">{l.note}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {isAdmin && (
+            <LoginCard
+              accountId={s.account.id}
+              studentId={s.id}
+              loginId={s.account.loginId}
+              name={`${s.firstName} ${s.lastName}`.trim()}
+              email={s.account.email ?? s.parentEmails[0] ?? null}
+              phone={s.account.phone ?? s.fatherPhone ?? s.motherPhone ?? null}
+              onFile={onFile}
+              vaultEnabled={pinVaultEnabled()}
+            />
+          )}
           {canWrite && (
-            <StudentProfileActions studentId={s.id} hasImportNotes={!!s.importNotes} isAdmin={user.role === 'ADMIN'} loginEnabled={s.account.isActive} />
+            <StudentProfileActions studentId={s.id} hasImportNotes={!!s.importNotes} isAdmin={isAdmin} loginEnabled={s.account.isActive} showPinReset={!isAdmin} />
           )}
         </div>
       </div>

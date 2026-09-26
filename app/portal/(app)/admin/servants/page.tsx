@@ -129,6 +129,11 @@ export default async function AdminServantsPage({ searchParams }: { searchParams
                 <LinkButton href="/portal/admin/data" variant="secondary">
                   Import / export CSV
                 </LinkButton>
+                {/* Option B: each servant's own ID and PIN, by email, text,
+                    WhatsApp or a printed slip. Admin-only, like the page. */}
+                <LinkButton href="/portal/admin/servants/logins" variant="secondary">
+                  Send logins
+                </LinkButton>
                 <LinkButton href="/portal/admin/servants/new"><UserPlus className="h-[13px] w-[13px]" /> Add servant</LinkButton>
               </>
             )}

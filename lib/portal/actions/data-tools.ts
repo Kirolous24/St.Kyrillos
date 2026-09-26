@@ -2,7 +2,6 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
 import { randomInt } from 'node:crypto'
 import { Prisma, PortalRole, type ClassTitle, type Stage } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
@@ -16,6 +15,8 @@ import { studentName } from '../data/students'
 import { requireClassAccess } from '../data/classes'
 import { audit } from '../audit'
 import { randomPin } from '../credentials'
+import { hashPin, issuedPinFieldsFromHash } from '../pin-issue'
+import { placeNewKids } from '../data/groups'
 import type { PortalUser } from '../permissions'
 import {
   studentImportColumns,
@@ -676,8 +677,13 @@ export async function importStudentsCsv(
       ? []
       : prepared.filter((p) => classifyStudentImportRow(p.loginId, existingByLoginId).kind === 'create')
     const newPins = toCreate.map(() => randomPin())
-    const newHashes = await Promise.all(newPins.map((pin) => bcrypt.hash(pin, 10)))
+    const newHashes = await Promise.all(newPins.map(hashPin))
     const newPinByRow = new Map(toCreate.map((p, idx) => [p.rowNumber, { pin: newPins[idx]!, hash: newHashes[idx]! }]))
+
+    // Follow-up groups: children this file adds to a class, or moves into one,
+    // join a group there once every row is written (nobody else moves).
+    const placed = new Map<string, string[]>()
+    const placeLater = (classId: string, studentId: string) => placed.set(classId, [...(placed.get(classId) ?? []), studentId])
 
     // Pass 4: write each row. Still sequential — a blank-ID row's freshly
     // allocated login ID, and two rows in the same file sharing an ID that
@@ -717,7 +723,7 @@ export async function importStudentsCsv(
             data: {
               ...updatableData(p.data),
               ...(p.clearsClass
-                ? { class: { disconnect: true } }
+                ? { class: { disconnect: true }, groupServant: { disconnect: true } }
                 : p.classId
                   ? { class: { connect: { id: p.classId } } }
                   : {}),
@@ -729,6 +735,7 @@ export async function importStudentsCsv(
               },
             },
           })
+          if (p.classId && !p.clearsClass) placeLater(p.classId, classification.account.linkedId!)
           results.push({
             row: p.rowNumber,
             name: rowName(p),
@@ -757,7 +764,7 @@ export async function importStudentsCsv(
             account: {
               create: {
                 loginId,
-                pinHash: hash,
+                ...issuedPinFieldsFromHash(pin, hash, loginId),
                 role: PortalRole.STUDENT,
                 displayName: formatFullName(p.data),
                 ...p.account,
@@ -769,6 +776,7 @@ export async function importStudentsCsv(
         // So a later row in this same file that names the same (previously
         // unused) ID is treated as an update rather than a duplicate-ID error.
         existingByLoginId.set(loginId, { id: created.accountId, role: PortalRole.STUDENT, linkedId: created.id })
+        if (p.classId) placeLater(p.classId, created.id)
         results.push({ row: p.rowNumber, name: p.displayName, loginId, status: 'created', newPin: pin })
       } catch (err) {
         const message = err instanceof PortalError ? err.message : 'Could not save this row'
@@ -781,6 +789,11 @@ export async function importStudentsCsv(
     // A preview wrote nothing, so it neither logs as an import nor invalidates
     // any cache — the log would otherwise claim rows were created.
     if (preview) return summary
+    // A kid already in a group in that class keeps it: placeNewKids only places
+    // the ones without a servant there.
+    for (const [classId, ids] of Array.from(placed.entries())) {
+      await placeNewKids(classId, ids).catch((err) => console.error('Group placement failed:', err))
+    }
     await audit(user, 'data.importStudents', 'portal', defaultClassId, `${summary.created} created, ${summary.updated} updated, ${summary.errors} failed`)
     revalidatePath('/portal/admin/students')
     revalidatePath('/portal/classes')
@@ -933,7 +946,7 @@ export async function importServantsCsv(
           (p) => classifyServantImportRow(p.loginId, existingByLoginId, user.accountId, p.role).kind === 'create',
         )
     const newPins = toCreate.map(() => randomPin())
-    const newHashes = await Promise.all(newPins.map((pin) => bcrypt.hash(pin, 10)))
+    const newHashes = await Promise.all(newPins.map(hashPin))
     const newPinByRow = new Map(toCreate.map((p, idx) => [p.rowNumber, { pin: newPins[idx]!, hash: newHashes[idx]! }]))
 
     // Pass 4: write each row. Still sequential — a blank-ID row's freshly
@@ -986,7 +999,7 @@ export async function importServantsCsv(
         const created = await prisma.account.create({
           data: {
             loginId,
-            pinHash: hash,
+            ...issuedPinFieldsFromHash(pin, hash, loginId),
             ...p.accountData,
             servant: {
               create: {

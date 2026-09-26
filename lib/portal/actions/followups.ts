@@ -36,7 +36,7 @@ export async function logContact(raw: z.infer<typeof LogSchema>): Promise<Action
     await assertClassAction(user, c.classId, 'followup.write')
     const next = input.nextFollowUp ? parseDateOnly(input.nextFollowUp) : null
     await prisma.$transaction([
-      prisma.followUpLog.create({ data: { caseId: c.id, method: input.method, note: input.note || null, result: input.result ?? null, byId: user.accountId } }),
+      prisma.followUpLog.create({ data: { caseId: c.id, studentId: c.studentId, method: input.method, note: input.note || null, result: input.result ?? null, byId: user.accountId } }),
       // `undefined` means "don't touch" to Prisma, so clearing the date was a no-op.
       prisma.followUpCase.update({ where: { id: c.id }, data: { nextFollowUp: next ? toUTCDate(next) : null } }),
     ])
@@ -81,6 +81,7 @@ export async function resolveCase(raw: z.infer<typeof ResolveSchema>): Promise<A
       prisma.followUpLog.create({
         data: {
           caseId: c.id,
+          studentId: c.studentId,
           method: 'resolved',
           note: input.note || null,
           result: resolveReasonLabel(input.reason),
@@ -305,5 +306,54 @@ export async function createManualCase(raw: z.infer<typeof CreateSchema>): Promi
     revalidatePath('/portal/follow-ups')
     revalidatePath(`/portal/students/${s.id}`)
     return { caseId: c.id }
+  })
+}
+
+const CheckInSchema = z.object({
+  studentId: z.string().min(1),
+  method: z.enum(['call', 'text', 'whatsapp', 'email', 'visit', 'other']),
+  result: z.enum(['reached', 'no_answer', 'left_message', 'will_come', 'other']).optional(),
+  note: z.string().trim().max(1000).optional(),
+})
+
+/**
+ * A check-in on any child, not only one with an open case: the heart of
+ * following up a group is calling everybody, not just the ones who missed.
+ * If the child does have an open case, the check-in goes on its timeline, so
+ * the case shows what was already tried.
+ */
+export async function logCheckIn(raw: z.infer<typeof CheckInSchema>): Promise<ActionResult<{ onCase: boolean }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = CheckInSchema.parse(raw)
+    const s = await prisma.student.findUnique({
+      where: { id: input.studentId },
+      select: { id: true, classId: true, firstName: true, lastName: true },
+    })
+    if (!s || !s.classId) throw new PortalError('Student not found or has no class.')
+    await assertClassAction(user, s.classId, 'followup.write')
+    const open = await prisma.followUpCase.findFirst({ where: { studentId: s.id, status: 'OPEN' }, select: { id: true } })
+    await prisma.followUpLog.create({
+      data: {
+        studentId: s.id,
+        caseId: open?.id ?? null,
+        method: input.method,
+        note: input.note || null,
+        result: input.result ?? null,
+        byId: user.accountId,
+      },
+    })
+    await audit(
+      user,
+      'followup.checkIn',
+      'student',
+      s.id,
+      `${studentName(s)}: ${input.method}${input.result ? ` (${input.result})` : ''}${open ? ' — on the open case' : ''}`,
+    )
+    revalidatePath('/portal/my-group')
+    revalidatePath(`/portal/students/${s.id}`)
+    revalidatePath('/portal/follow-ups')
+    if (open) revalidatePath(`/portal/follow-ups/${open.id}`)
+    return { onCase: !!open }
   })
 }

@@ -3,7 +3,6 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
 import { PortalRole } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
@@ -15,6 +14,8 @@ import { normalizePhone } from '../phones'
 import { BULK_FIELD_KEYS, type BulkField } from '../student-fields'
 import { audit } from '../audit'
 import { freeLoginId, randomPin } from '../credentials'
+import { issuedPinFields } from '../pin-issue'
+import { placeNewKids } from '../data/groups'
 import { clearRateLimit } from '@/lib/rate-limit'
 
 const optionalText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional()
@@ -84,19 +85,23 @@ export async function createStudent(classId: string, raw: StudentFormInput): Pro
     const data = toData(input)
     const loginId = await freeLoginId()
     const pin = randomPin()
-    const pinHash = await bcrypt.hash(pin, 10)
+    const pinFields = await issuedPinFields(pin, loginId)
 
     const student = await prisma.student.create({
       data: {
         class: { connect: { id: cls.id } },
         ...data,
         account: {
-          create: { loginId, pinHash, role: PortalRole.STUDENT, displayName: studentName(data), ...toAccountData(input) },
+          create: { loginId, ...pinFields, role: PortalRole.STUDENT, displayName: studentName(data), ...toAccountData(input) },
         },
       },
       select: { id: true },
     })
     await audit(user, 'student.create', 'student', student.id, `${cls.name}: added ${studentName(data)} (ID ${loginId})`)
+    // Follow-up groups: a new child joins a group (a sibling's, or the
+    // smallest) and nobody else moves. A failure leaves them unassigned, which
+    // is flagged to the coordinator, rather than failing the add.
+    await placeNewKids(cls.id, [student.id]).catch((err) => console.error('Group placement failed:', err))
     revalidatePath(`/portal/classes/${cls.id}`)
     revalidatePath('/portal/admin/students')
     return { studentId: student.id, loginId, pin }
@@ -125,12 +130,11 @@ export async function resetStudentPin(studentId: string): Promise<ActionResult<{
     const user = await requirePortalUser()
     const existing = await assertStudentWrite(user, studentId)
     const pin = randomPin()
-    const pinHash = await bcrypt.hash(pin, 10)
-    const target = await prisma.student.findUnique({ where: { id: studentId }, select: { accountId: true } })
+    const target = await prisma.student.findUnique({ where: { id: studentId }, select: { accountId: true, account: { select: { loginId: true } } } })
     if (!target) throw new PortalError('Student not found.')
     const account = await prisma.account.update({
       where: { id: target.accountId },
-      data: { pinHash, failedAttempts: 0, lockedUntil: null },
+      data: { ...(await issuedPinFields(pin, target.account.loginId)), failedAttempts: 0, lockedUntil: null },
       select: { loginId: true },
     })
     // Clearing the DB lockout is not enough. lib/auth.ts consults the in-process
@@ -165,7 +169,10 @@ export async function moveStudent(studentId: string, classId: string | null): Pr
       const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true } })
       if (!cls) throw new PortalError('Class not found.')
     }
-    await prisma.student.update({ where: { id: studentId }, data: { classId } })
+    // A group belongs to a class: taken out of every class, the child has none;
+    // moved into one, they join a group there and nobody else moves.
+    await prisma.student.update({ where: { id: studentId }, data: { classId, ...(classId ? {} : { groupServantId: null, groupAssignedAt: null }) } })
+    if (classId) await placeNewKids(classId, [studentId]).catch((err) => console.error('Group placement failed:', err))
     await audit(user, 'student.move', 'student', studentId, `Moved ${studentName(s)} from ${s.classId ?? 'no class'} to ${classId ?? 'no class'}`)
     revalidatePath('/portal/admin/students')
     revalidatePath(`/portal/students/${studentId}`)
@@ -422,7 +429,11 @@ export async function bulkMoveStudents(input: { studentIds: string[]; classId: s
       if (!cls) throw new PortalError('Class not found.')
     }
     const before = await prisma.student.findMany({ where: { id: { in: ids } }, select: { classId: true } })
-    await prisma.student.updateMany({ where: { id: { in: ids } }, data: { classId: input.classId } })
+    await prisma.student.updateMany({
+      where: { id: { in: ids } },
+      data: { classId: input.classId, ...(input.classId ? {} : { groupServantId: null, groupAssignedAt: null }) },
+    })
+    if (input.classId) await placeNewKids(input.classId, ids).catch((err) => console.error('Group placement failed:', err))
     await audit(user, 'student.bulkMove', 'portal', input.classId, `Moved ${ids.length} student${ids.length === 1 ? '' : 's'} to ${input.classId ?? 'no class'}`)
     revalidatePath('/portal/admin/students')
     for (const c of Array.from(new Set(before.map((b) => b.classId).filter(Boolean)))) revalidatePath(`/portal/classes/${c}`)

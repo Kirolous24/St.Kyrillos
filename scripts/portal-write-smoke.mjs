@@ -155,7 +155,8 @@ try {
     check('updateServant moves the class', after.length === 1 && after[0].classId === c2.id, JSON.stringify(after))
 
     await go(`/portal/admin/servants/${servantAcct.id}`)
-    await page.locator('button', { hasText: 'Reset PIN' }).first().click()
+    // The reset moved into the Sign-in card above the form (option B).
+    await page.locator('button', { hasText: 'Reissue PIN' }).first().click()
     await page.waitForTimeout(2500)
     const reset = await prisma.account.findUnique({ where: { id: servantAcct.id }, select: { pinHash: true } })
     check('resetServantPin changes the hash', !!reset && reset.pinHash !== servantAcct.pinHash)

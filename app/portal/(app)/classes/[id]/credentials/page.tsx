@@ -6,6 +6,8 @@ import { requireClassAccess } from '@/lib/portal/data/classes'
 import { PageHeader, EmptyState } from '@/components/portal/ui'
 import { ReportLetterhead } from '../../../reports/ReportLetterhead'
 import { ClassCredentials } from './ClassCredentials'
+import { onFileAccountIds } from '@/lib/portal/data/logins'
+import { pinVaultEnabled } from '@/lib/portal/pin-vault'
 
 export const metadata = { title: 'Class logins' }
 
@@ -17,7 +19,22 @@ export default async function ClassCredentialsPage({ params }: { params: { id: s
   const user = await requirePortalUser()
   if (user.role !== 'ADMIN') notFound()
   const cls = await requireClassAccess(user, params.id, 'class.read')
-  const studentCount = await prisma.student.count({ where: { classId: cls.id } })
+  const roster = await prisma.student.findMany({
+    where: { classId: cls.id },
+    orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    select: { id: true, firstName: true, lastName: true, account: { select: { id: true, loginId: true } } },
+  })
+  // Which PINs are on file (option B), so the sheet can print the ones in use
+  // without resetting anybody.
+  const onFile = await onFileAccountIds(roster.map((s) => s.account.id))
+  const students = roster.map((s) => ({
+    studentId: s.id,
+    accountId: s.account.id,
+    name: `${s.firstName} ${s.lastName}`.trim(),
+    loginId: s.account.loginId,
+    onFile: onFile.has(s.account.id),
+  }))
+  const studentCount = students.length
 
   return (
     <div className="portal-print-page">
@@ -31,7 +48,13 @@ export default async function ClassCredentialsPage({ params }: { params: { id: s
       {studentCount === 0 ? (
         <EmptyState title="No students in this class yet" hint="Add students first, then come back for their logins." />
       ) : (
-        <ClassCredentials classId={cls.id} className={cls.name} studentCount={studentCount} />
+        <ClassCredentials
+          classId={cls.id}
+          className={cls.name}
+          studentCount={studentCount}
+          students={students}
+          vaultEnabled={pinVaultEnabled()}
+        />
       )}
     </div>
   )

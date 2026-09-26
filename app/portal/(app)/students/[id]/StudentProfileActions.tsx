@@ -18,11 +18,14 @@ export function StudentProfileActions({
   hasImportNotes,
   isAdmin,
   loginEnabled,
+  showPinReset = true,
 }: {
   studentId: string
   hasImportNotes: boolean
   isAdmin: boolean
   loginEnabled: boolean
+  /** False for the admin, whose Sign-in card already shows, reissues and shares the PIN. */
+  showPinReset?: boolean
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -33,7 +36,7 @@ export function StudentProfileActions({
   return (
     <Card title="Actions" icon={<Settings className="h-[15px] w-[15px]" />}>
       <div className="space-y-2.5">
-        {pin ? (
+        {showPinReset && (pin ? (
           <div className="rounded-[12px] border border-brand-gold/40 bg-brand-wash p-3.5 text-center">
             <p className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">New PIN for ID {pin.loginId}</p>
             <p className="font-serif text-[26px] font-bold tracking-[0.2em] text-brand-800 tabular-nums">{pin.pin}</p>
@@ -75,7 +78,7 @@ export function StudentProfileActions({
           >
             Reset PIN
           </button>
-        )}
+        ))}
         {hasImportNotes && (
           <button
             type="button"

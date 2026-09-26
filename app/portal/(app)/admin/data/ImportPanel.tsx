@@ -44,7 +44,7 @@ const STATUS_TONE = {
 
 const CAPTION = 'mb-1.5 block text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500'
 
-export function ImportPanel({ classes }: { classes: Array<{ id: string; name: string }> }) {
+export function ImportPanel({ classes, pinsKept = false }: { classes: Array<{ id: string; name: string }>; pinsKept?: boolean }) {
   const [kind, setKind] = useState<'students' | 'servants'>('students')
   const [classId, setClassId] = useState<string>('')
   const [fileName, setFileName] = useState<string | null>(null)
@@ -235,8 +235,10 @@ export function ImportPanel({ classes }: { classes: Array<{ id: string; name: st
           {newPins.length > 0 && (
             <Callout tone="warn" title="New PINs — write these down now">
               <span className="mb-1 flex items-center gap-1.5 text-[11px]">
-                <KeyRound className="h-3.5 w-3.5" aria-hidden /> They are not stored in readable form and cannot be
-                shown again.
+                <KeyRound className="h-3.5 w-3.5" aria-hidden />{' '}
+                {pinsKept
+                  ? 'They are also kept on file: you can see them again on each person’s page or in IDs & PINs below.'
+                  : 'They are not stored in readable form and cannot be shown again.'}
               </span>
               <ul className="mt-1 grid gap-0.5 text-[12.5px] tabular-nums sm:grid-cols-2">
                 {newPins.map((r) => (

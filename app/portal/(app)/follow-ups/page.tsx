@@ -12,6 +12,10 @@ import { NewCaseForm } from './NewCaseForm'
 import { formatPhone, waLink } from '@/lib/portal/phones'
 import { CaseQuickActions, type Contact } from './CaseQuickActions'
 import { ClosedCaseCleanup } from './ClosedCaseCleanup'
+import { AssigneeFilter } from './AssigneeFilter'
+import { followUpScope } from '@/lib/portal/groups'
+import { assigneeByStudent, ensureInitialSplits, followUpCaseWhere, groupSummaries, loadClassGroups } from '@/lib/portal/data/groups'
+import type { Prisma } from '@prisma/client'
 
 export const metadata = { title: 'Follow-ups' }
 
@@ -42,7 +46,7 @@ const firstNumber = (s: CaseStudent) => s.account.phone || s.fatherPhone || s.mo
 const telFor = (s: CaseStudent) => { const n = firstNumber(s); return n ? `tel:${n.replace(/[^\d+]/g, '')}` : null }
 const waFor = (s: CaseStudent) => waLink(firstNumber(s))
 
-export default async function FollowUpsPage({ searchParams }: { searchParams: { show?: string; class?: string } }) {
+export default async function FollowUpsPage({ searchParams }: { searchParams: { show?: string; class?: string; servant?: string } }) {
   const user = await requirePortalUser()
   if (user.role === 'STUDENT')
     return (
@@ -63,9 +67,31 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
   const showDone = searchParams.show === 'done'
   const today = todayInNewYork()
 
+  /**
+   * Follow-up groups (2026-09-26). A plain servant's list is their own group
+   * plus anybody in their class without a servant; a Coordinator, a stage
+   * overseer, the admin and the pastor see their whole scope, with who each
+   * child is assigned to. This narrows the list only: every case stays openable.
+   */
+  await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
+  const scope = followUpScope(user, classes)
+  const coordinatorView = scope.whole.length > 0
+  const [scopeWhere, classGroups] = await Promise.all([followUpCaseWhere(user, classes), loadClassGroups(classIds)])
+  const assignee = assigneeByStudent(classGroups)
+  const servantParam = (searchParams.servant ?? '').trim()
+  let narrow: Prisma.FollowUpCaseWhereInput = {}
+  if (coordinatorView && servantParam) {
+    const want = servantParam === 'mine' ? (user.servantId ?? '') : servantParam
+    const ids = Array.from(assignee.entries())
+      .filter(([, a]) => (servantParam === 'unassigned' ? a === null : a?.servantId === want))
+      .map(([id]) => id)
+    narrow = { studentId: { in: ids } }
+  }
+  const listWhere: Prisma.FollowUpCaseWhereInput = { AND: [scopeWhere, narrow] }
+
   const CASE_LIMIT = 200
-  const cases = await prisma.followUpCase.findMany({
-    where: { classId: { in: classIds }, status: showDone ? 'DONE' : 'OPEN' },
+  const fetched = await prisma.followUpCase.findMany({
+    where: { AND: [listWhere, { status: showDone ? 'DONE' : 'OPEN' }] },
     // F0112 — open cases were listed oldest-first, which is *nearly* worst-first
     // and quietly is not: a child who missed six Sundays last month sat below a
     // child who missed two last year. Ordered by how many Sundays have been
@@ -99,10 +125,15 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
       },
     },
   })
-  // Counts for the two summary tiles — display only, same class scope as above.
-  const [openCount, doneCount] = await Promise.all([
-    prisma.followUpCase.count({ where: { classId: { in: classIds }, status: 'OPEN' } }),
-    prisma.followUpCase.count({ where: { classId: { in: classIds }, status: 'DONE' } }),
+  // A Coordinator who also has a group sees their own children first, in the
+  // same worst-first order; everyone else's follow.
+  const mine = (c: (typeof fetched)[number]) => !!user.servantId && assignee.get(c.student.id)?.servantId === user.servantId
+  const cases = [...fetched.filter(mine), ...fetched.filter((c) => !mine(c))]
+  // Counts for the two summary tiles — display only, same scope as the list.
+  const [openCount, doneCount, summaries] = await Promise.all([
+    prisma.followUpCase.count({ where: { AND: [listWhere, { status: 'OPEN' }] } }),
+    prisma.followUpCase.count({ where: { AND: [listWhere, { status: 'DONE' }] } }),
+    coordinatorView ? groupSummaries(scope.whole) : Promise.resolve([]),
   ])
   // F0121 — the list is capped but the tiles counted everything, so a church
   // with 250 open cases read "250" above a list of 200 and nothing said the
@@ -177,6 +208,13 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                   <p className="border-b border-[#F5F2ED] px-[18px] py-2.5 text-[12.5px] text-parch-700">{c.title}</p>
                   <dl className="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-4">
                     <Detail label="Class" value={c.class.name} />
+                    {/* Follow-up groups: whose child this is. */}
+                    <Detail
+                      label="Assigned to"
+                      value={
+                        assignee.get(c.student.id)?.name ?? <Badge tone="warn">No servant yet</Badge>
+                      }
+                    />
                     <Detail label="Opened" value={`${formatMonthDay(formatDateOnly(c.createdAt))} · ${ageDays}d ago`} />
                     {c.origin === 'AUTO' && <Detail label="Missed in a row" value={String(c.consecutiveAbsences)} />}
                     <Detail
@@ -283,6 +321,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
             <LinkButton
               href={`/portal/follow-ups?${new URLSearchParams({
                 ...(scopedTo ? { class: scopedTo.id } : {}),
+                ...(coordinatorView && servantParam ? { servant: servantParam } : {}),
                 ...(showDone ? {} : { show: 'done' }),
               }).toString()}`}
               variant="secondary"
@@ -382,6 +421,28 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
         </p>
       )}
 
+      {/* Follow-up groups: a coordinator can narrow to one servant's group; a
+          plain servant is told what their list is, so a shorter list is never
+          mistaken for fewer children waiting. */}
+      {coordinatorView ? (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <AssigneeFilter
+            value={servantParam}
+            hasOwnGroup={!!user.servantId && scope.group.length + scope.whole.filter((id) => user.classIds.includes(id)).length > 0}
+            classes={classGroups
+              .filter((g) => scope.whole.includes(g.classId))
+              .map((g) => ({ name: g.name, servants: g.servants }))}
+          />
+        </div>
+      ) : scope.group.length > 0 ? (
+        <p className="mb-4 rounded-[12px] border border-parch-200 bg-parch-50 px-4 py-2.5 text-[12px] text-parch-700">
+          Showing your group and anybody in your class who has no servant yet.{' '}
+          <Link href="/portal/my-group" className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
+            Open My Group
+          </Link>
+        </p>
+      ) : null}
+
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
           {cases.length === 0 ? (
@@ -419,6 +480,49 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
           )}
         </div>
         <div className="space-y-5">
+          {summaries.length > 0 && (
+            <Card title="Who is following up" icon={<HeartHandshake className="h-4 w-4" aria-hidden />} bodyClassName="p-0">
+              <table className="w-full text-[12px]" data-testid="group-summary">
+                <thead>
+                  <tr className="border-b border-parch-200 text-left text-[10.5px] font-bold uppercase tracking-[0.8px] text-parch-500">
+                    <th className="px-3 py-2">Servant</th>
+                    <th className="px-2 py-2 text-right">Kids</th>
+                    <th className="px-2 py-2 text-right">Open</th>
+                    <th className="px-3 py-2 text-right">Reached 30d</th>
+                  </tr>
+                </thead>
+                {summaries.map((g) => (
+                  <tbody key={g.classId}>
+                    {summaries.length > 1 && (
+                      <tr>
+                        <td colSpan={4} className="bg-brand-wash px-3 py-1.5 text-[11px] font-bold text-brand-800">
+                          {g.name}
+                          {g.health.flagged && <span className="ml-1.5 text-[#D97706]">· needs attention</span>}
+                        </td>
+                      </tr>
+                    )}
+                    {g.rows.map((r) => (
+                      <tr key={r.servantId} className="border-b border-[#F5F2ED] last:border-0">
+                        <td className="px-3 py-1.5 font-semibold text-parch-900">{r.name}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{r.kids}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{r.open}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">
+                          {r.contacted}/{r.kids}
+                        </td>
+                      </tr>
+                    ))}
+                    {g.unassignedKids > 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-1.5 text-[11.5px] font-semibold text-[#D97706]">
+                          {g.unassignedKids} {g.unassignedKids === 1 ? 'child has' : 'children have'} no servant yet
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                ))}
+              </table>
+            </Card>
+          )}
           {canCreate && <NewCaseForm today={today} students={students.map((s) => ({ id: s.id, label: `${studentName(s)} — ${s.class?.name ?? ''}` }))} />}
           {/* F0113 — only on the resolved list, and only for someone who may
               write follow-ups. An open case is a child nobody has reached yet. */}

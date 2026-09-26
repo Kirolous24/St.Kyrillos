@@ -13,6 +13,8 @@ const STAFF_ONLY = [
   '/portal/reports',
   '/portal/servant-attendance',
   '/portal/follow-ups',
+  // Follow-up groups: a servant's children and their families' numbers.
+  '/portal/my-group',
   // F0279 — /portal/announcements is deliberately NOT here. A child is told
   // things in announcements, and both the sidebar row and the announcement
   // notification send them to this page; bouncing them off it made the

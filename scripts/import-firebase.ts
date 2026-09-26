@@ -9,10 +9,10 @@
  * with a fresh export.
  */
 import { readFileSync } from 'node:fs'
-import bcrypt from 'bcryptjs'
 import { PrismaClient } from '@prisma/client'
 import { transformBackup, type BackupJson, type ImportAccount } from '../lib/portal/import-transform'
 import { toUTCDate } from '../lib/portal/dates'
+import { issuedPinFields } from '../lib/portal/pin-issue'
 
 const args = process.argv.slice(2)
 const file = args.find((a) => !a.startsWith('--'))
@@ -58,14 +58,14 @@ const ts = (s: string | null) => (s && !Number.isNaN(Date.parse(s)) ? new Date(s
 
 async function upsertAccount(a: ImportAccount, legacyToAccountId: Map<string, string>) {
   const existing = await prisma.account.findUnique({ where: { legacyUid: a.legacyUid }, select: { id: true } })
-  const pinHash = !existing || resetPins ? await bcrypt.hash(a.pin, 10) : undefined
+  const pinFields = !existing || resetPins ? await issuedPinFields(a.pin, a.loginId) : undefined
 
   const account = await prisma.account.upsert({
     where: { legacyUid: a.legacyUid },
     create: {
       legacyUid: a.legacyUid,
       loginId: a.loginId,
-      pinHash: pinHash!,
+      ...pinFields!,
       role: a.role,
       displayName: a.displayName,
       email: a.email,
@@ -75,7 +75,7 @@ async function upsertAccount(a: ImportAccount, legacyToAccountId: Map<string, st
     },
     update: {
       loginId: a.loginId,
-      ...(pinHash ? { pinHash } : {}),
+      ...(pinFields ?? {}),
       role: a.role,
       displayName: a.displayName,
       email: a.email,

@@ -6,6 +6,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { accentByOrder } from '@/lib/portal/accents'
 import { STAGE_LABEL } from '@/lib/portal/format'
 import { PageHeader, StatCard, Card, EmptyState, Badge, LinkButton } from '@/components/portal/ui'
+import { ensureInitialSplits, groupSummaries } from '@/lib/portal/data/groups'
 
 export const metadata = { title: 'My Stage' }
 
@@ -36,6 +37,11 @@ export default async function MyStagePage() {
       },
     },
   })
+
+  // Follow-up groups: who follows up whom in every class of the stage, and
+  // which classes need their groups looked at.
+  await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
+  const summaries = new Map((await groupSummaries(classes.map((c) => c.id))).map((g) => [g.classId, g]))
 
   const studentTotal = classes.reduce((n, c) => n + c._count.students, 0)
   // One servant may cover two classes in the stage; count people, not rows.
@@ -133,6 +139,43 @@ export default async function MyStagePage() {
                       )}
                     </dl>
                   )}
+
+                  {(() => {
+                    const g = summaries.get(c.id)
+                    if (!g || g.rows.length === 0 || c._count.students === 0) return null
+                    const flags = [
+                      g.health.unassigned > 0 ? `${g.health.unassigned} with no servant` : null,
+                      ...g.health.emptyServants.map((n) => `${n} has none`),
+                      g.health.uneven ? 'uneven' : null,
+                    ].filter(Boolean)
+                    return (
+                      <div className="mt-3 border-t border-[#F0EBE3] pt-2.5" data-testid="stage-groups">
+                        <p className="mb-1 flex items-center justify-between gap-2 text-[9.5px] font-bold uppercase tracking-[0.4px] text-brand-gold-dark">
+                          Follow-up groups
+                          {flags.length > 0 ? <Badge tone="warn">Needs attention</Badge> : <Badge tone="good">Even</Badge>}
+                        </p>
+                        {flags.length > 0 && <p className="mb-1 text-[11px] text-[#D97706]">{flags.join(' · ')}</p>}
+                        <table className="w-full text-[11.5px]">
+                          <tbody>
+                            {g.rows.map((r) => (
+                              <tr key={r.servantId}>
+                                <td className="py-0.5 pr-2 text-parch-800">{r.name}</td>
+                                <td className="py-0.5 text-right tabular-nums text-parch-600" title="Children in their group">
+                                  {r.kids}
+                                </td>
+                                <td className="py-0.5 pl-2 text-right tabular-nums text-parch-600" title="Open follow-up cases">
+                                  {r.open} open
+                                </td>
+                                <td className="py-0.5 pl-2 text-right tabular-nums text-parch-600" title="Reached in the last 30 days">
+                                  {r.contacted}/{r.kids} reached
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })()}
                 </Card>
               </li>
             )

@@ -3,10 +3,11 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserCog, GraduationCap, KeyRound } from 'lucide-react'
-import { createServant, updateServant, resetServantPin, deleteServant, type ServantFormInput } from '@/lib/portal/actions/admin'
+import { createServant, updateServant, deleteServant, type ServantFormInput } from '@/lib/portal/actions/admin'
 import { Card, Field, inputClass, selectClass, checkboxClass, buttonClass, Callout, Badge } from '@/components/portal/ui'
 import { accentFor } from '@/lib/portal/accents'
 import { cn } from '@/lib/utils'
+import { LoginShareButtons } from './LoginShareButtons'
 
 interface Props {
   mode: 'create' | 'edit'
@@ -14,18 +15,18 @@ interface Props {
   isSelf?: boolean
   classes: Array<{ id: string; name: string }>
   initial?: Partial<ServantFormInput>
+  /** True when the site keeps issued PINs (option B), so the admin can see this one again later. */
+  pinKept?: boolean
 }
 
 /** The prototype's .grid2. */
 const GRID2 = 'grid grid-cols-1 gap-x-4 sm:grid-cols-2'
 
-export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props) {
+export function ServantForm({ mode, accountId, isSelf, classes, initial, pinKept = false }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState('')
   const [creds, setCreds] = useState<{ loginId: string; pin: string } | null>(null)
-  // F0851 — see the share row under the new credentials below.
-  const [copied, setCopied] = useState(false)
   const [form, setForm] = useState<ServantFormInput>({
     displayName: initial?.displayName ?? '',
     role: initial?.role ?? 'SERVANT',
@@ -38,44 +39,6 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props
     isActive: initial?.isActive ?? true,
   })
 
-  /**
-   * F0851 — what an admin actually has to send a new servant. The PIN is shown
-   * once and never again, so without this they read eight digits off a screen
-   * and retype them into a message; one wrong digit and the servant meets a
-   * login screen on a Sunday morning and the PIN has to be reset again.
-   */
-  const shareText = creds
-    ? `St. Kyrillos Sunday School portal\n${typeof window === 'undefined' ? '' : `${window.location.origin}/portal/login\n`}ID: ${creds.loginId}\nPIN: ${creds.pin}`
-    : ''
-  const shareRow = creds ? (
-    <div className="mt-3.5 flex flex-wrap gap-2">
-      <button
-        type="button"
-        className={cn(buttonClass('secondary'), 'min-h-[40px]')}
-        onClick={() => {
-          void navigator.clipboard
-            ?.writeText(shareText)
-            .then(() => {
-              setError('')
-              setCopied(true)
-            })
-            .catch(() => setError('This browser would not let the portal copy. Write the ID and PIN down instead.'))
-        }}
-      >
-        {copied ? 'Copied — paste it to them' : 'Copy ID and PIN'}
-      </button>
-      {/* Only when an address was actually typed in above, so the button can
-          never open a blank compose window. */}
-      {form.email && (
-        <a
-          href={`mailto:${encodeURIComponent(form.email)}?subject=${encodeURIComponent('Your Sunday School portal sign-in')}&body=${encodeURIComponent(shareText)}`}
-          className={cn(buttonClass('secondary'), 'min-h-[40px]')}
-        >
-          Email it to {form.displayName || 'them'}
-        </a>
-      )}
-    </div>
-  ) : null
   const set = (k: keyof ServantFormInput) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value })
 
   function toggleClass(classId: string) {
@@ -108,7 +71,10 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props
   if (creds && mode === 'create') {
     return (
       <Card title="Account created" icon={<KeyRound className="h-[15px] w-[15px]" />}>
-        <p className="text-[12.5px] text-parch-700">Share these with {form.displayName}. The PIN is shown only once.</p>
+        <p className="text-[12.5px] text-parch-700">
+          Share these with {form.displayName}.{' '}
+          {pinKept ? 'You can see the PIN again on their page.' : 'The PIN is shown only once.'}
+        </p>
         <dl className="mt-3.5 grid grid-cols-2 gap-3 text-center">
           <div className="rounded-[12px] border border-brand-gold/40 bg-brand-wash p-3.5">
             <dt className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">ID</dt>
@@ -119,6 +85,12 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props
             <dd className="font-serif text-[26px] font-bold tracking-[0.2em] text-brand-800 tabular-nums">{creds.pin}</dd>
           </div>
         </dl>
+        {/* F0851 — what an admin actually has to send a new servant. The share
+            row was written for this card and never rendered; it now also
+            opens Messages and WhatsApp, not only a mail draft. */}
+        <div className="mt-3.5">
+          <LoginShareButtons name={form.displayName} loginId={creds.loginId} pin={creds.pin} email={form.email} phone={form.phone} />
+        </div>
         <button type="button" className={cn(buttonClass('primary'), 'mt-4 min-h-[40px]')} onClick={() => { router.push('/portal/admin/servants'); router.refresh() }}>Back to servants</button>
       </Card>
     )
@@ -212,20 +184,8 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial }: Props
         <button type="button" className={cn(buttonClass('secondary'), 'min-h-[40px]')} onClick={() => router.push('/portal/admin/servants')}>Cancel</button>
         {mode === 'edit' && (
           <>
-            {creds ? (
-              <span className="inline-flex items-center gap-2 rounded-[10px] border border-brand-gold/40 bg-brand-wash px-3 py-2 text-[12px] text-parch-800">
-                New PIN for ID {creds.loginId}: <strong className="font-serif text-[15px] tracking-[0.2em] text-brand-800 tabular-nums">{creds.pin}</strong>
-              </span>
-            ) : (
-              <button
-                type="button"
-                disabled={pending}
-                className={cn(buttonClass('secondary'), 'min-h-[40px]')}
-                onClick={() => { if (confirm('Reset this PIN?')) startTransition(async () => { const r = await resetServantPin(accountId!); if (r.ok) setCreds(r.data!); else setError(r.error) }) }}
-              >
-                Reset PIN
-              </button>
-            )}
+            {/* The PIN lives in the Sign-in card above the form now (option B):
+                show it, reissue it, and send it from one place. */}
             {isSelf && <Badge tone="gold">This is you</Badge>}
             {!isSelf && (
               <button

@@ -48,6 +48,10 @@ export interface NotificationFacts {
   absenceStreaks?: readonly { studentId: string; name: string; streak: number }[]
   /** Active classes with nobody serving them. */
   classesWithoutServants?: readonly { id: string; name: string }[]
+  /** Classes whose follow-up groups are flagged, for the people who arrange them. */
+  groupAttention?: readonly { classId: string; name: string }[]
+  /** Where the group notification leads; defaults to the class list. */
+  groupAttentionHref?: string
 }
 
 export const ANNOUNCEMENT_FRESH_DAYS = 5
@@ -175,6 +179,26 @@ export function buildNotifications(role: Role, facts: NotificationFacts): Portal
           .map((c) => c.name)
           .join(', ') + (orphans.length > 4 ? `, +${orphans.length - 4} more` : ''),
         href: '/portal/admin/classes',
+        tone: 'warn',
+      })
+    }
+  }
+
+  // Follow-up groups (2026-09-26): a servant with no kids, a kid with no
+  // servant, or groups three or more apart. Keyed on the number of classes, so
+  // dismissing two does not silence a third.
+  if (role === 'SERVANT' || role === 'ADMIN') {
+    const flagged = facts.groupAttention ?? []
+    if (flagged.length > 0) {
+      items.push({
+        key: `groups:attention:${flagged.length}`,
+        count: flagged.length,
+        title:
+          flagged.length === 1
+            ? `Groups need attention in ${flagged[0]!.name}`
+            : `Groups need attention in ${flagged.length} classes`,
+        detail: 'A servant has no kids, a kid has no servant, or the groups are uneven.',
+        href: facts.groupAttentionHref ?? '/portal/classes',
         tone: 'warn',
       })
     }

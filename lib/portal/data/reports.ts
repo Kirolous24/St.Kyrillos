@@ -7,9 +7,10 @@ import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import type { PortalUser, StageKey } from '../permissions'
-import { visibleClassIds } from '../permissions'
+import { can, visibleClassIds } from '../permissions'
 import { requireClassAccess, listVisibleClasses } from './classes'
 import { studentName } from './students'
+import { followUpCaseWhere, groupSummaries } from './groups'
 import { rankStudents } from '../points-math'
 import { todayInNewYork, toUTCDate, newYorkDayStart, formatDateOnly, addDays } from '../dates'
 import {
@@ -140,20 +141,35 @@ async function buildFacts(user: PortalUser, today: string): Promise<PortalNotifi
     const classes = await listVisibleClasses(user)
     const classIds = classes.map((c) => c.id)
     if (classIds.length === 0) return buildNotifications('SERVANT', { today })
-    const [students, openCases, autoCases] = await Promise.all([
+    // Follow-up groups: a plain servant's cases are their own group's (plus
+    // anybody in their class without a servant), exactly what their Follow-ups
+    // page lists, so the bell and the sidebar badge never promise more.
+    const scopeWhere = await followUpCaseWhere(user, classes)
+    // Group flags go to whoever arranges groups: the class Coordinator for
+    // their class, the stage overseer for their stage.
+    const manages = classes.filter((c) => can(user, 'group.manage', { classId: c.id, classStage: c.stage }))
+    const [students, openCases, autoCases, summaries] = await Promise.all([
       prisma.student.findMany({
         where: { classId: { in: classIds }, dob: { not: null } },
         select: { id: true, firstName: true, lastName: true, dob: true },
       }),
-      prisma.followUpCase.count({ where: { classId: { in: classIds }, status: 'OPEN' } }),
+      prisma.followUpCase.count({ where: { AND: [scopeWhere, { status: 'OPEN' }] } }),
       prisma.followUpCase.findMany({
-        where: { classId: { in: classIds }, status: 'OPEN', origin: 'AUTO', consecutiveAbsences: { gte: 3 } },
+        where: { AND: [scopeWhere, { status: 'OPEN', origin: 'AUTO', consecutiveAbsences: { gte: 3 } }] },
         orderBy: { consecutiveAbsences: 'desc' },
         take: 10,
         select: { studentId: true, consecutiveAbsences: true, student: { select: { firstName: true, lastName: true } } },
       }),
+      groupSummaries(manages.map((c) => c.id)),
     ])
+    const flagged = summaries.filter((g) => g.health.flagged)
     return buildNotifications('SERVANT', {
+      groupAttention: flagged.map((g) => ({ classId: g.classId, name: g.name })),
+      groupAttentionHref: user.stageOversight
+        ? '/portal/my-stage'
+        : flagged.length === 1
+          ? `/portal/classes/${flagged[0]!.classId}#groups`
+          : '/portal/classes',
       today,
       birthdays: students
         .filter((s) => s.dob)
@@ -168,15 +184,24 @@ async function buildFacts(user: PortalUser, today: string): Promise<PortalNotifi
   }
 
   if (user.role === 'ADMIN') {
-    const [orphans, openCases] = await Promise.all([
+    const active = await prisma.schoolClass.findMany({ where: { isActive: true }, select: { id: true } })
+    const [orphans, openCases, summaries] = await Promise.all([
       prisma.schoolClass.findMany({
         where: { isActive: true, servants: { none: {} } },
         orderBy: { sortOrder: 'asc' },
         select: { id: true, name: true },
       }),
       prisma.followUpCase.count({ where: { status: 'OPEN' } }),
+      groupSummaries(active.map((c) => c.id)),
     ])
-    return buildNotifications('ADMIN', { today, classesWithoutServants: orphans, openCases })
+    const flagged = summaries.filter((g) => g.health.flagged)
+    return buildNotifications('ADMIN', {
+      today,
+      classesWithoutServants: orphans,
+      openCases,
+      groupAttention: flagged.map((g) => ({ classId: g.classId, name: g.name })),
+      groupAttentionHref: flagged.length === 1 ? `/portal/classes/${flagged[0]!.classId}#groups` : '/portal/classes',
+    })
   }
 
   const openCases = await prisma.followUpCase.count({ where: { status: 'OPEN' } })

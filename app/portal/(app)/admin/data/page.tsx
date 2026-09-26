@@ -7,6 +7,8 @@ import { BackupPanel } from './BackupPanel'
 import { ImportPanel } from './ImportPanel'
 import { RepairPanel } from './RepairPanel'
 import { DangerZone } from './DangerZone'
+import { LoginsPanel } from './LoginsPanel'
+import { pinVaultEnabled } from '@/lib/portal/pin-vault'
 
 export const metadata = { title: 'Data & backup' }
 
@@ -55,7 +57,8 @@ export default async function AdminDataPage() {
 
       <div className="space-y-5">
         <BackupPanel />
-        <ImportPanel classes={classes} />
+        <ImportPanel classes={classes} pinsKept={pinVaultEnabled()} />
+        <LoginsPanel vaultEnabled={pinVaultEnabled()} />
         <RepairPanel />
         {classes.length === 0 ? (
           <Callout tone="info" title="Danger zone">

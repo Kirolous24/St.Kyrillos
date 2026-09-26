@@ -279,6 +279,11 @@ export function navForUser(user: PortalUser): NavItem[] {
         user.classIds.length === 1 && !user.stageOversight
           ? { href: `/portal/classes/${user.classIds[0]}`, label: 'Class Profile', icon: 'classes', section: 'Overview' }
           : { href: '/portal/classes', label: 'My Classes', icon: 'classes', section: 'Overview' },
+        // Follow-up groups (2026-09-26): the children this servant follows up.
+        // Only for a servant who serves a class, since a group belongs to one.
+        ...(user.classIds.length > 0
+          ? [{ href: '/portal/my-group', label: 'My Group', icon: 'group', section: 'Overview' } as NavItem]
+          : []),
         { href: '/portal/students', label: 'Students', icon: 'students', section: 'Attendance & Rewards' },
         { href: '/portal/attendance', label: 'Attendance', icon: 'attendance', section: 'Attendance & Rewards' },
         { href: '/portal/qr', label: 'QR Attendance', icon: 'qr', section: 'Attendance & Rewards' },

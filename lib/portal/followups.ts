@@ -51,3 +51,20 @@ export function contactMethodLabel(key: string | null | undefined): string {
   if (!key) return 'Contact'
   return METHOD_BY_KEY.get(key) ?? key.charAt(0).toUpperCase() + key.slice(1)
 }
+
+const RESULT_LABELS: Record<string, string> = {
+  reached: 'Reached',
+  no_answer: 'No answer',
+  left_message: 'Left message',
+  will_come: 'Will come',
+  other: 'Other',
+}
+
+/**
+ * How a contact went, in words. A resolved case stores its reason's label here
+ * already ("Attending again"), so anything unrecognised is shown as it is.
+ */
+export function contactResultLabel(key: string | null | undefined): string | null {
+  if (!key) return null
+  return RESULT_LABELS[key] ?? key
+}
