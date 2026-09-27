@@ -44,9 +44,23 @@ const STATUS_TONE = {
 
 const CAPTION = 'mb-1.5 block text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500'
 
-export function ImportPanel({ classes, pinsKept = false }: { classes: Array<{ id: string; name: string }>; pinsKept?: boolean }) {
+/**
+ * The CSV import and export. The admin's copy, on Data & Backup, covers
+ * students and servants in every class. With `fixedClass` it is a servant's
+ * class import (2026-09-27): students only, into that one class, which the
+ * server enforces as well.
+ */
+export function ImportPanel({
+  classes,
+  pinsKept = false,
+  fixedClass = null,
+}: {
+  classes: Array<{ id: string; name: string }>
+  pinsKept?: boolean
+  fixedClass?: { id: string; name: string } | null
+}) {
   const [kind, setKind] = useState<'students' | 'servants'>('students')
-  const [classId, setClassId] = useState<string>('')
+  const [classId, setClassId] = useState<string>(fixedClass?.id ?? '')
   const [fileName, setFileName] = useState<string | null>(null)
   const [csv, setCsv] = useState<string>('')
   const [summary, setSummary] = useState<ImportSummary | null>(null)
@@ -138,8 +152,9 @@ export function ImportPanel({ classes, pinsKept = false }: { classes: Array<{ id
   const newPins = summary?.rows.filter((r) => r.newPin) ?? []
 
   return (
-    <Card title="Import & export" icon={<Upload className="h-4 w-4" />}>
+    <Card title={fixedClass ? `Import students into ${fixedClass.name}` : 'Import & export'} icon={<Upload className="h-4 w-4" />}>
       {/* The prototype's mode pills: the active one takes the burgundy→gold gradient. */}
+      {!fixedClass && (
       <div className="mb-4 flex gap-2">
         {(['students', 'servants'] as const).map((k) => (
           <button
@@ -162,8 +177,9 @@ export function ImportPanel({ classes, pinsKept = false }: { classes: Array<{ id
           </button>
         ))}
       </div>
+      )}
 
-      {kind === 'students' && (
+      {kind === 'students' && !fixedClass && (
         <label className="mb-3.5 block">
           <span className={CAPTION}>Class</span>
           <select
@@ -188,7 +204,7 @@ export function ImportPanel({ classes, pinsKept = false }: { classes: Array<{ id
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={exportCsv} disabled={pending} className={buttonClass('secondary')}>
-          <Download className="h-4 w-4" aria-hidden /> Export {kind} CSV
+          <Download className="h-4 w-4" aria-hidden /> {fixedClass ? `Export ${fixedClass.name}` : `Export ${kind} CSV`}
         </button>
         <button type="button" onClick={downloadTemplate} disabled={pending} className={buttonClass('secondary')}>
           <FileSpreadsheet className="h-4 w-4" aria-hidden /> Download template
@@ -207,8 +223,21 @@ export function ImportPanel({ classes, pinsKept = false }: { classes: Array<{ id
       </div>
 
       <Callout tone="info" title="How the import behaves">
-        Rows are matched on the 4-digit ID: a known ID updates that person, a blank or unused ID creates a new account
-        with a fresh PIN. An existing PIN is never changed, and no export ever contains a PIN or a hash.
+        {fixedClass ? (
+          <>
+            Every row goes into <strong>{fixedClass.name}</strong>. A row with a child&rsquo;s 4-digit ID updates that child
+            (only children in this class). A row without one adds a new child with a fresh ID and PIN, unless a child with
+            that name is <strong>already in the portal</strong>: that row is skipped, so nobody is added twice. Press{' '}
+            <strong>Preview</strong> first; nothing is written until you confirm. To update this class, export it, edit
+            the sheet and import it back: the export carries everyone&rsquo;s ID.
+          </>
+        ) : (
+          <>
+            Rows are matched on the 4-digit ID: a known ID updates that person, a blank or unused ID creates a new
+            account with a fresh PIN. A new student whose name is already in the portal is skipped, so nobody is added
+            twice. An existing PIN is never changed, and no export ever contains a PIN or a hash.
+          </>
+        )}
       </Callout>
 
       {error && (

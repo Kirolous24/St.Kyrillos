@@ -171,6 +171,9 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                 <LinkButton href={`/portal/classes/${cls.id}/attendance`}>Take attendance</LinkButton>
                 <LinkButton href={`/portal/classes/${cls.id}/points`} variant="secondary">Points</LinkButton>
                 {canEditStudents && <LinkButton href={`/portal/classes/${cls.id}/students/new`} variant="secondary">Add student</LinkButton>}
+                {/* 2026-09-27 — a class list comes in as a spreadsheet; the import
+                    keeps to this class and skips anyone already in the portal. */}
+                {canEditStudents && <LinkButton href={`/portal/classes/${cls.id}/import`} variant="secondary">Import students</LinkButton>}
               {/* Restored from the prototype's class profile header (OG L4830-4831),
                   where these were the only route to either printout. The port moved
                   them to /portal/qr and /portal/reports, so admins who knew the OG

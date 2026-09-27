@@ -53,7 +53,13 @@ export default async function HelpPage() {
   // — the guide sent them to a wall. Each now points at the surface their own
   // role actually has: /portal/students resolves to their class roster.
   const isAdmin = user.role === 'ADMIN'
-  const dataHref = isAdmin ? '/portal/admin/data' : '/portal/students'
+  // 2026-09-27 — servants import into their own class: straight to it when they
+  // have one, otherwise to the class list to pick one.
+  const dataHref = isAdmin
+    ? '/portal/admin/data'
+    : user.classIds.length === 1
+      ? `/portal/classes/${user.classIds[0]}/import`
+      : '/portal/classes'
   const studentsHref = isAdmin ? '/portal/admin/students' : '/portal/students'
 
   return (
@@ -71,13 +77,16 @@ export default async function HelpPage() {
               In <b className={S}>Data &amp; Backup</b>, <b className={S}>Export CSV</b> downloads the full roster as a
               spreadsheet. <b className={S}>Import CSV</b> adds many students at once instead of one by one — download
               the template first so the columns line up, fill it in, then upload. <b className={S}>Preview</b> shows
-              exactly what the file would do, and any errors, before anything is saved.
+              exactly what the file would do, and any errors, before anything is saved. A new student whose name is
+              already in the portal is skipped, so nobody is added twice.
             </>
           ) : (
             <>
-              On your class page, <b className={S}>Export CSV</b> downloads that class&rsquo;s roster as a spreadsheet.
-              Importing a file back in creates and moves accounts church-wide, so it stays with the admin — send them
-              the filled-in sheet.
+              On your class page, <b className={S}>Import students</b> adds your class list from a spreadsheet:
+              download the template, fill it in, choose the file, then <b className={S}>Preview</b> and{' '}
+              <b className={S}>Confirm import</b>. Every row goes into your class, and a child who is already in the
+              portal is skipped, so nobody is added twice. <b className={S}>Export</b> downloads your class with
+              everyone&rsquo;s ID; edit it and import it back to update their details.
             </>
           )}
         </Topic>

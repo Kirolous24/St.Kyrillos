@@ -100,7 +100,7 @@ const ROUTES = {
       '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/reports?tab=church&period=all',
       '/portal/reports?tab=church&mode=exams', '/portal/reports?tab=church&mode=points',
       '/portal/readings', '/portal/photo', '/portal/admin/servants/logins', '/portal/my-group',
-      '/portal/unassigned',
+      '/portal/unassigned', '/portal/classes/kg/import',
     ],
     gone: [],
   },

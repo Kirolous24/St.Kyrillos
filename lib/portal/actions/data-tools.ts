@@ -12,7 +12,8 @@ import { normalizePhone } from '../phones'
 import { splitName, formatFullName } from '../names'
 import { objectsToCsv, parseCsvRecords } from '../csv'
 import { studentName } from '../data/students'
-import { requireClassAccess } from '../data/classes'
+import { assertClassAction, requireClassAccess } from '../data/classes'
+import { classImportRowProblem, findDuplicateStudent, type KnownStudent } from '../student-dupes'
 import { audit } from '../audit'
 import { randomPin } from '../credentials'
 import { hashPin, issuedPinFieldsFromHash } from '../pin-issue'
@@ -462,6 +463,15 @@ const CLASS_NONE: ReadonlySet<string> = new Set(['none', 'no class', 'unassigned
  * Upsert students by 4-digit login ID. A row whose ID is already in use updates
  * that student; a row with a blank or unused ID creates a new account with a
  * fresh PIN. An existing PIN is never touched, by any path.
+ *
+ * **Duplicates (2026-09-27).** Before a row creates anyone, it is checked
+ * against every child on file by name, spelled any of the usual ways. A match
+ * is skipped and named, so importing a class list twice, or a list of children
+ * who are already here, adds nobody twice. So is a name repeated in the file.
+ *
+ * **Servants (2026-09-27).** A servant imports into one class they can edit,
+ * `defaultClassId`. Their rows may add children to that class and update
+ * children already in it, and nothing else (lib/portal/student-dupes.ts).
  */
 /**
  * `preview` runs every check and reports exactly what the file would do without
@@ -475,7 +485,15 @@ export async function importStudentsCsv(
   options: { preview?: boolean } = {},
 ): Promise<ActionResult<ImportSummary>> {
   return runAction(async () => {
-    const user = await requireAdmin()
+    const user = await requirePortalUser()
+    // The admin imports anywhere. Anyone else imports into one class they may
+    // edit; a pastor or a child has no such class, so this refuses them too.
+    let scope: { id: string; name: string } | null = null
+    if (user.role !== 'ADMIN') {
+      if (!defaultClassId) throw new PortalError('Open your class first, then import into it.')
+      const cls = await assertClassAction(user, defaultClassId, 'student.write')
+      scope = { id: cls.id, name: cls.name }
+    }
     const preview = options.preview === true
     const records = parseCsvRecords(csvText ?? '')
     if (records.length === 0) throw new PortalError('That file has no data rows.')
@@ -486,6 +504,8 @@ export async function importStudentsCsv(
       displayName: string
       loginId: string
       classId: string | null
+      /** The Class column as written, resolved; null when the cell is blank. */
+      namedClassId: string | null
       clearsClass: boolean
       data: {
         firstName: string
@@ -604,9 +624,11 @@ export async function importStudentsCsv(
         const classRef = input.classRef.trim()
         const clearsClass = classRef !== '' && CLASS_NONE.has(classRef.toLowerCase())
         let classId: string | null = null
+        let namedClassId: string | null = null
         if (classRef && !clearsClass) {
           classId = byId.get(classRef.toLowerCase()) ?? byName.get(classRef.toLowerCase()) ?? null
           if (!classId) throw new PortalError(`Unknown class "${classRef}"`)
+          namedClassId = classId
         } else if (!classRef) {
           classId = defaultClassId
         }
@@ -627,6 +649,7 @@ export async function importStudentsCsv(
           displayName,
           loginId: input.loginId,
           classId,
+          namedClassId,
           clearsClass,
           data: {
             firstName: input.firstName,
@@ -657,9 +680,10 @@ export async function importStudentsCsv(
     const existingAccounts = providedIds.length
       ? await prisma.account.findMany({
           where: { loginId: { in: providedIds } },
-          select: { id: true, loginId: true, role: true, displayName: true, student: { select: { id: true } } },
+          select: { id: true, loginId: true, role: true, displayName: true, student: { select: { id: true, classId: true } } },
         })
       : []
+    const classOfLogin = new Map(existingAccounts.map((a) => [a.loginId, a.student?.classId ?? null]))
     const existingByLoginId = new Map<string, ExistingImportAccount>(
       existingAccounts.map((a) => [
         a.loginId,
@@ -670,12 +694,45 @@ export async function importStudentsCsv(
     const rowName = (p: PreparedRow) =>
       namesGiven ? p.displayName : existingByLoginId.get(p.loginId)?.displayName || p.displayName
 
+    // Duplicates: every row that would create a child is checked against every
+    // child on file, and against the rows above it in this file, by name. It is
+    // decided here, before any PIN is hashed, so a skipped row costs nothing.
+    const onFile = await prisma.student.findMany({
+      where: { account: { role: PortalRole.STUDENT } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        dob: true,
+        class: { select: { name: true } },
+        account: { select: { loginId: true } },
+      },
+    })
+    const known: KnownStudent[] = onFile.map((k) => ({
+      id: k.id,
+      loginId: k.account.loginId,
+      firstName: k.firstName,
+      lastName: k.lastName,
+      dob: k.dob ? formatDateOnly(k.dob) : null,
+      className: k.class?.name ?? null,
+    }))
+    const duplicateOf = new Map<number, KnownStudent>()
+    for (const p of prepared) {
+      if (!namesGiven || classifyStudentImportRow(p.loginId, existingByLoginId).kind !== 'create') continue
+      const dob = p.data.dob ? formatDateOnly(p.data.dob) : null
+      const dup = findDuplicateStudent({ firstName: p.data.firstName, lastName: p.data.lastName, dob }, known)
+      if (dup) duplicateOf.set(p.rowNumber, dup)
+      else known.push({ id: `row-${p.rowNumber}`, loginId: 'new', firstName: p.data.firstName, lastName: p.data.lastName, dob, className: `row ${p.rowNumber} of this file` })
+    }
+
     // Pass 3: hash a fresh PIN for every row that will create an account, all
     // at once — bcrypt's hash cost is CPU-bound and gains nothing from being
     // awaited one row at a time, which is what made a large import crawl.
     const toCreate = preview
       ? []
-      : prepared.filter((p) => classifyStudentImportRow(p.loginId, existingByLoginId).kind === 'create')
+      : prepared.filter(
+          (p) => classifyStudentImportRow(p.loginId, existingByLoginId).kind === 'create' && !duplicateOf.has(p.rowNumber),
+        )
     const newPins = toCreate.map(() => randomPin())
     const newHashes = await Promise.all(newPins.map(hashPin))
     const newPinByRow = new Map(toCreate.map((p, idx) => [p.rowNumber, { pin: newPins[idx]!, hash: newHashes[idx]! }]))
@@ -692,6 +749,28 @@ export async function importStudentsCsv(
       try {
         const classification = classifyStudentImportRow(p.loginId, existingByLoginId)
         if (classification.kind === 'error') throw new PortalError(classification.message)
+        if (scope) {
+          const problem = classImportRowProblem({
+            className: scope.name,
+            targetClassId: scope.id,
+            rowClassId: p.namedClassId,
+            clearsClass: p.clearsClass,
+            isUpdate: classification.kind === 'update',
+            existingClassId: classOfLogin.get(p.loginId) ?? null,
+          })
+          if (problem) throw new PortalError(problem)
+        }
+        const dup = duplicateOf.get(p.rowNumber)
+        if (dup) {
+          results.push({
+            row: p.rowNumber,
+            name: p.displayName,
+            loginId: p.loginId || null,
+            status: 'skipped',
+            message: `Already here: ${dup.firstName} ${dup.lastName}${dup.loginId !== 'new' ? ` (ID ${dup.loginId})` : ''}, ${dup.className ?? 'no class'}. Skipped so nobody is added twice.`,
+          })
+          continue
+        }
 
         if (preview) {
           const classLabel = p.clearsClass
@@ -801,9 +880,16 @@ export async function importStudentsCsv(
     for (const [classId, ids] of Array.from(placed.entries())) {
       await placeNewKids(classId, ids).catch((err) => console.error('Group placement failed:', err))
     }
-    await audit(user, 'data.importStudents', 'portal', defaultClassId, `${summary.created} created, ${summary.updated} updated, ${summary.errors} failed`)
+    await audit(
+      user,
+      'data.importStudents',
+      'portal',
+      defaultClassId,
+      `${scope ? `${scope.name}: ` : ''}${summary.created} created, ${summary.updated} updated, ${summary.skipped} skipped as already here, ${summary.errors} failed`,
+    )
     revalidatePath('/portal/admin/students')
     revalidatePath('/portal/classes')
+    if (scope) revalidatePath(`/portal/classes/${scope.id}`)
     return summary
   })
 }
