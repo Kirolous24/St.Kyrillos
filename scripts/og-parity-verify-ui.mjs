@@ -2308,13 +2308,14 @@ try {
       namesAfter.length > 1 && JSON.stringify(namesAfter) === JSON.stringify(azSorted),
       `${namesAfter.slice(0, 3).join(' | ')} (was ${namesBefore.slice(0, 3).join(' | ')})`)
 
-    // Remove mode must not reuse the activity's value.
+    // Remove mode must not reuse the activity's value: since 2026-09-27 it is
+    // always the church-wide deduction (2), with no amount to type.
     const removeTab = page.locator('main button[aria-pressed]', { hasText: /remove/i }).first()
     if (await removeTab.count()) {
       await removeTab.click()
       await page.waitForTimeout(400)
-      check('Remove mode has its own amount field, not the activity’s value',
-        await page.locator('main [data-remove-amount]').count() === 1)
+      check('Remove mode always takes away 2, not the activity’s value',
+        await page.getByRole('button', { name: /^Remove 2 pts$/ }).count() === 1)
     } else {
       check('the points panel offers a Remove mode', false, 'no Remove toggle')
     }

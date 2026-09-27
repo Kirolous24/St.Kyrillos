@@ -3,9 +3,10 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Trophy, Star, History, Plus, X, Search, Pencil, Eye } from 'lucide-react'
-import { givePoints, undoPoints, createActivity, removeActivity, updateActivity } from '@/lib/portal/actions/points'
-import { Avatar, buttonClass, inputClass, selectClass, Card, Field, EmptyState } from '@/components/portal/ui'
+import { Trophy, Star, History, Search, Eye } from 'lucide-react'
+import { givePoints, undoPoints } from '@/lib/portal/actions/points'
+import { DEDUCTION_POINTS } from '@/lib/portal/points-math'
+import { Avatar, buttonClass, inputClass, selectClass, Card, EmptyState } from '@/components/portal/ui'
 import { formatDateTime } from '@/lib/portal/format'
 import { useChime } from '@/hooks/useChime'
 import { SoundToggle } from '@/components/portal/SoundToggle'
@@ -13,6 +14,8 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   classId: string
+  /** The admin edits the church-wide activity list; everyone else only picks from it. */
+  isAdmin: boolean
   students: Array<{ id: string; name: string; total: number; rank: number; photo: string | null }>
   activities: Array<{ id: string; key: string; label: string; points: number; icon: string | null }>
   history: Array<{
@@ -86,29 +89,16 @@ const REMOVE_REASONS = [
   'Breaking class rules',
 ] as const
 
-export function PointsPanel({ classId, students, activities, history }: Props) {
+export function PointsPanel({ classId, isAdmin, students, activities, history }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const chime = useChime()
-  const [activityId, setActivityId] = useState<string>(activities[0]?.id ?? 'custom')
-  const [customLabel, setCustomLabel] = useState('')
-  const [customPoints, setCustomPoints] = useState(2)
-  /**
-   * F0415 — Remove mode had no amount of its own, so `magnitude` fell through to
-   * whichever activity was still selected from Add mode: a servant who had just
-   * given "Memory verse (5)" and switched to Remove was about to take away five
-   * points, with nothing on screen saying so. The prototype gave Remove its own
-   * field. Defaults to 1, the smallest correction.
-   */
-  const [removeAmount, setRemoveAmount] = useState(1)
+  const [activityId, setActivityId] = useState<string>(activities[0]?.id ?? '')
   const [mode, setMode] = useState<'add' | 'remove'>('add')
   const [histQuery, setHistQuery] = useState('')
   const [histFilter, setHistFilter] = useState<HistFilter>('all')
   const [histGroup, setHistGroup] = useState<HistGroup>('flat')
-  // Editing an activity, which the port could only create and delete. Deleting
-  // and recreating orphans the label already written onto past point entries.
-  const [editing, setEditing] = useState<{ id: string; label: string; points: number; icon: string } | null>(null)
   /**
    * F0179 / F0410 — the prototype let a servant reorder the leaderboard A-Z,
    * highest or lowest. Fixed on rank, the grid answers "who is winning?" and
@@ -165,16 +155,12 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
   // '' = nothing picked yet, 'other' = type your own into `reason`.
   const [removeReason, setRemoveReason] = useState('')
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-  const [newActivity, setNewActivity] = useState({ label: '', points: 2, icon: '' })
-  const [showAdd, setShowAdd] = useState(false)
 
   const activity = activities.find((a) => a.id === activityId)
-  const label = activity ? activity.label : customLabel
-  // Remove reads its own field; Add reads the activity, or the custom amount
-  // when no activity is chosen. They must not borrow each other's number.
-  const magnitude =
-    mode === 'remove' ? Math.abs(removeAmount || 0) : Math.abs(activity ? activity.points : customPoints)
-  const points = mode === 'add' ? magnitude : -magnitude
+  // Points are the same in every class (2026-09-27): Give is the chosen
+  // activity's church-wide value, Remove is always DEDUCTION_POINTS. There is no
+  // amount to type, so the two modes can never borrow each other's number (F0415).
+  const magnitude = mode === 'remove' ? DEDUCTION_POINTS : activity?.points ?? 0
   const effectiveReason = mode === 'remove' ? (removeReason === 'other' ? reason.trim() : removeReason) : reason.trim()
 
   function toggle(id: string) {
@@ -196,37 +182,26 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
     if (mode === 'remove' && !effectiveReason) {
       return setMessage({ kind: 'err', text: 'Pick a reason before taking points away.' })
     }
-    if (mode === 'add' && !label.trim()) return setMessage({ kind: 'err', text: 'Give the points a name.' })
-    if (magnitude === 0) return setMessage({ kind: 'err', text: 'Points cannot be zero.' })
+    if (mode === 'add' && !activity) return setMessage({ kind: 'err', text: 'Pick an activity first.' })
     startTransition(async () => {
-      // F0172 — in the prototype the remove flow had no activity chips at all:
-      // the reason WAS the entry. Sending the chip's label instead wrote
-      // "Ali · Memorized verse — Misbehaving  -2" onto a child's ledger, which
-      // reads as points given for memorising. The reason becomes the row, and
-      // 'manual_remove' is the key the prototype stamped on a deduction so
-      // these can be found later. GiveSchema caps label at 80, so a longer
-      // "Other" reason keeps its full text in `reason`; a short one is not
-      // repeated, because the row would then read "Misbehaving — Misbehaving".
-      const removeLabel = effectiveReason.slice(0, 80)
+      // F0172 — a deduction's reason IS the entry (the server writes it as the
+      // row, under 'manual_remove'), so the ledger never reads as points given
+      // for an activity. The page sends which activity or which reason; the
+      // server decides how many points.
       const result = await givePoints({
         classId,
         studentIds: Array.from(selected),
-        points,
-        activityKey: mode === 'remove' ? 'manual_remove' : activity?.key ?? null,
-        label: mode === 'remove' ? removeLabel : label.trim(),
-        reason:
-          mode === 'remove'
-            ? effectiveReason.length > 80
-              ? effectiveReason
-              : undefined
-            : effectiveReason || undefined,
+        mode,
+        activityId: mode === 'add' ? activity?.id : undefined,
+        reason: effectiveReason || undefined,
       })
       if (!result.ok) {
         chime('err')
         return setMessage({ kind: 'err', text: result.error })
       }
       chime('ok')
-      setMessage({ kind: 'ok', text: `${points > 0 ? 'Added' : 'Removed'} ${magnitude} point${magnitude === 1 ? '' : 's'} for ${result.data?.count} student${result.data?.count === 1 ? '' : 's'}.` })
+      const given = Math.abs(result.data?.points ?? magnitude)
+      setMessage({ kind: 'ok', text: `${mode === 'add' ? 'Added' : 'Removed'} ${given} point${given === 1 ? '' : 's'} for ${result.data?.count} student${result.data?.count === 1 ? '' : 's'}.` })
       setSelected(new Set())
       setReason('')
       setRemoveReason('')
@@ -253,209 +228,51 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
     })
   }
 
-  function addActivity() {
-    if (!newActivity.label.trim()) return
-    startTransition(async () => {
-      const result = await createActivity({ classId, label: newActivity.label.trim(), points: newActivity.points, icon: newActivity.icon.trim() || undefined })
-      if (!result.ok) return setMessage({ kind: 'err', text: result.error })
-      setNewActivity({ label: '', points: 2, icon: '' })
-      setShowAdd(false)
-      router.refresh()
-    })
-  }
-
-  function dropActivity(id: string) {
-    startTransition(async () => {
-      const result = await removeActivity(id)
-      if (!result.ok) setMessage({ kind: 'err', text: result.error })
-      if (activityId === id) setActivityId('custom')
-      router.refresh()
-    })
-  }
-
-  function saveActivity() {
-    if (!editing) return
-    startTransition(async () => {
-      const result = await updateActivity({
-        activityId: editing.id,
-        label: editing.label,
-        points: editing.points,
-        icon: editing.icon || undefined,
-      })
-      if (result.ok) {
-        setEditing(null)
-        router.refresh()
-      }
-    })
-  }
-
   return (
     <div className="space-y-3.5">
-      {/* ── Activities: the prototype's chip grid ─────────────────────────── */}
-      <Card title="Activities" icon={<Star className="h-[15px] w-[15px]" />} action={
-        <button type="button" onClick={() => setShowAdd((v) => !v)} className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}>
-          {showAdd ? 'Cancel' : '+ New activity'}
-        </button>
-      }>
-        {showAdd && (
-          <div className="mb-3.5 rounded-[12px] border border-brand-gold/40 bg-brand-wash p-3.5">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[72px_1fr_96px]">
-              <Field label="Icon" htmlFor="act-icon">
-                <input id="act-icon" value={newActivity.icon} onChange={(e) => setNewActivity({ ...newActivity, icon: e.target.value })} className={cn(inputClass, 'text-center text-[20px]')} placeholder="⭐" maxLength={4} />
-                {/* F0181 — the prototype's twenty-four icons, verbatim (OG
-                    L19578-19602). The port left a four-character box, so adding an
-                    activity on a phone meant hunting for the emoji keyboard or
-                    pasting one in, and most activities ended up with no icon at all —
-                    which is the one thing that tells the chips apart at a glance on
-                    Sunday. Typing still works; this only means nobody has to.
-                    Rendered inline rather than as the prototype's floating popover on
-                    purpose: this panel already opens and closes, and an absolutely
-                    positioned overlay inside page content is the thing .portal-enter's
-                    transform traps. */}
-                <div className="mt-2 grid grid-cols-8 gap-1 sm:grid-cols-6">
-                  {['📖', '🙏', '✝️', '⛪', '🕊️', '📿', '🎵', '🎤', '🎶', '🕯️', '✅', '⭐', '🌟', '✨', '🏆', '🎯', '🤝', '👏', '💪', '📝', '🧠', '❤️', '🎁', '😇'].map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => setNewActivity({ ...newActivity, icon: emoji })}
-                      aria-pressed={newActivity.icon === emoji}
-                      aria-label={`Use ${emoji} as the icon`}
-                      className={cn(
-                        'grid h-10 place-items-center rounded-[8px] border text-[18px] leading-none transition-colors',
-                        newActivity.icon === emoji
-                          ? 'border-brand-800 bg-parch-50 ring-1 ring-brand-gold/50'
-                          : 'border-transparent hover:bg-parch-50',
-                      )}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-              <Field label="Name" htmlFor="act-label">
-                <input id="act-label" value={newActivity.label} onChange={(e) => setNewActivity({ ...newActivity, label: e.target.value })} className={inputClass} placeholder="e.g. Memorized verse" maxLength={60} />
-              </Field>
-              <Field label="Points" htmlFor="act-points">
-                <input id="act-points" type="number" value={newActivity.points} onChange={(e) => setNewActivity({ ...newActivity, points: Number(e.target.value) })} className={inputClass} min={-100} max={100} />
-              </Field>
-            </div>
-            <button type="button" onClick={addActivity} disabled={pending || !newActivity.label.trim()} className={cn(buttonClass('primary', 'sm'), 'min-h-[40px]')}>
-              <Plus className="h-[13px] w-[13px]" /> Add activity
-            </button>
-          </div>
-        )}
-        {editing && (
-          <div className="mb-3 rounded-[12px] border-[1.5px] border-brand-gold bg-[#FDF5E4] p-3">
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Edit activity</p>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="min-w-[8rem] flex-1">
-                <span className="sr-only">Name</span>
-                <input
-                  value={editing.label}
-                  onChange={(e) => setEditing({ ...editing, label: e.target.value })}
-                  className={inputClass}
-                  maxLength={60}
-                  placeholder="Name"
-                />
-              </label>
-              <label className="w-20">
-                <span className="sr-only">Points</span>
-                <input
-                  type="number"
-                  value={editing.points}
-                  onChange={(e) => setEditing({ ...editing, points: Number(e.target.value) })}
-                  className={inputClass}
-                  min={-100}
-                  max={100}
-                />
-              </label>
-              <label className="w-16">
-                <span className="sr-only">Icon</span>
-                <input
-                  value={editing.icon}
-                  onChange={(e) => setEditing({ ...editing, icon: e.target.value })}
-                  className={inputClass}
-                  maxLength={8}
-                  placeholder="⭐"
-                />
-              </label>
-              <button type="button" onClick={saveActivity} disabled={pending || !editing.label.trim()} className={buttonClass('primary', 'sm')}>
-                Save
-              </button>
-              <button type="button" onClick={() => setEditing(null)} className={buttonClass('secondary', 'sm')}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
+      {/* ── Activities: one church-wide list (2026-09-27) ─────────────────── */}
+      <Card
+        title="Activities"
+        icon={<Star className="h-[15px] w-[15px]" />}
+        action={
+          isAdmin ? (
+            <Link href="/portal/admin/sessions" className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}>
+              Edit the list
+            </Link>
+          ) : undefined
+        }
+      >
+        <p className="mb-3 text-[11.5px] text-parch-500">
+          The same activities and points in every class, so points are fair across the church.
+        </p>
         {/* repeat(auto-fill,minmax(100px,1fr)), gap 10px */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]">
           {activities.map((a, i) => {
             const on = a.id === activityId
             return (
-              <div
+              <button
                 key={a.id}
+                type="button"
+                onClick={() => setActivityId(a.id)}
+                aria-pressed={on}
                 className={cn(
-                  'relative rounded-[14px] border-[1.5px] bg-parch-50 p-2.5 pt-3.5 text-center transition-all',
+                  'rounded-[14px] border-[1.5px] bg-parch-50 p-2.5 pt-3.5 text-center transition-all',
                   on ? 'border-brand-800 shadow-nav-on ring-1 ring-brand-gold/50' : 'border-[#EFE9DC]',
                 )}
               >
-                <button
-                  type="button"
-                  onClick={() => dropActivity(a.id)}
-                  disabled={pending}
-                  aria-label={`Delete ${a.label}`}
-                  className="absolute left-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-[#DC2626] text-parch-50"
-                >
-                  <X className="h-2.5 w-2.5" strokeWidth={3} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditing({ id: a.id, label: a.label, points: a.points, icon: a.icon ?? '' })}
-                  disabled={pending}
-                  aria-label={`Edit ${a.label}`}
-                  className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-brand-800 text-parch-50"
-                >
-                  <Pencil className="h-2.5 w-2.5" strokeWidth={3} />
-                </button>
-                <button type="button" onClick={() => setActivityId(a.id)} aria-pressed={on} className="block w-full">
-                  <span className="mb-1.5 block text-[26px] leading-none">{a.icon || '⭐'}</span>
-                  <span className="mb-0.5 block truncate text-[12px] font-bold text-parch-900">{a.label}</span>
-                  <span className="block text-[12px] font-extrabold" style={{ color: ACT_COLORS[i % ACT_COLORS.length] }}>
-                    {a.points > 0 ? '+' : ''}{a.points}
-                  </span>
-                </button>
-              </div>
+                <span className="mb-1.5 block text-[26px] leading-none">{a.icon || '⭐'}</span>
+                <span className="mb-0.5 block truncate text-[12px] font-bold text-parch-900">{a.label}</span>
+                <span className="block text-[12px] font-extrabold" style={{ color: ACT_COLORS[i % ACT_COLORS.length] }}>
+                  +{a.points}
+                </span>
+              </button>
             )
           })}
-          <button
-            type="button"
-            onClick={() => setActivityId('custom')}
-            aria-pressed={!activity}
-            className={cn(
-              'grid min-h-[92px] place-items-center rounded-[14px] border-[1.5px] border-dashed bg-brand-wash p-2.5 text-center',
-              !activity ? 'border-brand-800 ring-1 ring-brand-gold/50' : 'border-brand-gold',
-            )}
-          >
-            <span>
-              <span className="block text-[20px] leading-none text-brand-gold">＋</span>
-              <span className="block text-[11px] font-bold text-brand-gold-dark">One-off</span>
-            </span>
-          </button>
         </div>
         {activities.length === 0 && (
-          <p className="pt-2.5 text-center text-[11.5px] text-parch-500">No activities yet — add your first one to start giving points.</p>
-        )}
-        {!activity && (
-          <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_110px]">
-            <Field label="One-off reason" htmlFor="custom-label">
-              <input id="custom-label" value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} className={inputClass} placeholder="e.g. Memorized verse" maxLength={80} />
-            </Field>
-            <Field label="Points" htmlFor="custom-points">
-              <input id="custom-points" type="number" min={1} max={100} value={customPoints} onChange={(e) => setCustomPoints(Number(e.target.value))} className={inputClass} />
-            </Field>
-          </div>
+          <p className="pt-2.5 text-center text-[11.5px] text-parch-500">
+            No activities yet. {isAdmin ? 'Add them in Sessions & Points.' : 'The admin adds them in Sessions & Points.'}
+          </p>
         )}
       </Card>
 
@@ -594,24 +411,13 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
             >
               {activities.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.icon ? `${a.icon} ` : ''}{a.label} ({a.points > 0 ? '+' : ''}{a.points})
+                  {a.icon ? `${a.icon} ` : ''}{a.label} (+{a.points})
                 </option>
               ))}
-              <option value="custom">One-off…</option>
             </select>
           )}
           {mode === 'remove' ? (
             <>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={removeAmount}
-                onChange={(e) => setRemoveAmount(Number(e.target.value))}
-                className={cn(inputClass, 'w-[86px] shrink-0')}
-                aria-label="Points to remove"
-                data-remove-amount
-              />
               <select
                 value={removeReason}
                 onChange={(e) => {
@@ -649,7 +455,7 @@ export function PointsPanel({ classId, students, activities, history }: Props) {
               placeholder="Reason (optional) — shown on the student's ledger"
             />
           )}
-          <button type="button" onClick={submit} disabled={pending || (mode === 'remove' && !effectiveReason)} className={cn(buttonClass(mode === 'add' ? 'primary' : 'danger'), 'min-h-[40px] shrink-0')}>
+          <button type="button" onClick={submit} disabled={pending || (mode === 'remove' ? !effectiveReason : !activity)} className={cn(buttonClass(mode === 'add' ? 'primary' : 'danger'), 'min-h-[40px] shrink-0')}>
             {pending ? 'Saving…' : `${mode === 'add' ? 'Give' : 'Remove'} ${magnitude} pt${magnitude === 1 ? '' : 's'}`}
           </button>
         </div>

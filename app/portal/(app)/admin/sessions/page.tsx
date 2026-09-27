@@ -5,24 +5,27 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { PageHeader } from '@/components/portal/ui'
 import { SessionEditor } from './SessionEditor'
 import { ServantActivityEditor } from './ServantActivityEditor'
+import { ActivityEditor } from './ActivityEditor'
 
 export const metadata = { title: 'Sessions & Points' }
 
 export default async function AdminSessionsPage() {
   const user = await requirePortalUser()
   if (user.role !== 'ADMIN') notFound()
-  const [sessions, servantActivities] = await Promise.all([
+  const [sessions, activities, servantActivities] = await Promise.all([
     prisma.attendanceSession.findMany({ orderBy: { sortOrder: 'asc' } }),
+    prisma.pointActivity.findMany({ where: { classId: null, isActive: true }, orderBy: { label: 'asc' } }),
     prisma.servantActivity.findMany({ orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] }),
   ])
   return (
     <>
       <PageHeader
         title="Sessions & Points"
-        subtitle="What a student earns for attending each session. Changes apply to attendance taken from now on."
+        subtitle="What a student earns, the same in every class: for each session attended, and for each activity. Changes apply from now on."
         icon={<CalendarCheck className="h-5 w-5" />}
       />
       <SessionEditor sessions={sessions.map((s) => ({ key: s.key, label: s.label, points: s.points, isActive: s.isActive, icon: s.icon }))} />
+      <ActivityEditor activities={activities.map((a) => ({ id: a.id, label: a.label, points: a.points, icon: a.icon }))} />
       <ServantActivityEditor
         activities={servantActivities.map((a) => ({ key: a.key, label: a.label, dayOfWeek: a.dayOfWeek, isActive: a.isActive }))}
       />

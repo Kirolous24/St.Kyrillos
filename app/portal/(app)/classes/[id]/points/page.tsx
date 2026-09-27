@@ -20,7 +20,8 @@ export default async function PointsPage({ params }: { params: { id: string } })
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       select: { id: true, firstName: true, lastName: true, account: { select: { photo: true } } },
     }),
-    prisma.pointActivity.findMany({ where: { classId: cls.id, isActive: true }, orderBy: { label: 'asc' } }),
+    // One church-wide list, the same in every class (2026-09-27).
+    prisma.pointActivity.findMany({ where: { classId: null, isActive: true, points: { gt: 0 } }, orderBy: { label: 'asc' } }),
     prisma.pointEntry.findMany({
       where: { classId: cls.id },
       orderBy: { createdAt: 'desc' },
@@ -49,6 +50,7 @@ export default async function PointsPage({ params }: { params: { id: string } })
       />
       <PointsPanel
         classId={cls.id}
+        isAdmin={user.role === 'ADMIN'}
         students={ranked.map((r) => ({ id: r.studentId, name: r.name, total: r.total, rank: r.rank, photo: photo.get(r.studentId) ?? null }))}
         activities={activities.map((a) => ({ id: a.id, key: a.key, label: a.label, points: a.points, icon: a.icon }))}
         history={history.map((h) => ({

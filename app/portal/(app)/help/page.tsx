@@ -106,25 +106,24 @@ export default async function HelpPage() {
         <Topic
           icon={<Sparkles className={ICON} />}
           tone="#C89B3C"
-          title="Make your own point activities"
-          href={user.role === 'PASTOR' ? '/portal/leaderboard' : '/portal/points'}
+          title="How points work"
+          href={user.role === 'ADMIN' ? '/portal/admin/sessions' : user.role === 'PASTOR' ? '/portal/leaderboard' : '/portal/points'}
         >
-          {user.role === 'PASTOR' ? (
+          {/* 2026-09-27 — points are the same in every class: one church-wide list
+              of activities, set by the admin, so the leaderboard compares like
+              with like. Classes no longer make their own. */}
+          Points are the same in every class. Children earn them for each session they attend, for their quiz
+          scores, and for the activities on one church-wide list. In a class&rsquo;s <b className={S}>Points</b> tab,
+          pick the children and an activity, then <b className={S}>+ Give</b>. Taking points away always costs 2 and
+          needs a reason.{' '}
+          {user.role === 'ADMIN' ? (
             <>
-              Point activities are set up by each class&rsquo;s own servants, on that class&rsquo;s{' '}
-              <b className={S}>Points</b> tab — a name and how many points it is worth, say &ldquo;Choir
-              practice&rdquo;. The <b className={S}>Leaderboard</b> shows where the children stand once they are
-              awarded.
+              You set every value, for sessions and activities, in <b className={S}>Sessions &amp; Points</b>.
             </>
           ) : (
-            <>
-              In a class&rsquo;s <b className={S}>Points</b> tab, <b className={S}>+ New activity</b> adds your own way
-              to earn points — a name and how many points it is worth, say &ldquo;Choir practice&rdquo;. It appears
-              beside the built-in ones for everyone in that class, and you can remove it again later.
-            </>
+            <>The admin sets the values in Sessions &amp; Points.</>
           )}
         </Topic>
-
         <Topic icon={<Contact className={ICON} />} tone="#DC2626" title="Correct a student’s details" href={studentsHref}>
           Open a student to see their profile, then <b className={S}>Edit student info</b> to fix their name, grade,
           birthday, address, or a parent&rsquo;s name and phone number. Only the admin can move a student to a different
