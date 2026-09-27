@@ -276,7 +276,7 @@ export function ClassManager({ classes }: { classes: Row[] }) {
                   ...(c.description ? [{ key: 'Notes', value: <span className="font-normal text-parch-500">{c.description}</span> }] : []),
                   ...(c.curriculumLinkedToId
                     ? [{
-                        key: 'Follows',
+                        key: 'Linked with',
                         value: (
                           <span className="text-brand-gold-dark">
                             {classes.find((x) => x.id === c.curriculumLinkedToId)?.name ?? c.curriculumLinkedToId}
@@ -312,20 +312,20 @@ export function ClassManager({ classes }: { classes: Row[] }) {
                   </>
                 }
               />
-              {/* The schema has carried curriculumLinkedToId since the import
-                  and nothing read or wrote it. Admin-only by the church's
-                  decision: linking changes what a whole class is taught. */}
+              {/* A link joins two classes both ways: each can read the other's
+                  Lesson Preparation and copy weeks from it (2026-09-26).
+                  Servants can also link their own class from that page. */}
               <label className="mt-1.5 flex items-center gap-2 px-1 text-[10.5px] font-bold uppercase tracking-[0.5px] text-parch-500">
                 <LinkIcon className="h-3 w-3 shrink-0" aria-hidden />
-                Follows curriculum of
+                Linked with
                 <select
                   value={c.curriculumLinkedToId ?? ''}
                   disabled={pending}
-                  aria-label={`Class whose curriculum ${c.name} follows`}
+                  aria-label={`Class ${c.name} is linked with`}
                   onChange={(e) => linkCurriculum(c, e.target.value || null)}
                   className="min-w-0 flex-1 rounded-[7px] border border-parch-200 bg-parch-50 px-2 py-1 text-[11px] font-semibold normal-case tracking-normal text-parch-800 outline-none focus:border-brand-gold"
                 >
-                  <option value="">Nothing — its own plan</option>
+                  <option value="">No other class</option>
                   {classes.filter((x) => x.id !== c.id).map((x) => (
                     <option key={x.id} value={x.id}>{x.name}</option>
                   ))}

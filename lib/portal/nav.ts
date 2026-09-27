@@ -349,6 +349,26 @@ export function navForUser(user: PortalUser): NavItem[] {
 }
 
 /**
+ * UNASSIGNED (2026-09-26): while any child this user handles is waiting, a red
+ * item sits right under Dashboard with the count. It is the state of the list,
+ * not an alert, so like the Follow-ups count it cannot be dismissed. It goes
+ * away when the list is empty. It takes the section of the item it joins, so
+ * Shell's grouping by contiguous section is not split.
+ */
+export function withUnassignedFlag(nav: NavItem[], count: number): NavItem[] {
+  if (count <= 0 || nav.length === 0) return nav
+  const flag: NavItem = {
+    href: '/portal/unassigned',
+    label: 'UNASSIGNED',
+    icon: 'unassigned',
+    section: nav[0]!.section ?? nav[1]?.section,
+    badge: count,
+    tone: 'alert',
+  }
+  return [nav[0]!, flag, ...nav.slice(1)]
+}
+
+/**
  * The prototype's sidebar badges — Daily Quiz (F0689), follow-up visits
  * (F0108/F0788), birthdays (F0789) and assignments (F0790/F0266).
  *

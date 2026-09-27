@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
 import { ClipboardList, Link2, Users } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
-import { listVisibleClasses, requireClassAccess } from '@/lib/portal/data/classes'
+import { requireClassAccess } from '@/lib/portal/data/classes'
+import { lessonPrepClasses } from '@/lib/portal/data/lesson-prep'
 import { loadAgendaWeek } from '@/lib/portal/data/agenda'
 import { normaliseWeekStart, schoolYearWeeks } from '@/lib/portal/agenda'
 import { WeekSheetPicker } from './WeekSheetPicker'
@@ -21,7 +22,8 @@ export default async function AgendaWeekPage({
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
 
-  const classes = await listVisibleClasses(user)
+  // Own classes, plus classes joined to them by a curriculum link (read-only).
+  const { own: classes, linked } = await lessonPrepClasses(user)
   if (classes.length === 0) {
     return (
       <>
@@ -31,8 +33,9 @@ export default async function AgendaWeekPage({
     )
   }
 
-  const classId = classes.some((c) => c.id === searchParams.class) ? searchParams.class! : classes[0]!.id
-  const cls = await requireClassAccess(user, classId, 'class.read')
+  const linkedPick = linked.find((c) => c.id === searchParams.class) ?? null
+  const classId = classes.some((c) => c.id === searchParams.class) ? searchParams.class! : linkedPick?.id ?? classes[0]!.id
+  const cls = linkedPick ?? (await requireClassAccess(user, classId, 'class.read'))
   const today = todayInNewYork()
   const week = normaliseWeekStart(searchParams.week) ?? mondayOf(today)
   const view = await loadAgendaWeek(cls.id, week)
@@ -56,7 +59,7 @@ export default async function AgendaWeekPage({
         back={{ href: backHref, label: 'Back to the schedule' }}
         actions={
           <>
-            <LinkButton href={backHref} variant="secondary">Edit the week</LinkButton>
+            <LinkButton href={backHref} variant="secondary">{linkedPick ? 'Back to the plan' : 'Edit the week'}</LinkButton>
             <PrintButton label="Print" />
           </>
         }
@@ -64,7 +67,10 @@ export default async function AgendaWeekPage({
 
       <WeekSheetPicker
         classId={cls.id}
-        classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+        classes={[
+          ...classes.map((c) => ({ id: c.id, name: c.name })),
+          ...linked.map((c) => ({ id: c.id, name: `${c.name} (linked, read-only)` })),
+        ]}
         week={view.weekStart}
         weeks={schoolYearWeeks(today)}
       />

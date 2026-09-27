@@ -22,6 +22,9 @@ import {
   type AgendaActivityKey,
 } from '../agenda'
 import { agendaServantOptions } from '../data/agenda'
+import { applyCurriculumLink, unlinkCurriculumPair } from '../data/curriculum-link'
+import { areLinked } from '../lesson-links'
+import { can, type PortalUser } from '../permissions'
 import { audit } from '../audit'
 
 const ItemSchema = z.object({
@@ -151,6 +154,28 @@ export async function saveAgendaWeek(raw: SaveAgendaWeekInput): Promise<ActionRe
   })
 }
 
+/**
+ * The class a week is copied from. Either the user may open it, or it is
+ * directly linked with the class being copied into. A link exists precisely so
+ * a following class's servants can use its source's plan; demanding
+ * `class.read` on the source made "Copy this week" fail for every one of them.
+ */
+async function shareSource(user: PortalUser, sourceId: string, targetId: string) {
+  const [source, target] = await Promise.all([
+    prisma.schoolClass.findUnique({
+      where: { id: sourceId },
+      select: { id: true, name: true, stage: true, curriculumLinkedToId: true },
+    }),
+    prisma.schoolClass.findUnique({ where: { id: targetId }, select: { id: true, curriculumLinkedToId: true } }),
+  ])
+  const readable =
+    !!source &&
+    !!target &&
+    (can(user, 'class.read', { classId: source.id, classStage: source.stage }) || areLinked(source, target))
+  if (!readable) throw new PortalError('You do not have permission to do that in this class.')
+  return source!
+}
+
 const ShareSchema = z.object({
   classId: z.string().min(1),
   weekStart: z.string().min(1),
@@ -170,8 +195,8 @@ export async function shareAgendaWeek(
     const input = ShareSchema.parse(raw)
     if (input.classId === input.toClassId) throw new PortalError('Pick a different class to share with.')
 
-    const source = await assertClassAction(user, input.classId, 'class.read')
     const target = await assertClassAction(user, input.toClassId, TEACHING_WRITE)
+    const source = await shareSource(user, input.classId, target.id)
     const monday = normaliseWeekStart(input.weekStart)
     if (!monday) throw new PortalError('Pick a valid week.')
 
@@ -222,6 +247,38 @@ export async function shareAgendaWeek(
     await audit(user, 'agenda.share', 'class', target.id, `Copied ${source.name}'s agenda for ${weekLabel(monday)} into ${target.name}`)
     revalidateAgenda(target.id)
     return { carried, dropped }
+  })
+}
+
+const LinkSchema = z.object({
+  classId: z.string().min(1),
+  otherId: z.string().trim().min(1).max(100),
+})
+
+/**
+ * Link this class with another (2026-09-26). Anyone who may edit this class's
+ * Lesson Preparation may do it. The link lets both classes read each other's
+ * plan and copy a week of it (lib/portal/lesson-links.ts). It grants nothing
+ * else.
+ */
+export async function linkClassCurriculum(raw: z.infer<typeof LinkSchema>): Promise<ActionResult> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = LinkSchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, TEACHING_WRITE)
+    await applyCurriculumLink(user, cls.id, input.otherId)
+    return undefined
+  })
+}
+
+/** End this class's link with another, whichever way round it was made. */
+export async function unlinkClassCurriculum(raw: z.infer<typeof LinkSchema>): Promise<ActionResult> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = LinkSchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, TEACHING_WRITE)
+    await unlinkCurriculumPair(user, cls.id, input.otherId)
+    return undefined
   })
 }
 

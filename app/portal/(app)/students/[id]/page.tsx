@@ -240,6 +240,21 @@ export default async function StudentPage({ params }: { params: { id: string } }
         </div>
       )}
 
+      {/* UNASSIGNED (2026-09-26): only the admin can open a child with no class,
+          so this is the admin's reminder that someone is waiting on a decision. */}
+      {!s.classId && s.unassignedAt && (
+        <div className="mb-3.5">
+          <Callout tone="bad" title="UNASSIGNED">
+            {s.unassignedBy?.displayName ?? 'A former servant'} took this child off their class on{' '}
+            {formatDateTime(s.unassignedAt)}: &ldquo;{s.unassignedReason}&rdquo;.{' '}
+            <Link href="/portal/unassigned" className="font-semibold underline">
+              Decide on the UNASSIGNED list
+            </Link>
+            .
+          </Callout>
+        </div>
+      )}
+
       {/* Profile header: large avatar on a cream card with a gold left edge */}
       <div className="mb-3.5 flex flex-wrap items-center gap-4 rounded-[16px] border border-parch-200 border-l-4 border-l-brand-gold bg-parch-50 p-5 shadow-panel">
         <span className="shrink-0" style={{ borderRadius: '9999px', boxShadow: `0 0 0 3px ${accent}33` }}>
@@ -577,7 +592,14 @@ export default async function StudentPage({ params }: { params: { id: string } }
             />
           )}
           {canWrite && (
-            <StudentProfileActions studentId={s.id} hasImportNotes={!!s.importNotes} isAdmin={isAdmin} loginEnabled={s.account.isActive} showPinReset={!isAdmin} />
+            <StudentProfileActions
+              studentId={s.id}
+              hasImportNotes={!!s.importNotes}
+              isAdmin={isAdmin}
+              loginEnabled={s.account.isActive}
+              showPinReset={!isAdmin}
+              unassignFrom={s.class && s.account.role === 'STUDENT' ? { id: s.class.id, name: s.class.name } : null}
+            />
           )}
         </div>
       </div>

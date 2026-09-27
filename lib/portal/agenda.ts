@@ -97,6 +97,26 @@ export function normaliseWeekStart(raw: string | null | undefined): string | nul
   return day ? mondayOf(day) : null
 }
 
+/**
+ * The Sunday a Monday-keyed week leads up to, which is the day Sunday School
+ * meets. Weeks stay keyed by Monday in storage, but the page shows and picks
+ * this date. Showing the Monday made "this Sunday" jump back to a past date.
+ */
+export function sundayOfWeek(mondayKey: string): string {
+  return addDays(mondayKey, 6)
+}
+
+/**
+ * True once a date box holds a whole, plausible date. Typing a date on a
+ * computer fires on every keystroke, so "0002-10-04" arrives before
+ * "2026-10-04". Jumping on each one throws the servant to year 2 mid-typing.
+ */
+export function isCompleteDateInput(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const year = Number(value.slice(0, 4))
+  return year >= 2000 && year <= 2100 && parseDateOnly(value) === value
+}
+
 /** "Sep 14 – Sep 20, 2026" for the week starting on the given Monday. */
 export function weekLabel(mondayKey: string): string {
   const monday = normaliseWeekStart(mondayKey)

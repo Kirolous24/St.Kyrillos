@@ -20,7 +20,11 @@ const studentSelect = {
   importNotes: true,
   classId: true,
   class: { select: { id: true, name: true, stage: true, visitationThreshold: true } },
-  account: { select: { id: true, loginId: true, displayName: true, email: true, phone: true, photo: true, isActive: true, lastLoginAt: true } },
+  account: { select: { id: true, loginId: true, displayName: true, email: true, phone: true, photo: true, isActive: true, lastLoginAt: true, role: true } },
+  // UNASSIGNED (2026-09-26): why and by whom, for the admin's banner.
+  unassignedAt: true,
+  unassignedReason: true,
+  unassignedBy: { select: { displayName: true } },
 } as const
 
 export type StudentDetail = NonNullable<Awaited<ReturnType<typeof loadStudent>>>

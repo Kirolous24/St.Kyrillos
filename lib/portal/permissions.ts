@@ -35,6 +35,7 @@ export type Action =
   | 'servant.read'
   | 'admin.manage'
   | 'group.manage'
+  | 'unassigned.manage'
 
 export interface ActionContext {
   classId?: string
@@ -52,6 +53,7 @@ const ALL_CLASS_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'servant.read',
   'admin.manage',
   'group.manage',
+  'unassigned.manage',
 ])
 
 export function isAssigned(user: PortalUser, classId: string | undefined): boolean {
@@ -118,6 +120,12 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
           // overseer for their stage, the class Coordinator for their class.
           // Plain servants and assistants follow their group; they do not
           // rearrange everyone else's (follow-up groups, 2026-09-26).
+          return stageRead || (!!ctx.classId && user.coordinatorOf.includes(ctx.classId))
+        case 'unassigned.manage':
+          // UNASSIGNED (2026-09-26): any servant of the class may take a child
+          // off it with a reason (student.write). What happens next is put
+          // back, move or delete, and that is the same people's call as
+          // arranging groups.
           return stageRead || (!!ctx.classId && user.coordinatorOf.includes(ctx.classId))
         default:
           return false

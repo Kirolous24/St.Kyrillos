@@ -1128,7 +1128,7 @@ try {
     await page.getByRole('button', { name: /Add standard grade classes/ }).count() === 1)
   // F0214 — the curriculum link is wired
   check('each class can follow another class\'s curriculum',
-    await page.locator('select[aria-label^="Class whose curriculum"]').count() > 0)
+    await page.locator('select[aria-label$=" is linked with"]').count() > 0)
 
   // F0076 — servant quick actions exist for admin too
   await go('/portal')

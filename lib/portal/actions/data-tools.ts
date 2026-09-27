@@ -725,7 +725,14 @@ export async function importStudentsCsv(
               ...(p.clearsClass
                 ? { class: { disconnect: true }, groupServant: { disconnect: true } }
                 : p.classId
-                  ? { class: { connect: { id: p.classId } } }
+                  ? {
+                      class: { connect: { id: p.classId } },
+                      // Placed in a class, so no longer waiting on the UNASSIGNED list.
+                      unassignedAt: null,
+                      unassignedReason: null,
+                      unassignedFromClassId: null,
+                      unassignedBy: { disconnect: true },
+                    }
                   : {}),
               account: {
                 update: {

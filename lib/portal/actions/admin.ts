@@ -13,6 +13,7 @@ import { DAY_NAMES } from '../dates'
 import { STANDARD_GRADES, pickNewGradeClasses, gradeSlug } from '../standard-grades'
 import { freeLoginId, randomPin } from '../credentials'
 import { issuedPinFields } from '../pin-issue'
+import { applyCurriculumLink } from '../data/curriculum-link'
 import type { PortalUser } from '../permissions'
 import { clearRateLimit } from '@/lib/rate-limit'
 import { isStandardSession, standardSessionLabel } from '../sessions'
@@ -281,44 +282,17 @@ export async function resetClassPins(
  * unread by anything — the prototype used it to let a class permanently follow
  * another's plan (two halves of one grade taught the same material, say).
  *
- * Admin-only by the church's decision: linking changes what a whole class is
- * taught, and a servant doing it to a colleague's class would be hard to spot.
- * A direct cycle is refused, because the agenda follows the link one hop and a
- * pair pointing at each other has no source of truth.
+ * This was admin-only until 2026-09-26. The church then asked for servants to
+ * be able to link their own class from Lesson Preparation (`linkClassCurriculum`),
+ * because a link now does something: both classes may read each other's plan
+ * (lib/portal/lesson-links.ts). Both paths share one core. A pair pointing at
+ * each other is allowed, since that is how the old app stored shared
+ * curricula.
  */
 export async function setCurriculumLink(classId: string, linkedToId: string | null): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requireAdmin()
-    const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true, name: true } })
-    if (!cls) throw new PortalError('Class not found.')
-
-    const target = (linkedToId ?? '').trim() || null
-    if (target === cls.id) throw new PortalError('A class cannot follow its own curriculum.')
-
-    let targetName: string | null = null
-    if (target) {
-      const other = await prisma.schoolClass.findUnique({
-        where: { id: target },
-        select: { id: true, name: true, curriculumLinkedToId: true },
-      })
-      if (!other) throw new PortalError('That class does not exist.')
-      if (other.curriculumLinkedToId === cls.id) {
-        throw new PortalError(`${other.name} already follows ${cls.name}, so linking them both ways would leave no source.`)
-      }
-      targetName = other.name
-    }
-
-    await prisma.schoolClass.update({ where: { id: cls.id }, data: { curriculumLinkedToId: target } })
-    await audit(
-      user,
-      'class.curriculumLink',
-      'class',
-      cls.id,
-      target ? `${cls.name} now follows ${targetName}` : `${cls.name} no longer follows another class`,
-    )
-    revalidatePath('/portal/admin/classes')
-    revalidatePath('/portal/agenda')
-    revalidatePath('/portal/lessons')
+    await applyCurriculumLink(user, classId, linkedToId)
     return undefined
   })
 }

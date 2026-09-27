@@ -137,3 +137,25 @@ describe('group.manage', () => {
     expect(can(stageLead, 'group.manage', { classId: '5th-6th-boys', classStage: 'MIDDLE_SCHOOL' })).toBe(false)
   })
 })
+
+// UNASSIGNED (2026-09-26): any servant of the class may take a child off it with
+// a reason (student.write); deciding what happens next is the coordinator's job.
+describe('unassigned.manage', () => {
+  it('the admin, the stage overseer and the class Coordinator handle the UNASSIGNED list', () => {
+    expect(can(admin, 'unassigned.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(stageLead, 'unassigned.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(coordinator, 'unassigned.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+  })
+  it('a plain servant, the pastor and a student do not', () => {
+    expect(can(servant, 'unassigned.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(pastor, 'unassigned.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(student, 'unassigned.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+  })
+  it("a Coordinator's reach is their own class, an overseer's their own stage", () => {
+    expect(can(coordinator, 'unassigned.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(stageLead, 'unassigned.manage', { classId: '5th-6th-boys', classStage: 'MIDDLE_SCHOOL' })).toBe(false)
+  })
+  it('a plain servant can still unassign a child from their own class', () => {
+    expect(can(servant, 'student.write', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+  })
+})

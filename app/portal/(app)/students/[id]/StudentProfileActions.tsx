@@ -10,7 +10,9 @@ import {
   convertStudentToServantAndRedirect,
   setStudentLoginEnabled,
 } from '@/lib/portal/actions/students'
-import { Card, buttonClass, Callout } from '@/components/portal/ui'
+import { unassignStudent } from '@/lib/portal/actions/unassigned'
+import { UNASSIGN_REASON_MAX, UNASSIGN_REASON_MIN } from '@/lib/portal/unassigned'
+import { Card, buttonClass, Callout, textareaClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
 export function StudentProfileActions({
@@ -19,6 +21,7 @@ export function StudentProfileActions({
   isAdmin,
   loginEnabled,
   showPinReset = true,
+  unassignFrom = null,
 }: {
   studentId: string
   hasImportNotes: boolean
@@ -26,12 +29,16 @@ export function StudentProfileActions({
   loginEnabled: boolean
   /** False for the admin, whose Sign-in card already shows, reissues and shares the PIN. */
   showPinReset?: boolean
+  /** The class this child can be unassigned from; null when they are in none. */
+  unassignFrom?: { id: string; name: string } | null
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [pin, setPin] = useState<{ loginId: string; pin: string } | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [unassigning, setUnassigning] = useState(false)
+  const [reason, setReason] = useState('')
 
   return (
     <Card title="Actions" icon={<Settings className="h-[15px] w-[15px]" />}>
@@ -159,15 +166,72 @@ export function StudentProfileActions({
             Delete student
           </button>
         )}
-        {/* F0069 — a servant used to find a red "Remove student" card here and
-            now finds nothing, so they hunt for a control that is not there and
-            conclude the portal has lost it. Removing a child erases their whole
-            history, which stays with the office — but the absence should be
-            answered rather than silent. */}
-        {!isAdmin && (
+        {/* UNASSIGNED (2026-09-26). The prototype's "Remove student" erased a
+            child's whole history, so it went to the office (F0069) and servants
+            were left asking. Now any servant of the class takes the child off
+            it with a reason. The child waits on the UNASSIGNED list, where the
+            Coordinator, the stage overseer or the admin puts them back, moves
+            them or deletes them. Nothing is lost by the servant's click. */}
+        {unassignFrom && !unassigning && (
+          <button
+            type="button"
+            disabled={pending}
+            className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px] w-full text-[#B91C1C]')}
+            onClick={() => {
+              setError('')
+              setUnassigning(true)
+            }}
+          >
+            Unassign from class
+          </button>
+        )}
+        {unassignFrom && unassigning && (
+          <div className="rounded-[12px] border border-[#FCA5A5] bg-[#FEF2F2] p-3">
+            <label htmlFor="unassign-reason" className="mb-1 block text-[11px] font-bold uppercase tracking-[0.8px] text-[#B91C1C]">
+              Why is this child leaving {unassignFrom.name}? (required)
+            </label>
+            <textarea
+              id="unassign-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className={cn(textareaClass, 'min-h-[80px]')}
+              maxLength={UNASSIGN_REASON_MAX}
+              placeholder="e.g. The family moved to another church"
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                disabled={pending || reason.trim().length < UNASSIGN_REASON_MIN}
+                className={cn(buttonClass('danger', 'sm'), 'min-h-[40px] flex-1')}
+                onClick={() => {
+                  startTransition(async () => {
+                    const r = await unassignStudent(studentId, reason)
+                    if (!r.ok) return setError(r.error)
+                    router.push(`/portal/classes/${unassignFrom.id}`)
+                    router.refresh()
+                  })
+                }}
+              >
+                {pending ? 'Unassigning…' : 'Unassign'}
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                className={cn(buttonClass('ghost', 'sm'), 'min-h-[40px]')}
+                onClick={() => {
+                  setUnassigning(false)
+                  setReason('')
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {unassignFrom && (
           <p className="pt-1 text-[11.5px] text-parch-500">
-            Taking a child off the roll is done by the office, so their attendance, points and
-            quizzes are never lost by accident. Ask an admin if a child has left the church.
+            Unassigning takes the child off {unassignFrom.name} and asks the class Coordinator or stage overseer to
+            decide what happens next. Their attendance, points and quizzes are kept.
           </p>
         )}
         {error && <div role="alert"><Callout tone="bad">{error}</Callout></div>}

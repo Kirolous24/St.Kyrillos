@@ -100,6 +100,7 @@ const ROUTES = {
       '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/reports?tab=church&period=all',
       '/portal/reports?tab=church&mode=exams', '/portal/reports?tab=church&mode=points',
       '/portal/readings', '/portal/photo', '/portal/admin/servants/logins', '/portal/my-group',
+      '/portal/unassigned',
     ],
     gone: [],
   },
@@ -120,6 +121,8 @@ const ROUTES = {
       '/portal/admin/servants/logins',
       '/portal/admin/students',
       '/portal/admin/sessions',
+      // UNASSIGNED is for the admin, stage overseers and class Coordinators.
+      '/portal/unassigned',
     ],
     notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123'],
   },
@@ -143,7 +146,7 @@ const ROUTES = {
     gone: [
       '/portal/admin/data', '/portal/admin/students', '/portal/admin/servants', '/portal/admin/servants/logins', '/portal/admin/audit',
       '/portal/exams', '/portal/exams/new', '/portal/qr', '/portal/reports', '/portal/servant-attendance',
-      '/portal/agenda', '/portal/lessons', '/portal/assignments', '/portal/my-group',
+      '/portal/agenda', '/portal/lessons', '/portal/assignments', '/portal/my-group', '/portal/unassigned',
     ],
   },
 }

@@ -9,7 +9,8 @@ import { NotificationBell } from '@/components/portal/NotificationBell'
 import { BirthdayChip } from '@/components/portal/BirthdayChip'
 import { nextBirthdayForTopbar } from '@/lib/portal/data/dashboard'
 import { loadNotifications } from '@/lib/portal/data/reports'
-import { withNavBadges } from '@/lib/portal/nav'
+import { withNavBadges, withUnassignedFlag } from '@/lib/portal/nav'
+import { countUnassigned } from '@/lib/portal/data/unassigned'
 import { todayInNewYork } from '@/lib/portal/dates'
 
 export const metadata: Metadata = {
@@ -39,8 +40,14 @@ export default async function PortalAppLayout({ children }: { children: React.Re
     user.role === 'ADMIN' || user.role === 'PASTOR'
       ? await prisma.followUpCase.count({ where: { status: 'OPEN' } })
       : 0
-  const nav = withNavBadges(navForUser(user), notifications).map((item) =>
-    openCases > 0 && item.href === '/portal/follow-ups' ? { ...item, badge: openCases } : item,
+  // UNASSIGNED (2026-09-26): the red item under Dashboard, only while a child
+  // this user handles is waiting. Zero, with no query, for everyone else.
+  const unassigned = await countUnassigned(user)
+  const nav = withUnassignedFlag(
+    withNavBadges(navForUser(user), notifications).map((item) =>
+      openCases > 0 && item.href === '/portal/follow-ups' ? { ...item, badge: openCases } : item,
+    ),
+    unassigned,
   )
   /**
    * The prototype's class workspace (OG `adOpenClassView`): an admin who opens a

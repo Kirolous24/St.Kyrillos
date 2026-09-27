@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { Settings2, Share2, Upload } from 'lucide-react'
 import { importAgendaCsv, shareAgendaWeek, type AgendaImportReport } from '@/lib/portal/actions/agenda'
+import { isCompleteDateInput, sundayOfWeek } from '@/lib/portal/agenda'
 import { Card, Callout, Field, buttonClass, inputClass, selectClass } from '@/components/portal/ui'
 import { DownloadButton } from '@/components/portal/DownloadButton'
 import { cn } from '@/lib/utils'
@@ -42,12 +43,15 @@ export function AgendaNav({
           </select>
         </label>
       )}
+      {/* The box shows and picks the Sunday, the day the class meets. It used
+          to show the week's Monday, so picking this Sunday made it jump back
+          to a past date, which read as "future dates are not allowed". */}
       <label className="block min-w-[170px]">
-        <span className={pickerLabel}>Jump to a date</span>
+        <span className={pickerLabel}>Sunday</span>
         <input
           type="date"
-          value={week}
-          onChange={(e) => e.target.value && go(classId, e.target.value)}
+          value={sundayOfWeek(week)}
+          onChange={(e) => isCompleteDateInput(e.target.value) && go(classId, e.target.value)}
           className={inputClass}
         />
       </label>

@@ -209,8 +209,10 @@ model Account {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  student Student?
-  servant Servant?
+  student            Student?  @relation("StudentAccount")
+  // Children this account took off a class (the UNASSIGNED list, 2026-09-26).
+  studentsUnassigned Student[] @relation("StudentUnassignedBy")
+  servant            Servant?
 
   attendanceMarked  AttendanceRecord[]  @relation("AttendanceMarkedBy")
   pointsGiven       PointEntry[]        @relation("PointsCreatedBy")
@@ -267,32 +269,41 @@ model SchoolClass {
 }
 
 model Student {
-  id              String       @id @default(cuid())
-  accountId       String       @unique
-  account         Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  classId         String?
-  class           SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
-  firstName       String
-  lastName        String
-  gender          String?
-  dob             DateTime?    @db.Date
-  grade           String?
-  address         String?
-  fatherName      String?
-  fatherPhone     String?
-  motherName      String?
-  motherPhone     String?
-  parentEmails    String[]     @default([])
-  notes           String?
-  importNotes     String? // data-quality flags from the migration, cleared once reviewed
+  id                    String       @id @default(cuid())
+  accountId             String       @unique
+  account               Account      @relation("StudentAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  classId               String?
+  class                 SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  firstName             String
+  lastName              String
+  gender                String?
+  dob                   DateTime?    @db.Date
+  grade                 String?
+  address               String?
+  fatherName            String?
+  fatherPhone           String?
+  motherName            String?
+  motherPhone           String?
+  parentEmails          String[]     @default([])
+  notes                 String?
+  importNotes           String? // data-quality flags from the migration, cleared once reviewed
   // Follow-up group (2026-09-26): the servant who follows this child up.
   // Resolved when read against the class's active servants (lib/portal/groups.ts),
   // so a servant briefly removed from the class gets their group back.
-  groupServantId  String?
-  groupServant    Servant?     @relation("StudentGroup", fields: [groupServantId], references: [id], onDelete: SetNull)
-  groupAssignedAt DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  groupServantId        String?
+  groupServant          Servant?     @relation("StudentGroup", fields: [groupServantId], references: [id], onDelete: SetNull)
+  groupAssignedAt       DateTime?
+  // UNASSIGNED (2026-09-26): a servant took this child off their class, with a
+  // required reason. A coordinator then puts them back, moves them or deletes
+  // them. `unassignedFromClassId` is a bare class id, like curriculumLinkedToId,
+  // so it outlives the class. All four are cleared when the child is placed.
+  unassignedAt          DateTime?
+  unassignedById        String?
+  unassignedBy          Account?     @relation("StudentUnassignedBy", fields: [unassignedById], references: [id], onDelete: SetNull)
+  unassignedReason      String?
+  unassignedFromClassId String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   attendance  AttendanceRecord[]
   points      PointEntry[]
@@ -306,6 +317,7 @@ model Student {
   @@index([classId])
   @@index([lastName, firstName])
   @@index([groupServantId])
+  @@index([unassignedAt])
 }
 
 model Servant {

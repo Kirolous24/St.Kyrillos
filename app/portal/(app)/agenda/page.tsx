@@ -1,12 +1,14 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { CalendarDays, ChevronLeft, ChevronRight, Link2, Printer } from 'lucide-react'
-import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
-import { listVisibleClasses, requireClassAccess } from '@/lib/portal/data/classes'
+import { requireClassAccess } from '@/lib/portal/data/classes'
+import { lessonPrepClasses } from '@/lib/portal/data/lesson-prep'
 import { agendaCsvForClass, agendaServantOptions, listAgendaWeeks, loadAgendaWeek } from '@/lib/portal/data/agenda'
 import { can } from '@/lib/portal/permissions'
-import { TEACHING_WRITE, normaliseWeekStart, weekDistanceLabel, agendaBlankTemplateRows, schoolYearWeeks, weekLabel } from '@/lib/portal/agenda'
+import { areLinked, linkedWith } from '@/lib/portal/lesson-links'
+import { formatLongDate } from '@/lib/portal/format'
+import { TEACHING_WRITE, normaliseWeekStart, weekDistanceLabel, agendaBlankTemplateRows, schoolYearWeeks, sundayOfWeek, weekLabel } from '@/lib/portal/agenda'
 import { toCsv } from '@/lib/portal/csv'
 import { addDays, mondayOf, todayInNewYork } from '@/lib/portal/dates'
 import {
@@ -21,7 +23,9 @@ import {
 } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 import { AgendaEditor } from './AgendaEditor'
-import { CurriculumLink } from './CurriculumLink'
+import { LinkedWith } from './CurriculumLink'
+import { LinkedPlan } from './LinkedPlan'
+import { LinkedClasses } from './LinkPicker'
 import { AgendaNav, AgendaTools } from './AgendaTools'
 import { ArchiveSearch } from './ArchiveSearch'
 import { ClearWeeksPanel } from './ClearWeeksPanel'
@@ -55,7 +59,9 @@ export default async function AgendaPage({
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
 
-  const classes = await listVisibleClasses(user)
+  // Their own classes, plus any joined to one of them by a curriculum link.
+  // A linked class opens read-only: its plan to read and copy from, nothing else.
+  const { own: classes, linked, rows } = await lessonPrepClasses(user)
   if (classes.length === 0) {
     return (
       <>
@@ -65,24 +71,27 @@ export default async function AgendaPage({
     )
   }
 
-  const classId = classes.some((c) => c.id === searchParams.class) ? searchParams.class! : classes[0]!.id
-  const cls = await requireClassAccess(user, classId, 'class.read')
-  const canWrite = can(user, TEACHING_WRITE, { classId: cls.id, classStage: cls.stage })
+  const linkedPick = linked.find((c) => c.id === searchParams.class) ?? null
+  const classId = classes.some((c) => c.id === searchParams.class) ? searchParams.class! : linkedPick?.id ?? classes[0]!.id
+  const cls = linkedPick ?? (await requireClassAccess(user, classId, 'class.read'))
+  const viaLink = !!linkedPick
+  const canWrite = !viaLink && can(user, TEACHING_WRITE, { classId: cls.id, classStage: cls.stage })
 
   const mode = searchParams.view === 'archive' ? 'archive' : 'edit'
-  // The class this one follows, if an admin linked it. Two reads because the
-  // column is a bare id with no relation — it came across from the Firebase
-  // import that way and nothing has ever needed to join on it.
-  const linkRow = await prisma.schoolClass.findUnique({
-    where: { id: classId },
-    select: { curriculumLinkedToId: true },
-  })
-  const curriculumSource = linkRow?.curriculumLinkedToId
-    ? await prisma.schoolClass.findUnique({
-        where: { id: linkRow.curriculumLinkedToId },
-        select: { id: true, name: true },
-      })
-    : null
+  const rowOf = (id: string) => rows.find((r) => r.id === id) ?? { id, curriculumLinkedToId: null }
+  const followsId = rowOf(cls.id).curriculumLinkedToId
+  // Every class this one is linked with, whichever way the link was stored.
+  const links = linkedWith(cls.id, rows)
+    .map((id) => rows.find((r) => r.id === id))
+    .filter((r): r is (typeof rows)[number] => !!r)
+    .map((r) => ({ id: r.id, name: r.name }))
+  // Opened through a link: the user's own classes it is linked with, which a
+  // week can be copied into.
+  const copyTargets = viaLink
+    ? classes
+        .filter((c) => can(user, TEACHING_WRITE, { classId: c.id, classStage: c.stage }) && areLinked(rowOf(c.id), rowOf(cls.id)))
+        .map((c) => ({ id: c.id, name: c.name }))
+    : []
   const today = todayInNewYork()
   const thisMonday = mondayOf(today)
   const week = normaliseWeekStart(searchParams.week) ?? thisMonday
@@ -107,7 +116,7 @@ export default async function AgendaPage({
       <PageHeader
         title={agendaTitle(user.role)}
         icon={<CalendarDays className="h-5 w-5" aria-hidden />}
-        subtitle={`${cls.name} · ${view.label}`}
+        subtitle={`${cls.name} · Sunday, ${formatLongDate(sundayOfWeek(view.weekStart))}`}
         actions={
           <LinkButton href={`/portal/agenda/week?class=${encodeURIComponent(cls.id)}&week=${week}`} variant="secondary">
             <Printer className="h-4 w-4" aria-hidden /> Weekly assignments
@@ -134,17 +143,23 @@ export default async function AgendaPage({
       <AgendaNav
         classId={cls.id}
         week={week}
-        classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+        classes={[
+          ...classes.map((c) => ({ id: c.id, name: c.name })),
+          ...linked.map((c) => ({ id: c.id, name: `${c.name} (linked, read-only)` })),
+        ]}
       />
 
-      {curriculumSource && (
-        <CurriculumLink
-          classId={cls.id}
+      {viaLink ? (
+        <LinkedPlan
           weekStart={view.weekStart}
           weekLabel={view.label}
-          source={curriculumSource}
-          canWrite={canWrite}
+          source={{ id: cls.id, name: cls.name }}
+          targets={copyTargets}
         />
+      ) : (
+        links.length > 0 && (
+          <LinkedWith classId={cls.id} weekStart={view.weekStart} weekLabel={view.label} links={links} canWrite={canWrite} />
+        )
       )}
 
       <nav aria-label="Week" className="mb-5 flex flex-wrap items-center gap-2 print:hidden">
@@ -152,7 +167,7 @@ export default async function AgendaPage({
           <ChevronLeft className="h-4 w-4" aria-hidden /> Previous
         </Link>
         <Link href={href(thisMonday)} className={pillClass(week === thisMonday)}>
-          <CalendarDays className="h-4 w-4" aria-hidden /> This week
+          <CalendarDays className="h-4 w-4" aria-hidden /> This Sunday
         </Link>
         <Link href={href(addDays(week, 7))} className={pillClass(false)}>
           Next <ChevronRight className="h-4 w-4" aria-hidden />
@@ -195,6 +210,18 @@ export default async function AgendaPage({
         <div className="space-y-4 lg:col-span-2">
           {canWrite && (
             <AgendaTools classId={cls.id} className={cls.name} weekStart={view.weekStart} csv={csv} blankCsv={blankCsv} shareTargets={shareTargets} />
+          )}
+
+          {canWrite && (
+            <LinkedClasses
+              classId={cls.id}
+              className={cls.name}
+              links={links}
+              canAdd={!followsId}
+              options={rows
+                .filter((r) => r.id !== cls.id && !links.some((l) => l.id === r.id))
+                .map((r) => ({ id: r.id, name: r.name }))}
+            />
           )}
 
           {/* F0221 / F0490 / F0585 / F0586 — the old app's bulk "Clear Selected

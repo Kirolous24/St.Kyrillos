@@ -8,7 +8,7 @@ import {
   Menu, X, LogOut, LayoutDashboard, Users, UserCog, GraduationCap, CalendarCheck,
   Trophy, Cake, ClipboardList, BookOpen, CalendarDays, Megaphone, MessageSquare,
   QrCode, Music, FileBarChart, Settings, ScrollText, Award, HeartHandshake,
-  BookMarked, Sparkles, Library, LifeBuoy, Layers, ChevronDown, Camera, User, ArrowLeft, UsersRound,
+  BookMarked, Sparkles, Library, LifeBuoy, Layers, ChevronDown, Camera, User, ArrowLeft, UsersRound, UserX,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 // Pure route table — no server imports, so a client component may call it.
@@ -27,6 +27,7 @@ const NAV_ICONS = {
   feed: MessageSquare, events: CalendarDays, qr: QrCode, hymns: Music, reports: FileBarChart,
   settings: Settings, audit: ScrollText, achievements: Award, readings: BookMarked, points: Sparkles,
   curriculum: Library, help: LifeBuoy, stage: Layers, photo: Camera, profile: User, group: UsersRound,
+  unassigned: UserX,
 } as const
 
 export type NavIcon = keyof typeof NAV_ICONS
@@ -42,6 +43,11 @@ export interface NavItem {
    * there clears it here; the two can never disagree.
    */
   badge?: number
+  /**
+   * 'alert' draws the item in red capitals with a red count: the UNASSIGNED
+   * flag (2026-09-26), which is there only while a child is waiting.
+   */
+  tone?: 'alert'
 }
 
 interface ShellProps {
@@ -367,7 +373,9 @@ export function Shell({
                   <Icon
                     className={cn(
                       'h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-110',
-                      active ? 'text-brand-800' : 'text-[#A99A7C] group-hover:text-brand-800',
+                      item.tone === 'alert'
+                        ? 'text-[#DC2626]'
+                        : active ? 'text-brand-800' : 'text-[#A99A7C] group-hover:text-brand-800',
                     )}
                     aria-hidden
                   />
@@ -375,16 +383,23 @@ export function Shell({
                 <span
                   className={cn(
                     'truncate text-[12.5px] transition-colors',
-                    active ? 'font-bold text-brand-800' : 'font-medium text-[#6B6255] group-hover:text-parch-900',
+                    item.tone === 'alert'
+                      ? 'font-extrabold uppercase tracking-[0.6px] text-[#DC2626]'
+                      : active ? 'font-bold text-brand-800' : 'font-medium text-[#6B6255] group-hover:text-parch-900',
                   )}
                 >
                   {item.label}
                 </span>
                 {item.badge ? (
-                  <span className="ml-auto grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-brand-800 px-1 text-[10px] font-bold text-[#E8D3A3]">
+                  <span
+                    className={cn(
+                      'ml-auto grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full px-1 text-[10px] font-bold',
+                      item.tone === 'alert' ? 'bg-[#DC2626] text-white' : 'bg-brand-800 text-[#E8D3A3]',
+                    )}
+                  >
                     <span className="sr-only">, </span>
                     {item.badge > 9 ? '9+' : item.badge}
-                    <span className="sr-only"> new</span>
+                    <span className="sr-only">{item.tone === 'alert' ? ' waiting' : ' new'}</span>
                   </span>
                 ) : null}
               </Link>
