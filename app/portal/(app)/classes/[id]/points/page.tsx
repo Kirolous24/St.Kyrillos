@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { rosterWhere } from '@/lib/portal/class-members'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireClassAccess } from '@/lib/portal/data/classes'
 import { classTotals } from '@/lib/portal/data/dashboard'
@@ -15,8 +16,9 @@ export default async function PointsPage({ params }: { params: { id: string } })
   const cls = await requireClassAccess(user, params.id, 'points.write')
 
   const [students, activities, history] = await Promise.all([
+    // Members of a class that takes other classes are on its leaderboard (2026-09-28).
     prisma.student.findMany({
-      where: { classId: cls.id },
+      where: rosterWhere(cls.id),
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       select: { id: true, firstName: true, lastName: true, account: { select: { photo: true } } },
     }),

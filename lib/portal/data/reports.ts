@@ -6,6 +6,7 @@
 import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
+import { rosterWhere } from '../class-members'
 import type { PortalUser, StageKey } from '../permissions'
 import { can, visibleClassIds } from '../permissions'
 import { requireClassAccess, listVisibleClasses } from './classes'
@@ -278,13 +279,15 @@ export async function loadAllSessionsMatrix(
   const { from, to } = monthRange(input.month)
 
   const [students, sessions, records] = await Promise.all([
+    // Its own children, and children from other classes where it takes them
+    // (2026-09-28). For a grade class this is its own children, as before.
     prisma.student.findMany({
-      where: { classId: cls.id },
+      where: rosterWhere(cls.id),
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       select: { id: true, firstName: true, lastName: true },
     }),
     prisma.attendanceSession.findMany({
-      where: { isActive: true },
+      where: { isActive: true, OR: [{ classId: null }, { classId: cls.id }] },
       orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }],
       select: { key: true, label: true },
     }),

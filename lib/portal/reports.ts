@@ -966,7 +966,8 @@ export interface BackupSummary {
   bytes: number
 }
 
-export type ImportRowStatus = 'created' | 'updated' | 'skipped' | 'error'
+/** `joined`: a child already in the portal added to a class that takes other classes (2026-09-28). */
+export type ImportRowStatus = 'created' | 'updated' | 'joined' | 'skipped' | 'error'
 
 export interface ImportRowResult {
   /**
@@ -986,6 +987,8 @@ export interface ImportRowResult {
 export interface ImportSummary {
   created: number
   updated: number
+  /** Children from other classes who joined this one. */
+  joined: number
   skipped: number
   errors: number
   rows: ImportRowResult[]
@@ -1030,6 +1033,7 @@ export function summariseImport(rows: readonly ImportRowResult[]): ImportSummary
   return {
     created: rows.filter((r) => r.status === 'created').length,
     updated: rows.filter((r) => r.status === 'updated').length,
+    joined: rows.filter((r) => r.status === 'joined').length,
     skipped: rows.filter((r) => r.status === 'skipped').length,
     errors: rows.filter((r) => r.status === 'error').length,
     rows: [...rows],

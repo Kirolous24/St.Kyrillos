@@ -9,6 +9,7 @@ import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseDateOnly, toUTCDate, churchToday } from '../dates'
 import { isFutureDate } from '../attendance-rules'
 import { syncAutoFollowUps } from '../followup-sync'
+import { registerWhere } from '../class-members'
 import { awardAttendancePoints, reverseAttendancePoints } from '../attendance-award'
 import { audit } from '../audit'
 
@@ -40,8 +41,11 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
     }
     const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
     if (!session || !session.isActive) throw new PortalError('Unknown session.')
+    if (session.classId && session.classId !== cls.id) throw new PortalError('That meeting belongs to another class.')
 
-    const classStudents = await prisma.student.findMany({ where: { classId: cls.id }, select: { id: true } })
+    // Who this register may mark: the class's own children, and for its own
+    // meeting its members too (2026-09-28).
+    const classStudents = await prisma.student.findMany({ where: registerWhere(session, cls.id), select: { id: true } })
     const allowed = new Set(classStudents.map((s) => s.id))
     const marks = input.marks.filter((m) => allowed.has(m.studentId))
     if (marks.length === 0) throw new PortalError('Nothing to save.')
@@ -98,16 +102,18 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
       { timeout: 60_000, maxWait: 10_000 },
     )
 
-    // Follow-up rule only watches the Sunday School session. Shared with the
-    // QR check-in path so both stay in step (see lib/portal/followup-sync.ts).
+    // The follow-up rule watches Sunday School, and a class's own meeting
+    // (2026-09-28). Shared with the QR check-in path so both stay in step (see
+    // lib/portal/followup-sync.ts).
     let opened = 0
     let closed = 0
-    if (session.key === 'sunday') {
+    if (session.key === 'sunday' || session.classId === cls.id) {
       const synced = await syncAutoFollowUps({
         classId: cls.id,
         studentIds: marks.map((m) => m.studentId),
         threshold: cls.visitationThreshold,
         asOf: date,
+        session: { key: session.key, label: session.label },
       })
       opened = synced.opened
       closed = synced.closed
@@ -169,12 +175,15 @@ export async function removeAttendanceSession(
       where: { classId: cls.id, date: day, sessionKey: session.key },
     })
 
-    const students = await prisma.student.findMany({ where: { classId: cls.id }, select: { id: true } })
+    // Re-score the meeting that was removed, when it is one the rule watches.
+    const watched = session.key === 'sunday' || session.classId === cls.id
+    const students = watched ? await prisma.student.findMany({ where: registerWhere(session, cls.id), select: { id: true } }) : []
     const { opened, closed } = await syncAutoFollowUps({
       classId: cls.id,
       studentIds: students.map((s) => s.id),
       threshold: cls.visitationThreshold,
       asOf: churchToday(),
+      session: { key: session.key, label: session.label },
     })
 
     await audit(

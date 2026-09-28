@@ -10,6 +10,7 @@ import { sessionTrend } from '@/lib/portal/reports'
 import { PortalChart } from '@/components/portal/PortalChart'
 import { AttendanceTaker } from './AttendanceTaker'
 import { RemoveRegister } from './RemoveRegister'
+import { registerWhere, sessionsForClass } from '@/lib/portal/class-members'
 
 export const metadata = { title: 'Attendance' }
 
@@ -23,7 +24,8 @@ export default async function AttendancePage({
   const user = await requirePortalUser()
   const cls = await requireClassAccess(user, params.id, 'attendance.write')
 
-  const sessions = await prisma.attendanceSession.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } })
+  // Every class's sessions and this class's own meeting, never another class's (2026-09-28).
+  const sessions = sessionsForClass(await prisma.attendanceSession.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }), cls.id)
   const date = parseDateOnly(searchParams.date) ?? churchToday()
 
   // F0209 — 'sunday' was the unconditional fallback, so once an admin switched
@@ -56,8 +58,10 @@ export default async function AttendancePage({
   const sessionKey = active.key
 
   const [students, existing, recentDates] = await Promise.all([
+    // The class's own meeting lists its members too; the church sessions list
+    // its own children, since members are marked for those in their own class.
     prisma.student.findMany({
-      where: { classId: cls.id },
+      where: registerWhere(active, cls.id),
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       select: { id: true, firstName: true, lastName: true, account: { select: { photo: true } } },
     }),

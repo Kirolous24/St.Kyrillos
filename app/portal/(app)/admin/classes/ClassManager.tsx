@@ -18,7 +18,10 @@ type Row = {
   isActive: boolean
   sortOrder: number
   curriculumLinkedToId: string | null
+  takesOtherClasses: boolean
   students: number
+  /** Children from other classes in it. */
+  members: number
   servants: number
   /**
    * F0541 — who they are, not just how many. Coordinators first. An admin
@@ -44,7 +47,7 @@ type Row = {
  */
 type ClassForm = Omit<ClassInput, 'stage'> & { stage: ClassInput['stage'] | '' }
 
-const EMPTY: ClassForm = { name: '', stage: '', visitationThreshold: 1, description: '' }
+const EMPTY: ClassForm = { name: '', stage: '', visitationThreshold: 1, description: '', takesOtherClasses: false }
 
 /** Small square icon button, as the prototype's card-head pencil/trash. */
 function iconButtonClass(tone: 'neutral' | 'gold' | 'danger') {
@@ -68,7 +71,7 @@ export function ClassManager({ classes }: { classes: Row[] }) {
   function startEdit(c: Row) {
     setEditing(c)
     setOpen(true)
-    setForm({ name: c.name, stage: c.stage, visitationThreshold: c.visitationThreshold, description: c.description ?? '' })
+    setForm({ name: c.name, stage: c.stage, visitationThreshold: c.visitationThreshold, description: c.description ?? '', takesOtherClasses: c.takesOtherClasses })
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -216,6 +219,22 @@ export function ClassManager({ classes }: { classes: Row[] }) {
               <input id="cls-desc" value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputClass} maxLength={300} placeholder="Brief description…" />
             </Field>
           </div>
+          {/* 2026-09-28 — a class like Pre-Servants holds children who stay in their own class. */}
+          <label className="mb-3.5 flex items-start gap-2.5 text-[12.5px] text-parch-800">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={!!form.takesOtherClasses}
+              onChange={(e) => setForm({ ...form, takesOtherClasses: e.target.checked })}
+            />
+            <span>
+              <b>Takes children from other classes</b>
+              <span className="block text-[11.5px] text-parch-500">
+                Children join it and stay in their own class, like Pre-Servants. Give it its own meeting in Sessions &amp;
+                Points.
+              </span>
+            </span>
+          </label>
           {error && <div role="alert" className="mb-3"><Callout tone="bad">{error}</Callout></div>}
           {notice && <div role="status" className="mb-3"><Callout tone="good">{notice}</Callout></div>}
           <div className="flex flex-wrap gap-2">
@@ -273,6 +292,7 @@ export function ClassManager({ classes }: { classes: Row[] }) {
                       ),
                   },
                   { key: 'Follow-up after', value: `${c.visitationThreshold} missed` },
+                  ...(c.takesOtherClasses ? [{ key: 'From other classes', value: `${c.members} child${c.members === 1 ? '' : 'ren'}` }] : []),
                   ...(c.description ? [{ key: 'Notes', value: <span className="font-normal text-parch-500">{c.description}</span> }] : []),
                   ...(c.curriculumLinkedToId
                     ? [{

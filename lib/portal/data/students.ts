@@ -40,9 +40,21 @@ export async function requireStudentRead(user: PortalUser, studentId: string) {
   const ctx = { classId: s.classId ?? undefined, classStage: s.class?.stage, studentId: s.id }
   const allowed =
     can(user, 'student.read', ctx) ||
-    (user.role === 'ADMIN' || user.role === 'PASTOR')
+    (user.role === 'ADMIN' || user.role === 'PASTOR') ||
+    (await readableThroughMembership(user, s.id))
   if (!allowed) notFound()
   return s
+}
+
+/**
+ * A servant of a class the child joined beyond their own (Pre-Servants,
+ * 2026-09-28) may open the child's profile and contact details. Editing the
+ * details stays with the child's own class (assertStudentWrite).
+ */
+async function readableThroughMembership(user: PortalUser, studentId: string): Promise<boolean> {
+  if (user.role === 'STUDENT') return false
+  const joined = await prisma.classMember.findMany({ where: { studentId }, select: { class: { select: { id: true, stage: true } } } })
+  return joined.some((m) => can(user, 'student.read', { classId: m.class.id, classStage: m.class.stage, studentId }))
 }
 
 /** For server actions that modify a student. */

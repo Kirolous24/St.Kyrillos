@@ -146,6 +146,8 @@ const ClassSchema = z.object({
   stage: z.enum(['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL']),
   visitationThreshold: z.number().int().min(1).max(10),
   description: z.string().trim().max(300).optional(),
+  /** Children may join it and stay in their own class (Pre-Servants, 2026-09-28). */
+  takesOtherClasses: z.boolean().optional(),
 })
 
 export type ClassInput = z.infer<typeof ClassSchema>
@@ -158,7 +160,7 @@ export async function createClass(raw: ClassInput): Promise<ActionResult<{ id: s
     let id = base
     for (let i = 2; await prisma.schoolClass.findUnique({ where: { id }, select: { id: true } }); i++) id = `${base}-${i}`
     const max = await prisma.schoolClass.aggregate({ _max: { sortOrder: true } })
-    await prisma.schoolClass.create({ data: { id, name: input.name, stage: input.stage, visitationThreshold: input.visitationThreshold, description: input.description || null, sortOrder: (max._max.sortOrder ?? 0) + 1 } })
+    await prisma.schoolClass.create({ data: { id, name: input.name, stage: input.stage, visitationThreshold: input.visitationThreshold, description: input.description || null, takesOtherClasses: input.takesOtherClasses ?? false, sortOrder: (max._max.sortOrder ?? 0) + 1 } })
     await audit(user, 'class.create', 'class', id, input.name)
     revalidatePath('/portal/admin/classes')
     revalidatePath('/portal/classes')
@@ -301,10 +303,19 @@ export async function updateClass(id: string, raw: ClassInput & { isActive?: boo
   return runAction(async () => {
     const user = await requireAdmin()
     const input = ClassSchema.parse(raw)
+    // Switching it off with children from other classes still in it would drop
+    // them from its roster without anyone deciding to.
+    if (input.takesOtherClasses === false) {
+      const members = await prisma.classMember.count({ where: { classId: id } })
+      if (members > 0) {
+        throw new PortalError(`It still has ${members} child${members === 1 ? '' : 'ren'} from other classes. Take them out on the class page first.`)
+      }
+    }
     await prisma.schoolClass.update({
       where: { id },
       data: {
         name: input.name, stage: input.stage, visitationThreshold: input.visitationThreshold, description: input.description || null,
+        ...(typeof input.takesOtherClasses === 'boolean' ? { takesOtherClasses: input.takesOtherClasses } : {}),
         ...(typeof raw.isActive === 'boolean' ? { isActive: raw.isActive } : {}),
         ...(typeof raw.sortOrder === 'number' ? { sortOrder: raw.sortOrder } : {}),
       },
@@ -367,6 +378,12 @@ const SessionSchema = z.object({
    * marked against it — see `deleteSession` below.
    */
   icon: z.string().trim().max(4).nullish(),
+  /**
+   * The one class that holds this session, for a class that takes children
+   * from other classes (its own meeting, 2026-09-28). Chosen when the session
+   * is added; an edit never moves a session between classes.
+   */
+  classId: z.string().min(1).nullish(),
 })
 
 const ServantActivitySchema = z.object({
@@ -423,6 +440,17 @@ export async function saveSession(raw: z.infer<typeof SessionSchema>): Promise<A
       )
     }
     const count = await prisma.attendanceSession.count()
+    const exists = await prisma.attendanceSession.findUnique({ where: { key: input.key }, select: { key: true } })
+    let ownClassId: string | null = null
+    if (!exists && input.classId) {
+      if (locked) throw new PortalError(`"${locked}" is held by every class.`)
+      const owner = await prisma.schoolClass.findUnique({ where: { id: input.classId }, select: { id: true, takesOtherClasses: true, name: true } })
+      if (!owner) throw new PortalError('Class not found.')
+      if (!owner.takesOtherClasses) {
+        throw new PortalError(`Only a class that takes children from other classes has its own meeting. Tick that for ${owner.name} in Manage Classes first.`)
+      }
+      ownClassId = owner.id
+    }
     await prisma.attendanceSession.upsert({
       where: { key: input.key },
       create: {
@@ -432,6 +460,7 @@ export async function saveSession(raw: z.infer<typeof SessionSchema>): Promise<A
         isActive: input.isActive,
         icon: input.icon || null,
         sortOrder: count,
+        classId: ownClassId,
       },
       update: { label: input.label, points: input.points, isActive: input.isActive, icon: input.icon || null },
     })

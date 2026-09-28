@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
+import { rosterWhere } from '../class-members'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
@@ -42,7 +43,7 @@ export async function givePoints(raw: GivePointsInput): Promise<ActionResult<{ c
     if (!resolved.ok) throw new PortalError(resolved.error)
 
     const students = await prisma.student.findMany({
-      where: { id: { in: input.studentIds }, classId: cls.id },
+      where: { AND: [{ id: { in: input.studentIds } }, rosterWhere(cls.id)] },
       select: { id: true, firstName: true, lastName: true },
     })
     if (students.length === 0) throw new PortalError('Those students are not in this class.')

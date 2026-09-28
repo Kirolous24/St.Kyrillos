@@ -13,7 +13,7 @@ export default async function AdminSessionsPage() {
   const user = await requirePortalUser()
   if (user.role !== 'ADMIN') notFound()
   const [sessions, activities, servantActivities] = await Promise.all([
-    prisma.attendanceSession.findMany({ orderBy: { sortOrder: 'asc' } }),
+    prisma.attendanceSession.findMany({ orderBy: { sortOrder: 'asc' }, include: { class: { select: { name: true } } } }),
     prisma.pointActivity.findMany({ where: { classId: null, isActive: true }, orderBy: { label: 'asc' } }),
     prisma.servantActivity.findMany({ orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] }),
   ])
@@ -24,7 +24,10 @@ export default async function AdminSessionsPage() {
         subtitle="What a student earns for each session attended, and for the activities every class has. Classes can add their own on their Points page. Changes apply from now on."
         icon={<CalendarCheck className="h-5 w-5" />}
       />
-      <SessionEditor sessions={sessions.map((s) => ({ key: s.key, label: s.label, points: s.points, isActive: s.isActive, icon: s.icon }))} />
+      <SessionEditor
+        sessions={sessions.map((s) => ({ key: s.key, label: s.label, points: s.points, isActive: s.isActive, icon: s.icon, classId: s.classId, className: s.class?.name ?? null }))}
+        openClasses={await prisma.schoolClass.findMany({ where: { takesOtherClasses: true }, orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } })}
+      />
       <ActivityEditor activities={activities.map((a) => ({ id: a.id, label: a.label, points: a.points, icon: a.icon }))} />
       <ServantActivityEditor
         activities={servantActivities.map((a) => ({ key: a.key, label: a.label, dayOfWeek: a.dayOfWeek, isActive: a.isActive }))}

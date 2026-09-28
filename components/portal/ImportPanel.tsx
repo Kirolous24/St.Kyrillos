@@ -38,6 +38,7 @@ function saveCsv(filename: string, csv: string) {
 const STATUS_TONE = {
   created: 'good',
   updated: 'info',
+  joined: 'good',
   skipped: 'neutral',
   error: 'bad',
 } as const
@@ -110,7 +111,7 @@ export function ImportPanel({
 }: {
   classes: Array<{ id: string; name: string }>
   pinsKept?: boolean
-  fixedClass?: { id: string; name: string } | null
+  fixedClass?: { id: string; name: string; takesOtherClasses?: boolean } | null
 }) {
   const [kind, setKind] = useState<'students' | 'servants'>('students')
   const [classId, setClassId] = useState<string>(fixedClass?.id ?? '')
@@ -287,7 +288,15 @@ export function ImportPanel({
       )}
 
       <Callout tone="info" title="How the import behaves">
-        {fixedClass ? (
+        {fixedClass?.takesOtherClasses ? (
+          <>
+            {/* 2026-09-28 — a class like Pre-Servants holds children who stay in their own class. */}
+            A child <strong>already in the portal</strong> (by 4-digit ID or by name) <strong>joins {fixedClass.name}</strong>{' '}
+            and stays in their own class. Nobody is added twice, and their details stay with their own class. A child who
+            is not in the portal yet is added to {fixedClass.name} with a fresh ID and PIN. Press <strong>Preview</strong>{' '}
+            first; nothing is written until you confirm.
+          </>
+        ) : fixedClass ? (
           <>
             Every row goes into <strong>{fixedClass.name}</strong>. A row with a child&rsquo;s 4-digit ID updates that child
             (only children in this class). A row without one adds a new child with a fresh ID and PIN, unless a child with
@@ -332,6 +341,7 @@ export function ImportPanel({
           <div className="flex flex-wrap gap-2">
             <Badge tone="good">{summary.created} {isPreview ? 'to add' : 'created'}</Badge>
             <Badge tone="info">{summary.updated} {isPreview ? 'to update' : 'updated'}</Badge>
+            {summary.joined > 0 && <Badge tone="good">{summary.joined} {isPreview ? 'to join' : 'joined'} from other classes</Badge>}
             {summary.skipped > 0 && <Badge tone="neutral">{summary.skipped} skipped</Badge>}
             {summary.errors > 0 && <Badge tone="bad">{summary.errors} failed</Badge>}
           </div>

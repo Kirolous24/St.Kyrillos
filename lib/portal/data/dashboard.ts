@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache'
+import { rostersWhere } from '../class-members'
 import { prisma } from '@/lib/prisma'
 import { churchToday, addDays, formatDateOnly, toUTCDate, mondayOf, churchDayStart, sundayOnOrBefore } from '../dates'
 import { upcomingBirthdays, birthdaysInWeek } from '../birthdays'
@@ -12,10 +13,11 @@ import { examScopeWhere, studentExams } from './exams'
 import { examStatusFor } from '../exams'
 import { studentName } from './students'
 
+/** Each child's one points total, for everyone on these classes' rosters (members too, 2026-09-28). */
 export async function classTotals(classIds: string[]) {
   const sums = await prisma.pointEntry.groupBy({
     by: ['studentId'],
-    where: { student: { classId: { in: classIds } } },
+    where: { student: rostersWhere(classIds) },
     _sum: { points: true },
   })
   return new Map(sums.map((s) => [s.studentId, s._sum.points ?? 0]))

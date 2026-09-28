@@ -135,7 +135,15 @@ export async function followUpCaseWhere(
       if (s === null || s === user.servantId) allowed.push(k.id)
     }
   }
-  return { OR: [{ classId: { in: whole } }, { classId: { in: group }, studentId: { in: allowed } }] }
+  return {
+    OR: [
+      { classId: { in: whole } },
+      { classId: { in: group }, studentId: { in: allowed } },
+      // Children from other classes are in no group here (their group is in
+      // their own class), so their cases are every servant's (2026-09-28).
+      ...group.map((classId) => ({ classId, student: { memberships: { some: { classId } } } })),
+    ],
+  }
 }
 
 export function assigneeByStudent(groups: readonly ClassGroups[]): Map<string, { servantId: string; name: string } | null> {

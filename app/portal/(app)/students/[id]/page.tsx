@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Star, CalendarCheck, Trophy, AlertTriangle, History, User, HeartHandshake, Camera, Award, GraduationCap, BookMarked, Flame } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
+import { membershipsOf } from '@/lib/portal/data/class-members'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireStudentRead, studentName } from '@/lib/portal/data/students'
 import { classTotals } from '@/lib/portal/data/dashboard'
@@ -181,6 +182,9 @@ export default async function StudentPage({ params }: { params: { id: string } }
   const sessionLabels = new Map((await prisma.attendanceSession.findMany({ select: { key: true, label: true } })).map((x) => [x.key, x.label]))
   const accent = accentFor(s.id)
 
+  // Classes the child joined beyond their own, such as Pre-Servants (2026-09-28).
+  const alsoIn = (await membershipsOf([s.id])).get(s.id) ?? []
+
   return (
     <>
       <PageHeader
@@ -192,6 +196,7 @@ export default async function StudentPage({ params }: { params: { id: string } }
             ) : (
               <Link href={`/portal/classes/${s.class.id}`} className="underline-offset-2 hover:underline">{s.class.name}</Link>
             )}
+            {alsoIn.length > 0 && ` · also in ${alsoIn.map((c) => c.name).join(', ')}`}
             {s.dob && ` · ${ageOn(formatDateOnly(s.dob), today)} years old · born ${formatLongDate(formatDateOnly(s.dob))}`}
             {!isSelf && ` · ID ${s.account.loginId}`}
           </>

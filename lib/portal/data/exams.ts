@@ -6,6 +6,7 @@
 import { notFound } from 'next/navigation'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { rosterWhere, studentClassIds } from '../class-members'
 import { can, type Action, type PortalUser, type StageKey } from '../permissions'
 import { PortalError } from '../action-result'
 import { formatDateOnly, churchToday } from '../dates'
@@ -249,7 +250,7 @@ export async function examDetail(
     }),
     exam.classId
       ? prisma.student.findMany({
-          where: { classId: exam.classId },
+          where: rosterWhere(exam.classId),
           orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
           select: { id: true, firstName: true, lastName: true },
         })
@@ -336,16 +337,21 @@ export interface StudentExamRow {
   result: { score: number; total: number; percentage: number; submittedAt: Date } | null
 }
 
-/** The student's own class + stage-wide exams, with their own result attached. */
+/**
+ * The student's own class + stage-wide exams, with their own result attached.
+ * A child in a class that takes other classes (Pre-Servants) sees its quizzes
+ * too (2026-09-28).
+ */
 export async function studentExams(studentId: string): Promise<{ today: string; rows: StudentExamRow[] }> {
   const student = await prisma.student.findUnique({
     where: { id: studentId },
-    select: { id: true, classId: true, class: { select: { stage: true } } },
+    select: { id: true, classId: true, class: { select: { stage: true } }, memberships: { select: { classId: true } } },
   })
   if (!student) throw new PortalError('Your student record is missing. Ask a servant for help.')
 
   const or: Prisma.ExamWhereInput[] = []
-  if (student.classId) or.push({ classId: student.classId })
+  const mine = studentClassIds(student)
+  if (mine.length) or.push({ classId: { in: mine } })
   if (student.class?.stage) or.push({ classId: null, stage: student.class.stage })
   if (or.length === 0) return { today: churchToday(), rows: [] }
 
@@ -398,7 +404,7 @@ export async function studentExams(studentId: string): Promise<{ today: string; 
 export async function studentExamPaper(studentId: string, examId: string) {
   const student = await prisma.student.findUnique({
     where: { id: studentId },
-    select: { id: true, classId: true, class: { select: { stage: true } } },
+    select: { id: true, classId: true, class: { select: { stage: true } }, memberships: { select: { classId: true } } },
   })
   if (!student) return null
 
@@ -424,7 +430,7 @@ export async function studentExamPaper(studentId: string, examId: string) {
   if (!exam) return null
 
   const mine = exam.classId
-    ? exam.classId === student.classId
+    ? studentClassIds(student).includes(exam.classId)
     : !!exam.stage && exam.stage === student.class?.stage
   if (!mine) return null
 

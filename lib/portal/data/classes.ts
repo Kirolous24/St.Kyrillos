@@ -66,7 +66,7 @@ export async function listVisibleClasses(user: PortalUser): Promise<ClassSummary
 export async function requireClassAccess(user: PortalUser, classId: string, action: Action) {
   const cls = await prisma.schoolClass.findUnique({
     where: { id: classId },
-    select: { id: true, name: true, stage: true, visitationThreshold: true, isActive: true, photo: true },
+    select: { id: true, name: true, stage: true, visitationThreshold: true, isActive: true, photo: true, takesOtherClasses: true },
   })
   if (!cls) notFound()
   if (!can(user, 'class.read', { classId: cls.id, classStage: cls.stage })) notFound()
@@ -80,7 +80,7 @@ export async function requireClassAccess(user: PortalUser, classId: string, acti
 export async function assertClassAction(user: PortalUser, classId: string, action: Action) {
   const cls = await prisma.schoolClass.findUnique({
     where: { id: classId },
-    select: { id: true, name: true, stage: true, visitationThreshold: true },
+    select: { id: true, name: true, stage: true, visitationThreshold: true, takesOtherClasses: true },
   })
   if (!cls || !can(user, action, { classId: cls.id, classStage: cls.stage })) {
     throw new PortalError('You do not have permission to do that in this class.')

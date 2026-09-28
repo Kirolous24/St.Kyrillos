@@ -209,9 +209,11 @@ model Account {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  student            Student?  @relation("StudentAccount")
+  student            Student?      @relation("StudentAccount")
   // Children this account took off a class (the UNASSIGNED list, 2026-09-26).
-  studentsUnassigned Student[] @relation("StudentUnassignedBy")
+  studentsUnassigned Student[]     @relation("StudentUnassignedBy")
+  // Children this account added to a class beyond their own (2026-09-28).
+  classMembersAdded  ClassMember[] @relation("ClassMemberAddedBy")
   servant            Servant?
 
   attendanceMarked  AttendanceRecord[]  @relation("AttendanceMarkedBy")
@@ -248,10 +250,15 @@ model SchoolClass {
   curriculumLinkedToId String?
   groupsSplitAt        DateTime? // set once the class has been split into follow-up groups
   isActive             Boolean   @default(true)
+  // A class children join while staying in their own (Pre-Servants, 2026-09-28).
+  // Only such a class may have ClassMember rows.
+  takesOtherClasses    Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
   students      Student[]
+  members       ClassMember[]
+  ownSessions   AttendanceSession[]
   servants      ClassServant[]
   attendance    AttendanceRecord[]
   points        PointEntry[]
@@ -309,6 +316,8 @@ model Student {
   points      PointEntry[]
   followUps   FollowUpCase[]
   contactLogs FollowUpLog[]
+  // Classes joined beyond the home class (`classId`), 2026-09-28.
+  memberships ClassMember[]
 
   quizResults   QuizResult[]
   bibleReadings BibleReadingLog[]
@@ -355,12 +364,34 @@ model ClassServant {
 
 // Points-bearing sessions a student can attend (Bible Study, Vespers, ...).
 model AttendanceSession {
-  key       String  @id
+  key       String       @id
   label     String
   points    Int
   icon      String?
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
+  sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
+  // A session only one class holds (its own meeting, 2026-09-28); null for the
+  // sessions every class holds. Records name sessions by key, so nothing moves.
+  classId   String?
+  class     SchoolClass? @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@index([classId])
+}
+
+/// A child in a class beyond their home class (2026-09-28): Pre-Servants holds
+/// teens who stay in High School Girls or Boys. Only a class with
+/// `takesOtherClasses` has these.
+model ClassMember {
+  classId   String
+  class     SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  addedAt   DateTime    @default(now())
+  addedById String?
+  addedBy   Account?    @relation("ClassMemberAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@id([classId, studentId])
+  @@index([studentId])
 }
 
 model AttendanceRecord {

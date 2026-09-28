@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { HeartHandshake, MessageSquare, CalendarClock, CircleCheck, CircleAlert } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
+import { rostersWhere } from '@/lib/portal/class-members'
 import { requirePortalUser } from '@/lib/portal/session'
 import { resolveReasonLabel, contactMethodLabel } from '@/lib/portal/followups'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
@@ -171,7 +172,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
         : `A case opens automatically after ${thresholdValues.join(' or ')} missed Sundays in a row, depending on the class.`
 
   const students = canCreate
-    ? await prisma.student.findMany({ where: { classId: { in: classIds } }, orderBy: [{ firstName: 'asc' }], select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } } })
+    ? await prisma.student.findMany({ where: rostersWhere(classIds), orderBy: [{ firstName: 'asc' }], select: { id: true, firstName: true, lastName: true, class: { select: { name: true } } } })
     : []
 
   const caseCard = (c: (typeof cases)[number]) => {

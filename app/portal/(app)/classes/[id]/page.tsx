@@ -23,6 +23,8 @@ import { formatDateOnly, churchToday, ageOn } from '@/lib/portal/dates'
 import { ensureInitialSplits, loadClassGroups } from '@/lib/portal/data/groups'
 import { effectiveServant, groupHealth } from '@/lib/portal/groups'
 import { GroupsPanel } from './GroupsPanel'
+import { MembersPanel } from './MembersPanel'
+import { rosterWhere } from '@/lib/portal/class-members'
 
 export default async function ClassPage({ params, searchParams }: { params: { id: string }; searchParams: { q?: string } }) {
   const user = await requirePortalUser()
@@ -40,10 +42,15 @@ export default async function ClassPage({ params, searchParams }: { params: { id
   const [classGroups] = await loadClassGroups([cls.id])
 
   const [students, servants, openCases, sundayRows, quizByStudent, recentPoints] = await Promise.all([
+    // Its own children and, in a class that takes them, children from other
+    // classes (2026-09-28).
     prisma.student.findMany({
-      where: { classId: cls.id },
+      where: rosterWhere(cls.id),
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-      select: { id: true, firstName: true, lastName: true, dob: true, grade: true, importNotes: true, account: { select: { photo: true, loginId: true } } },
+      select: {
+        id: true, firstName: true, lastName: true, dob: true, grade: true, importNotes: true, classId: true,
+        class: { select: { name: true } }, account: { select: { photo: true, loginId: true } },
+      },
     }),
     prisma.classServant.findMany({
       where: { classId: cls.id },
@@ -402,6 +409,7 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                     <span className="block truncate text-[13px] font-bold text-parch-900">{studentName(s)}</span>
                     <span className="mb-3 block truncate text-[11px] text-parch-500">
                       {s.grade || (s.dob ? `Age ${ageOn(formatDateOnly(s.dob), today)}` : '—')}
+                      {s.classId !== cls.id && ` · ${s.class?.name ?? 'no class'}`}
                     </span>
                     <span className="flex flex-wrap items-center justify-center gap-1.5">
                       {pct !== null && (
@@ -451,6 +459,13 @@ export default async function ClassPage({ params, searchParams }: { params: { id
         </div>
 
         <div className="space-y-5">
+          {cls.takesOtherClasses && canEditStudents && (
+            <MembersPanel
+              classId={cls.id}
+              classLabel={cls.name}
+              members={students.filter((s) => s.classId !== cls.id).map((s) => ({ id: s.id, name: studentName(s), homeClass: s.class?.name ?? null }))}
+            />
+          )}
           {/* F0342 — the last six things that happened in this class. A preview,
               not a second ledger: it links on to the points page rather than
               repeating its search, filters and grouping. */}

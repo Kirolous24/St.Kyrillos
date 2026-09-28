@@ -30,6 +30,7 @@ import {
 } from '../qr'
 import { qrSvgDataUrl } from '@/components/portal/QrImage'
 import { syncAutoFollowUps } from '../followup-sync'
+import { redeemClassFor, scanWhere, studentClassIds } from '../class-members'
 
 /**
  * QR check-in. Every code is a 128-bit CSPRNG token row in QrToken with a real
@@ -161,6 +162,10 @@ export async function createGroupCode(raw: CreateGroupCodeInput): Promise<Action
       if (!input.sessionKey) throw new PortalError('Pick a session first.')
       const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
       if (!session || !session.isActive) throw new PortalError('That session is no longer available.')
+      // A class's own meeting (2026-09-28) is checked into by that class alone.
+      if (session.classId && classIds.some((id) => id !== session.classId)) {
+        throw new PortalError(`${session.label} belongs to one class. Make its code for that class only.`)
+      }
       data = {
         token,
         kind: 'STUDENT_ATTENDANCE',
@@ -371,16 +376,20 @@ export async function redeemCode(tokenRaw: string): Promise<ActionResult<RedeemO
 async function redeemStudent(accountId: string, studentId: string, name: string, token: TokenRow): Promise<RedeemOutcome> {
   const student = await prisma.student.findUnique({
     where: { id: studentId },
-    select: { id: true, firstName: true, lastName: true, classId: true },
+    select: { id: true, firstName: true, lastName: true, classId: true, memberships: { select: { classId: true } } },
   })
-  if (!student?.classId) throw new PortalError('You are not in a class yet, so this code cannot check you in.')
-  if (token.classIds.length > 0 && !token.classIds.includes(student.classId)) {
-    throw new PortalError('This code is for a different class.')
-  }
-  const classId = student.classId
+  const childClassIds = student ? studentClassIds(student) : []
+  if (!student || childClassIds.length === 0) throw new PortalError('You are not in a class yet, so this code cannot check you in.')
+  const codeSession =
+    token.kind === 'STUDENT_ATTENDANCE' ? await prisma.attendanceSession.findUnique({ where: { key: token.sessionKey ?? '' } }) : null
+  // Which of the child's classes this lands in: their own for a church session,
+  // the class whose meeting it is for a class's own meeting (2026-09-28).
+  const recordIn = redeemClassFor({ childClassIds, codeClassIds: token.classIds, kind: token.kind as 'STUDENT_ATTENDANCE' | 'STUDENT_POINTS', session: codeSession })
+  if (!recordIn) throw new PortalError('This code is for a different class.')
+  const classId = recordIn
 
   if (token.kind === 'STUDENT_ATTENDANCE') {
-    const session = await prisma.attendanceSession.findUnique({ where: { key: token.sessionKey ?? '' } })
+    const session = codeSession
     if (!session || !session.isActive) throw new PortalError('That session is no longer available.')
     const date = token.date ? formatDateOnly(token.date) : churchToday()
     const day = toUTCDate(date)
@@ -427,7 +436,7 @@ async function redeemStudent(accountId: string, studentId: string, name: string,
     // A student who scans in is attending again, so an open case should close.
     // The port synced cases only from the manual Save-attendance button, so a
     // class checking in by group QR never had its follow-ups updated at all.
-    if (session.key === 'sunday' && !outcome.already) {
+    if ((session.key === 'sunday' || session.classId === classId) && !outcome.already) {
       const cls = await prisma.schoolClass.findUnique({
         where: { id: classId },
         select: { visitationThreshold: true },
@@ -437,6 +446,7 @@ async function redeemStudent(accountId: string, studentId: string, name: string,
         studentIds: [student.id],
         threshold: cls?.visitationThreshold ?? 1,
         asOf: date,
+        session: { key: session.key, label: session.label },
       })
       revalidatePath('/portal/follow-ups')
     }
@@ -541,6 +551,20 @@ export interface ResolvedScan {
 }
 
 /**
+ * Who a servant's card scan may find in a class (2026-09-28): members of a
+ * class that takes other classes count for points and for its own meeting,
+ * never for a church session, which is marked in their own class.
+ */
+async function scanRoster(classId: string, mode: 'ATTENDANCE' | 'POINTS', sessionKey?: string | null) {
+  const session =
+    mode === 'ATTENDANCE' && sessionKey
+      ? await prisma.attendanceSession.findUnique({ where: { key: sessionKey }, select: { key: true, classId: true } })
+      : null
+  if (session?.classId && session.classId !== classId) throw new PortalError('That meeting belongs to another class.')
+  return scanWhere(classId, mode, session)
+}
+
+/**
  * Identify who a scanned card belongs to, and write nothing.
  *
  * The prototype queued scans and let the servant look over the list before
@@ -561,7 +585,7 @@ export async function resolveScan(raw: ScanStudentInput): Promise<ActionResult<R
     if (!loginId) throw new PortalError('That is not a student card. Scan a portal QR card or type a 4-digit ID.')
 
     const student = await prisma.student.findFirst({
-      where: { classId: cls.id, account: { loginId, isActive: true } },
+      where: { AND: [await scanRoster(cls.id, input.mode, input.sessionKey), { account: { loginId, isActive: true } }] },
       select: { id: true, firstName: true, lastName: true },
     })
     if (!student) throw new PortalError(`No student with ID ${loginId} in ${cls.name}.`)
@@ -592,7 +616,7 @@ export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<S
     if (!loginId) throw new PortalError('That is not a student card. Scan a portal QR card or type a 4-digit ID.')
 
     const student = await prisma.student.findFirst({
-      where: { classId: cls.id, account: { loginId, isActive: true } },
+      where: { AND: [await scanRoster(cls.id, input.mode, input.sessionKey), { account: { loginId, isActive: true } }] },
       select: { id: true, firstName: true, lastName: true },
     })
     if (!student) throw new PortalError(`No student with ID ${loginId} in ${cls.name}.`)

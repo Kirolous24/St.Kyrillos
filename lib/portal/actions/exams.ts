@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { rosterWhere } from '../class-members'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { assertExamWrite, studentExamPaper, EXAM_WRITE } from '../data/exams'
@@ -235,7 +236,7 @@ export async function setReopenedStudents(raw: z.infer<typeof ReopenSchema>): Pr
     if (!exam.classId) throw new PortalError('This exam is not attached to a class.')
 
     const roster = await prisma.student.findMany({
-      where: { id: { in: input.studentIds }, classId: exam.classId },
+      where: { AND: [{ id: { in: input.studentIds } }, rosterWhere(exam.classId)] },
       select: { id: true },
     })
     const ids = roster.map((s) => s.id)
@@ -280,7 +281,7 @@ export async function bulkReopenExams(
       const exam = await assertExamWrite(user, examId)
       if (!exam.classId) continue
       const roster = await prisma.student.findMany({
-        where: { id: { in: input.studentIds }, classId: exam.classId },
+        where: { AND: [{ id: { in: input.studentIds } }, rosterWhere(exam.classId)] },
         select: { id: true },
       })
       if (roster.length === 0) continue

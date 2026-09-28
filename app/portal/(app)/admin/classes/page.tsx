@@ -21,6 +21,7 @@ export default async function AdminClassesPage() {
       isActive: true,
       sortOrder: true,
       curriculumLinkedToId: true,
+      takesOtherClasses: true,
       // F0541 — the card said "3 servants" and stopped. An admin checking who
       // covers a class had to open the roster and filter it, and the one thing
       // they usually want — which of the three is the coordinator — was nowhere
@@ -29,7 +30,7 @@ export default async function AdminClassesPage() {
       servants: {
         select: { title: true, servant: { select: { account: { select: { displayName: true } } } } },
       },
-      _count: { select: { students: true, servants: true } },
+      _count: { select: { students: true, servants: true, members: true } },
     },
   })
   return (
@@ -44,6 +45,7 @@ export default async function AdminClassesPage() {
         classes={classes.map((c) => ({
           ...c,
           students: c._count.students,
+          members: c._count.members,
           servants: c._count.servants,
           // Coordinators first, then alphabetically — the order an admin reads
           // the list in, rather than whatever the join returned.

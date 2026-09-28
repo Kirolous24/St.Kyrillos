@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { absenceStreakAgainst, decideFollowUp, latestHeldStatus } from './attendance-rules'
 import { formatDateOnly, toUTCDate } from './dates'
+import { missedTitle } from './class-members'
 
 /**
  * Open, update and close the automatic Sunday-School follow-up cases for a set
@@ -19,28 +20,35 @@ export async function syncAutoFollowUps(input: {
   threshold: number
   /** Date the sync is being run for, used in the resolve note. */
   asOf: string
+  /**
+   * The meeting whose absences count: Sunday School, or a class's own meeting
+   * (2026-09-28, Pre-Servants). Defaults to Sunday School.
+   */
+  session?: { key: string; label: string }
 }): Promise<{ opened: number; closed: number }> {
   const { classId, studentIds, threshold, asOf } = input
+  const session = input.session ?? { key: 'sunday', label: 'Sunday School' }
   if (studentIds.length === 0) return { opened: 0, closed: 0 }
 
   const [history, heldDates, openCases, students] = await Promise.all([
     prisma.attendanceRecord.findMany({
-      where: { studentId: { in: studentIds }, sessionKey: 'sunday' },
+      where: { studentId: { in: studentIds }, sessionKey: session.key },
       select: { studentId: true, date: true, status: true },
     }),
-    // Class-wide: a Sunday the class held but this student has no row for
+    // Class-wide: a meeting the class held but this student has no row for
     // (everyone else checked in by group QR) still counts against them.
     prisma.attendanceRecord.findMany({
-      where: { classId, sessionKey: 'sunday' },
+      where: { classId, sessionKey: session.key },
       distinct: ['date'],
       select: { date: true },
     }),
-    // Every open case, not just the automatic ones. The prototype's rule looked
-    // at all of them (OG L17154-17155), so a student a servant had already
-    // opened a manual case for did not also get an automatic duplicate. The
-    // port filtered to origin:'AUTO', so the same child appeared twice.
+    // Every open case in this class, not just the automatic ones. The
+    // prototype's rule looked at all of them (OG L17154-17155), so a student a
+    // servant had already opened a manual case for did not also get an
+    // automatic duplicate. Per class since 2026-09-28: a teen's case in their
+    // own class neither blocks nor closes one in Pre-Servants.
     prisma.followUpCase.findMany({
-      where: { studentId: { in: studentIds }, status: 'OPEN' },
+      where: { studentId: { in: studentIds }, classId, status: 'OPEN' },
       select: { id: true, studentId: true, origin: true },
     }),
     prisma.student.findMany({ where: { id: { in: studentIds } }, select: { id: true, createdAt: true } }),
@@ -78,7 +86,7 @@ export async function syncAutoFollowUps(input: {
           studentId: id,
           classId,
           origin: 'AUTO',
-          title: streak === 1 ? 'Missed last Sunday' : `Missed ${streak} Sundays in a row`,
+          title: missedTitle(session, streak),
           consecutiveAbsences: streak,
           lastSeen: lastSeen ? toUTCDate(lastSeen) : null,
         },

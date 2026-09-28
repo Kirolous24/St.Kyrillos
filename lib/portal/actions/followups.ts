@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
+import { studentClassIds } from '../class-members'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
@@ -231,9 +232,20 @@ export async function createManualCase(raw: z.infer<typeof CreateSchema>): Promi
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = CreateSchema.parse(raw)
-    const s = await prisma.student.findUnique({ where: { id: input.studentId }, select: { id: true, classId: true, firstName: true, lastName: true } })
-    if (!s || !s.classId) throw new PortalError('Student not found or has no class.')
-    const cls = await assertClassAction(user, s.classId, 'followup.write')
+    const s = await prisma.student.findUnique({
+      where: { id: input.studentId },
+      select: { id: true, classId: true, firstName: true, lastName: true, memberships: { select: { classId: true } } },
+    })
+    const inClasses = s ? studentClassIds(s) : []
+    if (!s || inClasses.length === 0) throw new PortalError('Student not found or has no class.')
+    // Filed in the child's own class when the servant serves it, otherwise in
+    // the class of theirs the child also belongs to (Pre-Servants, 2026-09-28).
+    let cls: Awaited<ReturnType<typeof assertClassAction>> | null = null
+    for (const classId of inClasses) {
+      cls = await assertClassAction(user, classId, 'followup.write').catch(() => null)
+      if (cls) break
+    }
+    if (!cls) throw new PortalError('You do not have permission to do that in this class.')
 
     // F0106 — when it actually started. A case typed up midweek about Sunday's
     // conversation should not read as though nothing happened until Wednesday:

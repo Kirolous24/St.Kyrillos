@@ -24,7 +24,7 @@ export default async function ClassImportPage({ params }: { params: { id: string
         icon={<Upload className="h-5 w-5" aria-hidden />}
         back={{ href: `/portal/classes/${cls.id}`, label: cls.name }}
       />
-      <ImportPanel classes={[]} pinsKept={pinVaultEnabled()} fixedClass={{ id: cls.id, name: cls.name }} />
+      <ImportPanel classes={[]} pinsKept={pinVaultEnabled()} fixedClass={{ id: cls.id, name: cls.name, takesOtherClasses: cls.takesOtherClasses }} />
     </>
   )
 }

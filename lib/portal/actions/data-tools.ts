@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { randomInt } from 'node:crypto'
 import { Prisma, PortalRole, type ClassTitle, type Stage } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { importJoinDecision } from '../class-members'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseBirthDate, toUTCDate, formatDateOnly } from '../dates'
@@ -473,11 +474,11 @@ export async function importStudentsCsv(
     const user = await requirePortalUser()
     // The admin imports anywhere. Anyone else imports into one class they may
     // edit; a pastor or a child has no such class, so this refuses them too.
-    let scope: { id: string; name: string } | null = null
+    let scope: { id: string; name: string; takesOtherClasses: boolean } | null = null
     if (user.role !== 'ADMIN' || options.classImport === true) {
       if (!defaultClassId) throw new PortalError('Open your class first, then import into it.')
       const cls = await assertClassAction(user, defaultClassId, 'student.write')
-      scope = { id: cls.id, name: cls.name }
+      scope = { id: cls.id, name: cls.name, takesOtherClasses: cls.takesOtherClasses }
     }
     const preview = options.preview === true
     // The column names may sit under empty rows or a title (2026-09-28). Rows
@@ -678,10 +679,20 @@ export async function importStudentsCsv(
     const existingAccounts = providedIds.length
       ? await prisma.account.findMany({
           where: { loginId: { in: providedIds } },
-          select: { id: true, loginId: true, role: true, displayName: true, student: { select: { id: true, classId: true } } },
+          select: {
+            id: true, loginId: true, role: true, displayName: true,
+            student: { select: { id: true, classId: true, memberships: { select: { classId: true } } } },
+          },
         })
       : []
     const classOfLogin = new Map(existingAccounts.map((a) => [a.loginId, a.student?.classId ?? null]))
+    /** A child already in the portal, as a class that takes other classes sees them. */
+    type KnownChild = { studentId: string; classId: string | null; memberClassIds: string[]; loginId: string }
+    const childOfLogin = new Map<string, KnownChild>(
+      existingAccounts
+        .filter((a) => a.student)
+        .map((a) => [a.loginId, { studentId: a.student!.id, classId: a.student!.classId, memberClassIds: a.student!.memberships.map((m) => m.classId), loginId: a.loginId }]),
+    )
     const existingByLoginId = new Map<string, ExistingImportAccount>(
       existingAccounts.map((a) => [
         a.loginId,
@@ -707,8 +718,10 @@ export async function importStudentsCsv(
         motherPhone: true,
         class: { select: { name: true } },
         account: { select: { loginId: true, phone: true } },
+        memberships: { select: { classId: true } },
       },
     })
+    const memberClassIdsOf = new Map(onFile.map((k) => [k.id, k.memberships.map((m) => m.classId)]))
     const known: KnownStudent[] = onFile.map((k) => ({
       id: k.id,
       loginId: k.account.loginId,
@@ -762,6 +775,43 @@ export async function importStudentsCsv(
       try {
         const classification = classifyStudentImportRow(p.loginId, existingByLoginId)
         if (classification.kind === 'error') throw new PortalError(classification.message)
+        // A class that takes children from other classes (2026-09-28): a child
+        // already in the portal, by ID or by name, joins it and stays in their
+        // own class. Their details stay their own class's to change.
+        if (scope?.takesOtherClasses && !exampleRows.has(p.rowNumber)) {
+          const dupRow = duplicateOf.get(p.rowNumber)
+          const known: KnownChild | null =
+            classification.kind === 'update'
+              ? childOfLogin.get(p.loginId) ?? null
+              : dupRow && dupRow.loginId !== 'new'
+                ? { studentId: dupRow.id, classId: dupRow.classId ?? null, memberClassIds: memberClassIdsOf.get(dupRow.id) ?? [], loginId: dupRow.loginId }
+                : null
+          const decision = known
+            ? importJoinDecision({ targetClassId: scope.id, takesOtherClasses: true, child: { classId: known.classId, memberClassIds: known.memberClassIds } })
+            : null
+          if (known && decision === 'member') {
+            results.push({ row: p.rowNumber, name: rowName(p), loginId: known.loginId, status: 'skipped', message: `Already in ${scope.name}.` })
+            continue
+          }
+          if (known && decision === 'join') {
+            const home = classes.find((c) => c.id === known.classId)?.name ?? 'no class'
+            if (!preview) {
+              await prisma.classMember.upsert({
+                where: { classId_studentId: { classId: scope.id, studentId: known.studentId } },
+                create: { classId: scope.id, studentId: known.studentId, addedById: user.accountId },
+                update: {},
+              })
+            }
+            results.push({
+              row: p.rowNumber,
+              name: rowName(p),
+              loginId: known.loginId,
+              status: 'joined',
+              message: `${preview ? 'Would join' : 'Joined'} ${scope.name} · stays in ${home}`,
+            })
+            continue
+          }
+        }
         if (scope) {
           const problem = classImportRowProblem({
             className: scope.name,
@@ -912,7 +962,7 @@ export async function importStudentsCsv(
       'data.importStudents',
       'portal',
       defaultClassId,
-      `${scope ? `${scope.name}: ` : ''}${summary.created} created, ${summary.updated} updated, ${summary.skipped} skipped as already here, ${summary.errors} failed`,
+      `${scope ? `${scope.name}: ` : ''}${summary.created} created, ${summary.updated} updated, ${summary.joined ? `${summary.joined} joined from other classes, ` : ''}${summary.skipped} skipped as already here, ${summary.errors} failed`,
     )
     revalidatePath('/portal/admin/students')
     revalidatePath('/portal/classes')

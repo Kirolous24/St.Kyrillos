@@ -7,6 +7,7 @@ import { runAction, PortalError, type ActionResult } from '../action-result'
 import { audit } from '../audit'
 import { can, type PortalUser } from '../permissions'
 import { CLEAR_UNASSIGNED, cleanUnassignReason } from '../unassigned'
+import { keepMembershipsOnMove } from '../data/class-members'
 import { placeNewKids } from '../data/groups'
 import { studentName } from '../data/students'
 
@@ -132,6 +133,7 @@ export async function putBackUnassigned(studentId: string): Promise<ActionResult
     if (!from) throw new PortalError('There is no class on record to put this child back in. Move them instead.')
     if (!from.isActive) throw new PortalError(`${from.name} is no longer an active class. Move this child instead.`)
     await prisma.student.update({ where: { id: s.id }, data: { classId: from.id, ...CLEAR_UNASSIGNED } })
+    await keepMembershipsOnMove([{ studentId: s.id, from: null }], from.id, user.accountId)
     await placeNewKids(from.id, [s.id]).catch((err) => console.error('Group placement failed:', err))
     await audit(user, 'student.restore', 'student', s.id, `Put ${studentName(s)} back in ${from.name}`)
     revalidateUnassigned([from.id])
@@ -149,6 +151,7 @@ export async function moveUnassigned(studentId: string, toClassId: string): Prom
     })
     if (!to || !to.isActive) throw new PortalError('Pick an active class.')
     await prisma.student.update({ where: { id: s.id }, data: { classId: to.id, ...CLEAR_UNASSIGNED } })
+    await keepMembershipsOnMove([{ studentId: s.id, from: null }], to.id, user.accountId)
     await placeNewKids(to.id, [s.id]).catch((err) => console.error('Group placement failed:', err))
     await audit(
       user,

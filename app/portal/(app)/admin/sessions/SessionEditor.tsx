@@ -11,9 +11,18 @@ import { accentFor } from '@/lib/portal/accents'
 // F0190 / F0845 — `icon` is a single glyph stored on AttendanceSession. The
 // column has always existed and nothing wrote it, so every session drew the same
 // generic tile and an admin scanning the grid read each label to tell them apart.
-type Row = { key: string; label: string; points: number; isActive: boolean; icon?: string | null }
+type Row = {
+  key: string
+  label: string
+  points: number
+  isActive: boolean
+  icon?: string | null
+  /** The one class that holds it (its own meeting, 2026-09-28), or none for every class. */
+  classId?: string | null
+  className?: string | null
+}
 
-export function SessionEditor({ sessions }: { sessions: Row[] }) {
+export function SessionEditor({ sessions, openClasses = [] }: { sessions: Row[]; openClasses?: Array<{ id: string; name: string }> }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [rows, setRows] = useState<Row[]>(sessions)
@@ -132,6 +141,7 @@ export function SessionEditor({ sessions }: { sessions: Row[] }) {
                 <p className="mb-2.5 truncate text-[10.5px] text-parch-500" title={row.key}>
                   {row.key}
                   {isStandardSession(row.key) && <span className="ml-1 font-bold text-parch-600">· standard</span>}
+                  {row.className && <span className="ml-1 font-bold text-brand-800">· only {row.className}</span>}
                 </p>
                 <div className="mb-2.5 flex items-center justify-center gap-2">
                   <input
@@ -220,6 +230,23 @@ export function SessionEditor({ sessions }: { sessions: Row[] }) {
             placeholder="🕊️"
           />
         </Field>
+        {openClasses.length > 0 && (
+          <Field label="For" htmlFor="new-session-class" hint="A class that takes children from other classes can have its own meeting.">
+            <select
+              id="new-session-class"
+              value={fresh.classId ?? ''}
+              onChange={(e) => setFresh({ ...fresh, classId: e.target.value || null })}
+              className={inputClass}
+            >
+              <option value="">Every class</option>
+              {openClasses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  Only {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Points" htmlFor="new-session-points">
           <input
             id="new-session-points"

@@ -44,7 +44,12 @@ export default async function QrHubPage({
   const preselectClassId = classes.some((c) => c.id === searchParams.class) ? searchParams.class! : null
 
   const [sessions, activities, servantActivities] = await Promise.all([
-    prisma.attendanceSession.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' }, select: { key: true, label: true, points: true } }),
+    // A class's own meeting only for someone who serves that class (2026-09-28).
+    prisma.attendanceSession.findMany({
+      where: { isActive: true, OR: [{ classId: null }, { classId: { in: classIds } }] },
+      orderBy: { sortOrder: 'asc' },
+      select: { key: true, label: true, points: true },
+    }),
     classIds.length
       ? prisma.pointActivity.findMany({
           where: { isActive: true, points: { gt: 0 }, OR: [{ classId: null }, { classId: { in: classIds } }] },

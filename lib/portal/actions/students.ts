@@ -17,6 +17,7 @@ import { freeLoginId, randomPin } from '../credentials'
 import { issuedPinFields } from '../pin-issue'
 import { placeNewKids } from '../data/groups'
 import { CLEAR_UNASSIGNED } from '../unassigned'
+import { keepMembershipsOnMove } from '../data/class-members'
 import { clearRateLimit } from '@/lib/rate-limit'
 
 const optionalText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional()
@@ -185,6 +186,7 @@ export async function moveStudent(studentId: string, classId: string | null): Pr
     // moved into one, they join a group there and nobody else moves.
     // Placed in a class, a child is no longer waiting on the UNASSIGNED list.
     await prisma.student.update({ where: { id: studentId }, data: { classId, ...(classId ? CLEAR_UNASSIGNED : { groupServantId: null, groupAssignedAt: null }) } })
+    await keepMembershipsOnMove([{ studentId, from: s.classId }], classId, user.accountId)
     if (classId) await placeNewKids(classId, [studentId]).catch((err) => console.error('Group placement failed:', err))
     await audit(user, 'student.move', 'student', studentId, `Moved ${studentName(s)} from ${s.classId ?? 'no class'} to ${classId ?? 'no class'}`)
     revalidatePath('/portal/admin/students')
@@ -441,11 +443,12 @@ export async function bulkMoveStudents(input: { studentIds: string[]; classId: s
       const cls = await prisma.schoolClass.findUnique({ where: { id: input.classId }, select: { id: true } })
       if (!cls) throw new PortalError('Class not found.')
     }
-    const before = await prisma.student.findMany({ where: { id: { in: ids } }, select: { classId: true } })
+    const before = await prisma.student.findMany({ where: { id: { in: ids } }, select: { id: true, classId: true } })
     await prisma.student.updateMany({
       where: { id: { in: ids } },
       data: { classId: input.classId, ...(input.classId ? CLEAR_UNASSIGNED : { groupServantId: null, groupAssignedAt: null }) },
     })
+    await keepMembershipsOnMove(before.map((b) => ({ studentId: b.id, from: b.classId })), input.classId, user.accountId)
     if (input.classId) await placeNewKids(input.classId, ids).catch((err) => console.error('Group placement failed:', err))
     await audit(user, 'student.bulkMove', 'portal', input.classId, `Moved ${ids.length} student${ids.length === 1 ? '' : 's'} to ${input.classId ?? 'no class'}`)
     revalidatePath('/portal/admin/students')
