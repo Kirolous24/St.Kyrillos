@@ -3,10 +3,12 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Trophy, Star, History, Search, Eye } from 'lucide-react'
+import { Trophy, Star, History, Search, Eye, Pencil } from 'lucide-react'
 import { givePoints, undoPoints } from '@/lib/portal/actions/points'
 import { DEDUCTION_POINTS } from '@/lib/portal/points-math'
+import { CHURCH_TIMEZONE } from '@/lib/portal/dates'
 import { Avatar, buttonClass, inputClass, selectClass, Card, EmptyState } from '@/components/portal/ui'
+import { ActivityEditor } from '@/components/portal/ActivityEditor'
 import { formatDateTime } from '@/lib/portal/format'
 import { useChime } from '@/hooks/useChime'
 import { SoundToggle } from '@/components/portal/SoundToggle'
@@ -14,10 +16,12 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   classId: string
-  /** The admin edits the church-wide activity list; everyone else only picks from it. */
+  classLabel: string
+  /** The admin also edits the church-wide list, in Sessions & Points. */
   isAdmin: boolean
   students: Array<{ id: string; name: string; total: number; rank: number; photo: string | null }>
-  activities: Array<{ id: string; key: string; label: string; points: number; icon: string | null }>
+  /** The church-wide activities, then the class's own (`own`). */
+  activities: Array<{ id: string; key: string; label: string; points: number; icon: string | null; own: boolean }>
   history: Array<{
     id: string
     points: number
@@ -67,7 +71,7 @@ type HistFilter = (typeof HIST_FILTERS)[number]['key']
 type HistGroup = (typeof HIST_GROUPS)[number]['key']
 
 const DAY_FMT = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric',
+  timeZone: CHURCH_TIMEZONE, weekday: 'short', month: 'short', day: 'numeric',
 })
 
 /**
@@ -89,8 +93,10 @@ const REMOVE_REASONS = [
   'Breaking class rules',
 ] as const
 
-export function PointsPanel({ classId, isAdmin, students, activities, history }: Props) {
+export function PointsPanel({ classId, classLabel, isAdmin, students, activities, history }: Props) {
   const router = useRouter()
+  // The class's own activities, opened from the Activities card (2026-09-28).
+  const [editingOwn, setEditingOwn] = useState(false)
   const [pending, startTransition] = useTransition()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const chime = useChime()
@@ -157,9 +163,9 @@ export function PointsPanel({ classId, isAdmin, students, activities, history }:
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   const activity = activities.find((a) => a.id === activityId)
-  // Points are the same in every class (2026-09-27): Give is the chosen
-  // activity's church-wide value, Remove is always DEDUCTION_POINTS. There is no
-  // amount to type, so the two modes can never borrow each other's number (F0415).
+  // Give is the chosen activity's value, church-wide or the class's own; Remove
+  // is always DEDUCTION_POINTS. There is no amount to type, so the two modes can
+  // never borrow each other's number (F0415).
   const magnitude = mode === 'remove' ? DEDUCTION_POINTS : activity?.points ?? 0
   const effectiveReason = mode === 'remove' ? (removeReason === 'other' ? reason.trim() : removeReason) : reason.trim()
 
@@ -230,20 +236,31 @@ export function PointsPanel({ classId, isAdmin, students, activities, history }:
 
   return (
     <div className="space-y-3.5">
-      {/* ── Activities: one church-wide list (2026-09-27) ─────────────────── */}
+      {/* ── Activities: every class's, then this class's own (2026-09-28) ─── */}
       <Card
         title="Activities"
         icon={<Star className="h-[15px] w-[15px]" />}
         action={
-          isAdmin ? (
-            <Link href="/portal/admin/sessions" className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}>
-              Edit the list
-            </Link>
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEditingOwn((v) => !v)}
+              aria-expanded={editingOwn}
+              className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden /> {editingOwn ? 'Done' : 'Class activities'}
+            </button>
+            {isAdmin && (
+              <Link href="/portal/admin/sessions" className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}>
+                Every class&rsquo;s list
+              </Link>
+            )}
+          </div>
         }
       >
         <p className="mb-3 text-[11.5px] text-parch-500">
-          The same activities and points in every class, so points are fair across the church.
+          Every class has the church&rsquo;s activities. Ones marked <b>{classLabel}</b> are this class&rsquo;s own, at
+          the points you set: add or change them under <b>Class activities</b>.
         </p>
         {/* repeat(auto-fill,minmax(100px,1fr)), gap 10px */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]">
@@ -265,16 +282,28 @@ export function PointsPanel({ classId, isAdmin, students, activities, history }:
                 <span className="block text-[12px] font-extrabold" style={{ color: ACT_COLORS[i % ACT_COLORS.length] }}>
                   +{a.points}
                 </span>
+                {a.own && (
+                  <span className="mt-1 block truncate text-[9.5px] font-bold uppercase tracking-[0.6px] text-parch-500">
+                    {classLabel}
+                  </span>
+                )}
               </button>
             )
           })}
         </div>
         {activities.length === 0 && (
           <p className="pt-2.5 text-center text-[11.5px] text-parch-500">
-            No activities yet. {isAdmin ? 'Add them in Sessions & Points.' : 'The admin adds them in Sessions & Points.'}
+            No activities yet. Add this class&rsquo;s own under Class activities.
           </p>
         )}
       </Card>
+
+      {editingOwn && (
+        <ActivityEditor
+          activities={activities.filter((a) => a.own).map((a) => ({ id: a.id, label: a.label, points: a.points, icon: a.icon }))}
+          forClass={{ id: classId, name: classLabel }}
+        />
+      )}
 
       {/* ── Leaderboard: the multi-select student grid ────────────────────── */}
       <Card

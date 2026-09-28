@@ -109,15 +109,26 @@ export async function createStudent(classId: string, raw: StudentFormInput): Pro
   })
 }
 
+/**
+ * Only the fields the request carries. A field left out means "not on this
+ * form", never "clear it" (2026-09-28): the edit form once left out the child's
+ * own email and phone, and every save wrote them away as blanks.
+ */
+function onlySent<T extends Record<string, unknown>>(data: T, raw: unknown): Partial<T> {
+  const sent = (raw ?? {}) as Record<string, unknown>
+  return Object.fromEntries(Object.entries(data).filter(([key]) => sent[key] !== undefined)) as Partial<T>
+}
+
 export async function updateStudent(studentId: string, raw: StudentFormInput): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const existing = await assertStudentWrite(user, studentId)
     const input = StudentFormSchema.parse(raw)
-    const data = toData(input)
+    const data = onlySent(toData(input), raw)
+    const name = { firstName: data.firstName ?? existing.firstName, lastName: data.lastName ?? existing.lastName }
     await prisma.student.update({
       where: { id: studentId },
-      data: { ...data, account: { update: { displayName: studentName(data), ...toAccountData(input) } } },
+      data: { ...data, account: { update: { displayName: studentName(name), ...onlySent(toAccountData(input), raw) } } },
     })
     await audit(user, 'student.update', 'student', studentId, `Updated ${studentName(existing)}`)
     revalidatePath(`/portal/students/${studentId}`)

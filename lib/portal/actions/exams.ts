@@ -8,7 +8,7 @@ import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { assertExamWrite, studentExamPaper, EXAM_WRITE } from '../data/exams'
 import { runAction, PortalError, type ActionResult } from '../action-result'
-import { parseDateOnly, toUTCDate, todayInNewYork } from '../dates'
+import { parseDateOnly, toUTCDate, churchToday } from '../dates'
 import { parseCsvRecords } from '../csv'
 import {
   compactQuestion,
@@ -458,7 +458,7 @@ export async function submitQuiz(raw: z.infer<typeof SubmitSchema>): Promise<Act
       { id: paper.id, status: paper.status, dueDate: paper.dueDate, reopenedFor: paper.reopenedFor },
       studentId,
       [],
-      todayInNewYork(),
+      churchToday(),
     )
     if (status !== 'available') throw new PortalError('This quiz is closed. Ask your servant to reopen it for you.')
 

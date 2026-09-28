@@ -131,3 +131,37 @@ describe("the template's example row", () => {
     expect(STUDENT_TEMPLATE_EXAMPLE.className).toBe('')
   })
 })
+
+describe('telling a servant where things are (2026-09-28)', () => {
+  it('reports the header row as the sheet numbers it', async () => {
+    const { parseCsvTable } = await import('@/lib/portal/csv')
+    expect(parseCsvTable([HEADER, ',Marina,Tadros,,,,,,'].join('\n')).headerRow).toBe(1)
+    expect(parseCsvTable([',,,,,,,,', HEADER, ',Marina,Tadros,,,,,,'].join('\n')).headerRow).toBe(2)
+    const titled = parseCsvTable(['Our class,,,,,,,,', ',,,,,,,,', HEADER, ',Marina,Tadros,,,,,,'].join('\n'), { isHeader: looksLikeStudentHeader })
+    expect(titled.headerRow).toBe(3)
+    expect(titled.headers.slice(0, 3)).toEqual(['ID', 'First name', 'Last name'])
+  })
+
+  it('names the headings it reads and the ones it skips', async () => {
+    const { describeStudentColumns } = await import('@/lib/portal/import-columns')
+    const { normaliseHeader } = await import('@/lib/portal/csv')
+    const cols = describeStudentColumns(['First name', 'Last name', "Mother's Phone", 'D.O.B', 'Mom #', ' ', 'Favourite colour'], normaliseHeader)
+    expect(cols.used).toEqual(['First name', 'Last name', "Mother's Phone", 'D.O.B'])
+    expect(cols.ignored).toEqual(['Mom #', 'Favourite colour'])
+  })
+
+  it("reads the headings the portal's own form uses", () => {
+    const plan = studentImportColumns(["father s phone", "mother s name", "student s email", 'birthdate'])
+    expect(plan.has('fatherPhone') && plan.has('motherName') && plan.has('email') && plan.has('dob')).toBe(true)
+  })
+
+  it('reads every value through the same table that decides which columns are there', async () => {
+    const { readFileSync } = await import('node:fs')
+    const path = await import('node:path')
+    const src = readFileSync(path.resolve(__dirname, '../../lib/portal/actions/data-tools.ts'), 'utf8')
+    const body = src.slice(src.indexOf('export async function importStudentsCsv('), src.indexOf('export async function importServantsCsv('))
+    expect(body).toMatch(/pick\(rec, \.\.\.STUDENT_IMPORT_COLUMNS\[column\]\)/)
+    expect(body).not.toMatch(/pick\(rec, '/)
+    expect(body).toMatch(/const rowNumber = headerRow \+ 1 \+ i/)
+  })
+})

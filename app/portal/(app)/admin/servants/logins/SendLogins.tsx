@@ -6,6 +6,7 @@ import { emailLogins, reissuePins, revealLogins } from '@/lib/portal/actions/log
 import { CONFIRM_PHRASE } from '@/lib/portal/reports'
 import { LOGIN_URL } from '@/lib/portal/login-share'
 import { formatPhone } from '@/lib/portal/phones'
+import { CHURCH_TIMEZONE } from '@/lib/portal/dates'
 import { Badge, Callout, Card, buttonClass, checkboxClass, inputClass } from '@/components/portal/ui'
 import { LoginShareButtons } from '@/components/portal/LoginShareButtons'
 import { cn } from '@/lib/utils'
@@ -26,7 +27,7 @@ export interface Candidate {
 }
 
 const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
+  new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: CHURCH_TIMEZONE })
 
 type EmailStatus = 'sent' | 'no-email' | 'not-on-file' | 'failed'
 type SheetRow = Candidate & { pin: string | null; emailStatus?: EmailStatus; emailError?: string }

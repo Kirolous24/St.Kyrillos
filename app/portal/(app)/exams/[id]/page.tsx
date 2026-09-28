@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { BarChart3, ClipboardList, GraduationCap, HelpCircle, Pencil, Percent, Send, ThumbsDown, Trophy, Users } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireExamRead, examDetail, examQuestions, canWriteExam } from '@/lib/portal/data/exams'
-import { formatDateOnly, todayInNewYork } from '@/lib/portal/dates'
+import { formatDateOnly, churchToday } from '@/lib/portal/dates'
 import { formatDateTime, formatLongDate } from '@/lib/portal/format'
 import { scoreBand, SCORE_BAND_LABEL, SCORE_BAND_TONE, examTotalPoints } from '@/lib/portal/exams'
 import { objectsToCsv } from '@/lib/portal/csv'
@@ -64,7 +64,7 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
     examQuestions(exam.id),
   ])
 
-  const today = todayInNewYork()
+  const today = churchToday()
   const dueDate = exam.dueDate ? formatDateOnly(exam.dueDate) : null
   const overdue = !!dueDate && dueDate < today
   const totalPossible = examTotalPoints(questions.length, exam.pointsPerQuestion)

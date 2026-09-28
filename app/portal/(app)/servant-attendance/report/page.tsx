@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { BarChart3, CalendarRange, Percent, Users } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { servantAttendanceReport } from '@/lib/portal/data/servant-attendance'
-import { addDays, mondayOf, parseDateOnly, todayInNewYork } from '@/lib/portal/dates'
+import { addDays, mondayOf, parseDateOnly, churchToday } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { rateBand, RATE_BAND_LABEL, RATE_BAND_TONE } from '@/lib/portal/qr'
 import { monthRange, schoolYearMonths } from '@/lib/portal/reports'
@@ -35,7 +35,7 @@ export default async function ServantAttendanceReportPage({
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
 
-  const toWeek = mondayOf(parseDateOnly(searchParams.to) ?? todayInNewYork())
+  const toWeek = mondayOf(parseDateOnly(searchParams.to) ?? churchToday())
   const weeks = RANGES.includes(Number(searchParams.weeks) as (typeof RANGES)[number]) ? Number(searchParams.weeks) : 8
   const fromWeek = parseDateOnly(searchParams.from) ? mondayOf(parseDateOnly(searchParams.from)!) : addDays(toWeek, -7 * (weeks - 1))
 
@@ -83,7 +83,7 @@ export default async function ServantAttendanceReportPage({
           about in March, when a servant's attendance comes up. September-first,
           because that is how the church counts a year. */}
       <div className="mb-5 flex w-full flex-wrap gap-1.5 print:hidden">
-        {schoolYearMonths(todayInNewYork()).map((m) => {
+        {schoolYearMonths(churchToday()).map((m) => {
           const range = monthRange(m.key)
           const active = searchParams.from === range.from && searchParams.to === range.to
           return (

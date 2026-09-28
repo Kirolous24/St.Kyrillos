@@ -1,5 +1,5 @@
 import { formatLongDate } from '@/lib/portal/format'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { CHURCH_INFO } from '@/lib/constants'
 
 /**
@@ -29,7 +29,7 @@ export function ReportLetterhead({
         {period}
         {session ? ` · ${session}` : ''}
       </p>
-      <p className="mt-0.5 text-[10px] text-parch-500">Printed {formatLongDate(todayInNewYork())}</p>
+      <p className="mt-0.5 text-[10px] text-parch-500">Printed {formatLongDate(churchToday())}</p>
     </header>
   )
 }

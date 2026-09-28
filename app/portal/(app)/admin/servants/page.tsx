@@ -6,7 +6,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader, Badge, LinkButton, Avatar, EmptyState, Card as Panel, inputClass, buttonClass } from '@/components/portal/ui'
 import { ROLE_LABEL, TITLE_LABEL, STAGE_LABEL, academicYearLabel } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { PrintButton } from '@/components/portal/PrintButton'
 import { ReportLetterhead } from '../../reports/ReportLetterhead'
 import { formatPhone } from '@/lib/portal/phones'
@@ -141,7 +141,7 @@ export default async function AdminServantsPage({ searchParams }: { searchParams
         }
       />
 
-      <ReportLetterhead title="Sunday School servant roster" period={academicYearLabel(todayInNewYork())} />
+      <ReportLetterhead title="Sunday School servant roster" period={academicYearLabel(churchToday())} />
 
       {/* The on-screen groups are collapsed <details>, which print collapsed —
           there is no reliable way to force one open for print — so the sheet is

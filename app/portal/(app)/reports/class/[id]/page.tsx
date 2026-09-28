@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { BarChart3, CalendarCheck, GraduationCap, Sparkles, Users } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listSessions, loadClassStudentRows } from '@/lib/portal/data/reports'
-import { todayInNewYork, addDays, parseDateOnly } from '@/lib/portal/dates'
+import { churchToday, addDays, parseDateOnly } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { attendanceBand, BAND_LABEL, type Band } from '@/lib/portal/reports'
 import {
@@ -59,7 +59,7 @@ export default async function ClassReportPage({
   if (user.role === 'STUDENT') notFound()
 
   const hasChurchReport = user.role === 'ADMIN' || user.role === 'PASTOR' || user.stageOversight !== null
-  const today = todayInNewYork()
+  const today = churchToday()
   const requestedFrom = parseDateOnly(searchParams.from) ?? addDays(today, -90)
   const requestedTo = parseDateOnly(searchParams.to) ?? today
   const from = requestedFrom <= requestedTo ? requestedFrom : requestedTo

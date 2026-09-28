@@ -41,3 +41,19 @@ describe('contactMethodLabel', () => {
     expect(contactMethodLabel('carrier_pigeon')).toBe('Carrier_pigeon')
   })
 })
+
+describe('"Prayed at another church" (2026-09-28)', () => {
+  it('is a reason a case can close with', () => {
+    expect(resolveReasonLabel('other_church')).toBe('Prayed at another church')
+  })
+
+  it('every form and check reads the one list, so a new reason is never refused', async () => {
+    const { readFileSync } = await import('node:fs')
+    const path = await import('node:path')
+    const read = (p: string) => readFileSync(path.resolve(__dirname, '../..', p), 'utf8')
+    const actions = read('lib/portal/actions/followups.ts')
+    expect(actions).not.toMatch(/z\.enum\(\['attending_again'/)
+    expect(actions.match(/z\.enum\(RESOLVE_REASON_KEYS\)/g)).toHaveLength(2)
+    expect(read('app/portal/(app)/follow-ups/NewCaseForm.tsx')).toMatch(/import \{ RESOLVE_REASONS \} from '@\/lib\/portal\/followups'/)
+  })
+})

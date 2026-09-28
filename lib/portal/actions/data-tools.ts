@@ -10,7 +10,7 @@ import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseBirthDate, toUTCDate, formatDateOnly } from '../dates'
 import { normalizePhone } from '../phones'
 import { splitName, formatFullName } from '../names'
-import { objectsToCsv, parseCsvRecords } from '../csv'
+import { normaliseHeader, objectsToCsv, parseCsvTable } from '../csv'
 import { studentName } from '../data/students'
 import { assertClassAction, requireClassAccess } from '../data/classes'
 import {
@@ -28,8 +28,11 @@ import { hashPin, issuedPinFieldsFromHash } from '../pin-issue'
 import { placeNewKids } from '../data/groups'
 import type { PortalUser } from '../permissions'
 import {
+  describeStudentColumns,
   looksLikeStudentHeader,
+  STUDENT_IMPORT_COLUMNS,
   studentImportColumns,
+  type StudentImportColumn,
 } from '../import-columns'
 import {
   classifyStudentImportRow,
@@ -477,8 +480,9 @@ export async function importStudentsCsv(
       scope = { id: cls.id, name: cls.name }
     }
     const preview = options.preview === true
-    // The column names may sit under empty rows or a title (2026-09-28).
-    const records = parseCsvRecords(csvText ?? '', { isHeader: looksLikeStudentHeader })
+    // The column names may sit under empty rows or a title (2026-09-28). Rows
+    // are reported by their number in the sheet, counted from `headerRow`.
+    const { headerRow, headers, records } = parseCsvTable(csvText ?? '', { isHeader: looksLikeStudentHeader })
     if (records.length === 0) throw new PortalError('That file has no data rows.')
     if (records.length > MAX_IMPORT_ROWS) throw new PortalError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`)
 
@@ -572,28 +576,31 @@ export async function importStudentsCsv(
 
     for (let i = 0; i < records.length; i++) {
       const rec = records[i]!
-      const rowNumber = i + 1
+      const rowNumber = headerRow + 1 + i
       // An empty row between or after the children says nothing.
       if (Object.values(rec).every((value) => value === '')) continue
-      const rawName = pick(rec, 'name', 'full name', 'student', 'student name')
+      // Read through the same table that decides which columns the file has, so
+      // a heading can never count as present and then be read as blank.
+      const col = (column: StudentImportColumn) => pick(rec, ...STUDENT_IMPORT_COLUMNS[column])
+      const rawName = col('name')
       const fallback = splitName(rawName)
       const draft = {
-        loginId: pick(rec, 'id', 'login id', 'loginid', 'student id'),
-        firstName: pick(rec, 'first', 'first name', 'firstname') || fallback.firstName,
-        lastName: pick(rec, 'last', 'last name', 'lastname') || fallback.lastName,
-        classRef: pick(rec, 'class', 'class id', 'classid', 'class name'),
-        grade: pick(rec, 'grade'),
-        gender: pick(rec, 'gender', 'sex'),
-        dob: pick(rec, 'dob', 'date of birth', 'birthday', 'birth date'),
-        fatherName: pick(rec, 'father name', 'father', 'fathername'),
-        fatherPhone: pick(rec, 'father phone', 'fatherphone'),
-        motherName: pick(rec, 'mother name', 'mother', 'mothername'),
-        motherPhone: pick(rec, 'mother phone', 'motherphone'),
-        parentEmails: pick(rec, 'parentemails', 'parent emails', 'parent email', 'parentemail', 'emails'),
-        email: pick(rec, 'student email', 'studentemail', 'email'),
-        phone: pick(rec, 'student phone', 'studentphone', 'phone', 'mobile', 'cell'),
-        address: pick(rec, 'address'),
-        notes: pick(rec, 'notes', 'note'),
+        loginId: col('loginId'),
+        firstName: col('firstName') || fallback.firstName,
+        lastName: col('lastName') || fallback.lastName,
+        classRef: col('classRef'),
+        grade: col('grade'),
+        gender: col('gender'),
+        dob: col('dob'),
+        fatherName: col('fatherName'),
+        fatherPhone: col('fatherPhone'),
+        motherName: col('motherName'),
+        motherPhone: col('motherPhone'),
+        parentEmails: col('parentEmails'),
+        email: col('email'),
+        phone: col('phone'),
+        address: col('address'),
+        notes: col('notes'),
       }
       const displayName = formatFullName({ firstName: draft.firstName, lastName: draft.lastName }) || rawName || `Row ${rowNumber}`
 
@@ -890,7 +897,8 @@ export async function importStudentsCsv(
       }
     }
 
-    const summary = summariseImport(results)
+    // Which headings were read, and which were not (2026-09-28).
+    const summary = { ...summariseImport(results), columns: describeStudentColumns(headers, normaliseHeader) }
     // A preview wrote nothing, so it neither logs as an import nor invalidates
     // any cache — the log would otherwise claim rows were created.
     if (preview) return summary
@@ -945,7 +953,7 @@ export async function importServantsCsv(
   return runAction(async () => {
     const user = await requireAdmin()
     const preview = options.preview === true
-    const records = parseCsvRecords(csvText ?? '')
+    const { headerRow, records } = parseCsvTable(csvText ?? '')
     if (records.length === 0) throw new PortalError('That file has no data rows.')
     if (records.length > MAX_IMPORT_ROWS) throw new PortalError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`)
 
@@ -970,7 +978,7 @@ export async function importServantsCsv(
 
     for (let i = 0; i < records.length; i++) {
       const rec = records[i]!
-      const rowNumber = i + 1
+      const rowNumber = headerRow + 1 + i
       const draft = {
         loginId: pick(rec, 'id', 'login id', 'loginid'),
         name: pick(rec, 'name', 'full name', 'servant', 'servant name'),

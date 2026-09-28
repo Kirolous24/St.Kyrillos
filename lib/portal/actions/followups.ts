@@ -7,9 +7,9 @@ import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { audit } from '../audit'
-import { resolveReasonLabel } from '../followups'
+import { RESOLVE_REASON_KEYS, resolveReasonLabel } from '../followups'
 import { studentName } from '../data/students'
-import { parseDateOnly, toUTCDate, todayInNewYork, newYorkDayStart, daysBetween } from '../dates'
+import { parseDateOnly, toUTCDate, churchToday, churchDayStart, daysBetween } from '../dates'
 
 async function loadCase(id: string) {
   const c = await prisma.followUpCase.findUnique({
@@ -50,7 +50,7 @@ export async function logContact(raw: z.infer<typeof LogSchema>): Promise<Action
 const ResolveSchema = z
   .object({
     caseId: z.string().min(1),
-    reason: z.enum(['attending_again', 'moved', 'sick', 'family', 'lost_interest', 'other']),
+    reason: z.enum(RESOLVE_REASON_KEYS),
     note: z.string().trim().max(1000).optional(),
   })
   // F0110 — "Other" with no note closes a case saying nothing at all, which is
@@ -189,8 +189,6 @@ export async function bulkDeleteCases(caseIds: string[]): Promise<ActionResult<{
   })
 }
 
-const RESOLVE_REASONS = ['attending_again', 'moved', 'sick', 'family', 'lost_interest', 'other'] as const
-
 /**
  * F0106 — the two things a servant opening a case on a Sunday actually needed.
  *
@@ -215,7 +213,7 @@ const CreateSchema = z
     /** Date-only, church time. Defaults to today. */
     openedOn: z.string().trim().max(20).optional(),
     alreadyHandled: z.boolean().optional(),
-    resolveReason: z.enum(RESOLVE_REASONS).optional(),
+    resolveReason: z.enum(RESOLVE_REASON_KEYS).optional(),
     resolveNote: z.string().trim().max(1000).optional(),
   })
   // Same rule the close form already follows: "Other" saying nothing is
@@ -241,7 +239,7 @@ export async function createManualCase(raw: z.infer<typeof CreateSchema>): Promi
     // conversation should not read as though nothing happened until Wednesday:
     // the age of a case is what puts it at the top of the list. A future date is
     // refused, and so is one absurdly far back, which is almost always a typo.
-    const today = todayInNewYork()
+    const today = churchToday()
     let openedAt: Date | undefined
     if (input.openedOn) {
       const parsed = parseDateOnly(input.openedOn)
@@ -250,7 +248,7 @@ export async function createManualCase(raw: z.infer<typeof CreateSchema>): Promi
       if (daysBetween(input.openedOn, today) > 365) {
         throw new PortalError('That date is more than a year ago — check it is right.')
       }
-      openedAt = newYorkDayStart(input.openedOn)
+      openedAt = churchDayStart(input.openedOn)
     }
 
     const handled = input.alreadyHandled === true

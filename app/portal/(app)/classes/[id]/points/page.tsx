@@ -20,8 +20,11 @@ export default async function PointsPage({ params }: { params: { id: string } })
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       select: { id: true, firstName: true, lastName: true, account: { select: { photo: true } } },
     }),
-    // One church-wide list, the same in every class (2026-09-27).
-    prisma.pointActivity.findMany({ where: { classId: null, isActive: true, points: { gt: 0 } }, orderBy: { label: 'asc' } }),
+    // The activities every class has, then this class's own (2026-09-28).
+    prisma.pointActivity.findMany({
+      where: { isActive: true, points: { gt: 0 }, OR: [{ classId: null }, { classId: cls.id }] },
+      orderBy: { label: 'asc' },
+    }),
     prisma.pointEntry.findMany({
       where: { classId: cls.id },
       orderBy: { createdAt: 'desc' },
@@ -50,9 +53,12 @@ export default async function PointsPage({ params }: { params: { id: string } })
       />
       <PointsPanel
         classId={cls.id}
+        classLabel={cls.name}
         isAdmin={user.role === 'ADMIN'}
         students={ranked.map((r) => ({ id: r.studentId, name: r.name, total: r.total, rank: r.rank, photo: photo.get(r.studentId) ?? null }))}
-        activities={activities.map((a) => ({ id: a.id, key: a.key, label: a.label, points: a.points, icon: a.icon }))}
+        activities={[...activities]
+          .sort((a, b) => Number(a.classId !== null) - Number(b.classId !== null))
+          .map((a) => ({ id: a.id, key: a.key, label: a.label, points: a.points, icon: a.icon, own: a.classId === cls.id }))}
         history={history.map((h) => ({
           id: h.id,
           points: h.points,

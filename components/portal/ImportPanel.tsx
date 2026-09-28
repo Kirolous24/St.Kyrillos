@@ -45,6 +45,59 @@ const STATUS_TONE = {
 const CAPTION = 'mb-1.5 block text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500'
 
 /**
+ * How to fill in a student sheet, step by step (2026-09-28). A servant's class
+ * list from Google Sheets failed on every row: an empty first row, grades
+ * typed under Class name, birthdays written 10-26-2009. The import now copes
+ * with all three, and this says what a sheet should look like so the next one
+ * does not have to be rescued.
+ */
+function SheetGuide({ classLabel }: { classLabel: string | null }) {
+  const B = 'font-semibold text-parch-900'
+  return (
+    <ol className="list-decimal space-y-1 pl-5 text-[12.5px] leading-relaxed text-parch-700">
+      <li>
+        Start from <b className={B}>Download template</b> to add children, or{' '}
+        <b className={B}>{classLabel ? `Export ${classLabel}` : 'Export students CSV'}</b> to change children already here
+        (the export carries each child&rsquo;s ID).
+      </li>
+      <li>
+        Keep the <b className={B}>first row</b> as the column headings, as in the template. One child per row under it,
+        and nothing above it.
+      </li>
+      <li>
+        Leave <b className={B}>ID</b> empty for a new child: an ID and PIN are made when you import.
+      </li>
+      {classLabel ? (
+        <li>
+          Leave <b className={B}>Class</b> and <b className={B}>Class name</b> empty: everyone goes into {classLabel}. Put
+          the grade under <b className={B}>Grade</b>.
+        </li>
+      ) : (
+        <li>
+          Put the class under <b className={B}>Class</b> as the class list names it, or leave it empty and pick a default
+          class above. Put the grade under <b className={B}>Grade</b>.
+        </li>
+      )}
+      <li>
+        Write birthdays like <b className={B}>10/26/2009</b>. Phone numbers can be written any way.
+      </li>
+      <li>
+        Save it as a CSV file. Google Sheets: <b className={B}>File → Download → Comma-separated values (.csv)</b>. Excel:{' '}
+        <b className={B}>File → Save As → CSV</b>.
+      </li>
+      <li>
+        Choose the file and press <b className={B}>Preview</b>. Check the list, then press{' '}
+        <b className={B}>Confirm import</b>.
+      </li>
+      <li>
+        If a row fails, fix that row in your sheet (<b className={B}>Row</b> is its number down the side of the sheet)
+        and import the whole file again. Children already added are skipped, so nobody is added twice.
+      </li>
+    </ol>
+  )
+}
+
+/**
  * The CSV import and export. The admin's copy, on Data & Backup, covers
  * students and servants in every class. With `fixedClass` it is a servant's
  * class import (2026-09-27): students only, into that one class, which the
@@ -224,6 +277,15 @@ export function ImportPanel({
         </button>
       </div>
 
+      {kind === 'students' && (
+        <details open={!!fixedClass} className="mb-3.5 rounded-[12px] border border-parch-200 bg-parch-50 px-3.5 py-2.5">
+          <summary className="cursor-pointer text-[12.5px] font-bold text-brand-800">How to fill in the sheet</summary>
+          <div className="mt-2.5">
+            <SheetGuide classLabel={fixedClass?.name ?? null} />
+          </div>
+        </details>
+      )}
+
       <Callout tone="info" title="How the import behaves">
         {fixedClass ? (
           <>
@@ -255,6 +317,17 @@ export function ImportPanel({
               This is what the file would do. Check the rows below, then press{' '}
               <strong>Confirm import</strong> to apply it.
             </Callout>
+          )}
+          {summary.columns && summary.columns.ignored.length > 0 && (
+            <Callout tone="warn" title="Some columns are not read">
+              Nothing under <b>{summary.columns.ignored.join(', ')}</b> will be imported: the import does not know{' '}
+              {summary.columns.ignored.length === 1 ? 'that heading' : 'those headings'}. Rename{' '}
+              {summary.columns.ignored.length === 1 ? 'it' : 'them'} to the template&rsquo;s (for example{' '}
+              <b>Mother phone</b>) and import again, or leave {summary.columns.ignored.length === 1 ? 'it' : 'them'} out.
+            </Callout>
+          )}
+          {summary.columns && summary.columns.used.length > 0 && (
+            <p className="text-[11.5px] text-parch-500">Reading: {summary.columns.used.join(', ')}.</p>
           )}
           <div className="flex flex-wrap gap-2">
             <Badge tone="good">{summary.created} {isPreview ? 'to add' : 'created'}</Badge>

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { BarChart3, CalendarClock, ClipboardCheck, History } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { loadWeekGrid, listMeetingHistory, type MeetingHistoryRow } from '@/lib/portal/data/servant-attendance'
-import { addDays, mondayOf, parseDateOnly, todayInNewYork } from '@/lib/portal/dates'
+import { addDays, mondayOf, parseDateOnly, churchToday } from '@/lib/portal/dates'
 import { formatLongDate, formatShortDate } from '@/lib/portal/format'
 import { PageHeader, EmptyState, Callout, LinkButton, Card, Badge } from '@/components/portal/ui'
 import { ServantGrid } from './ServantGrid'
@@ -23,7 +23,7 @@ export default async function ServantAttendancePage({
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
 
-  const today = todayInNewYork()
+  const today = churchToday()
   const weekStart = mondayOf(parseDateOnly(searchParams.week) ?? today)
   const thisWeek = mondayOf(today)
   const [{ activities: allActivities, scope, marks }, history] = await Promise.all([

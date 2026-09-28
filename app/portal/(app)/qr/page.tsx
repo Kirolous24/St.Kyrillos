@@ -5,7 +5,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { listServantActivities } from '@/lib/portal/data/servant-attendance'
 import { can } from '@/lib/portal/permissions'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { formatLongDate, STAGE_LABEL } from '@/lib/portal/format'
 import { PageHeader, Tabs, TabLink, EmptyState, Callout, LinkButton } from '@/components/portal/ui'
 import { GroupCodePanel } from './GroupCodePanel'
@@ -67,7 +67,7 @@ export default async function QrHubPage({
         eyebrow="Attendance"
         icon={<QrCode className="h-5 w-5" aria-hidden />}
         title="QR Check-in"
-        subtitle={`${formatLongDate(todayInNewYork())}${user.stageOversight ? ` · ${STAGE_LABEL[user.stageOversight]}` : ''} · Show one code for the class to scan, or scan the students' own cards one by one.`}
+        subtitle={`${formatLongDate(churchToday())}${user.stageOversight ? ` · ${STAGE_LABEL[user.stageOversight]}` : ''} · Show one code for the class to scan, or scan the students' own cards one by one.`}
         actions={<LinkButton href="/portal/qr/cards" variant="secondary"><Printer className="h-4 w-4" aria-hidden /> Print QR cards</LinkButton>}
       />
 

@@ -117,9 +117,24 @@ export function parseCsvRecords(
   text: string,
   options: { isHeader?: (headers: string[]) => boolean } = {},
 ): Record<string, string>[] {
+  return parseCsvTable(text, options).records
+}
+
+/**
+ * parseCsvRecords, plus where the header was found and what it said.
+ *
+ * `headerRow` is its row number in the spreadsheet (1 in a sheet that starts
+ * with its column names), so the rows under it can be reported by the numbers
+ * the person sees down the side of their sheet. `headers` are the header cells
+ * as written, for naming a column the import does not read.
+ */
+export function parseCsvTable(
+  text: string,
+  options: { isHeader?: (headers: string[]) => boolean } = {},
+): { headerRow: number; headers: string[]; records: Record<string, string>[] } {
   const rows = parseCsv(text)
   const first = rows.findIndex(isFilled)
-  if (first < 0) return []
+  if (first < 0) return { headerRow: 0, headers: [], records: [] }
   let headerAt = first
   if (options.isHeader) {
     for (let i = first, looked = 0; i < rows.length && looked < HEADER_SEARCH_ROWS; i++) {
@@ -132,13 +147,14 @@ export function parseCsvRecords(
     }
   }
   const headers = rows[headerAt]!.map(normaliseHeader)
-  return rows.slice(headerAt + 1).map((cells) => {
+  const records = rows.slice(headerAt + 1).map((cells) => {
     const rec: Record<string, string> = {}
     headers.forEach((h, idx) => {
       if (h) rec[h] = (cells[idx] ?? '').trim()
     })
     return rec
   })
+  return { headerRow: headerAt + 1, headers: rows[headerAt]!.map((h) => h.trim()), records }
 }
 
 /** Wrap CSV text in the data URL a download link uses. */

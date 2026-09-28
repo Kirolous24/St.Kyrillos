@@ -6,8 +6,9 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { audit } from '../audit'
-import { mondayOf, parseDateOnly, todayInNewYork, toUTCDate } from '../dates'
+import { mondayOf, parseDateOnly, churchToday, toUTCDate } from '../dates'
 import { canMarkServant } from '../qr'
+import { isFutureWeek } from '../self-mark'
 import { loadServantScope, listServantActivities } from '../data/servant-attendance'
 
 /**
@@ -140,7 +141,10 @@ export async function markMyServantAttendance(raw: z.infer<typeof SelfSchema>): 
     const activity = await prisma.servantActivity.findUnique({ where: { key: input.activityKey } })
     if (!activity || !activity.isActive) throw new PortalError('That servant activity no longer exists.')
 
-    const weekStart = mondayOf(parseDateOnly(input.weekStart) ?? todayInNewYork())
+    const weekStart = mondayOf(parseDateOnly(input.weekStart) ?? churchToday())
+    // Any past week may be marked, from My Attendance's week arrows; one that
+    // has not started may not.
+    if (isFutureWeek(weekStart, churchToday())) throw new PortalError('That week has not started yet.')
     const week = toUTCDate(weekStart)
 
     await prisma.servantAttendance.upsert({

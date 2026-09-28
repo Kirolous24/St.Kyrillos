@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
-import { formatDateOnly, todayInNewYork, toUTCDate } from '../dates'
+import { formatDateOnly, churchToday, toUTCDate } from '../dates'
 import { readingStreak } from '../achievements'
 import { audit } from '../audit'
 
@@ -19,7 +19,7 @@ export async function checkInReading(): Promise<ActionResult<{ streak: number; a
     const user = await requirePortalUser()
     if (!user.studentId) throw new PortalError('Only students can check in a reading.')
 
-    const today = todayInNewYork()
+    const today = churchToday()
     const day = toUTCDate(today)
 
     const existing = await prisma.bibleReadingLog.findUnique({

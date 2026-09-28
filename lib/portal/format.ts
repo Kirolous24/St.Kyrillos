@@ -1,4 +1,4 @@
-import { toUTCDate } from './dates'
+import { CHURCH_TIMEZONE, toUTCDate } from './dates'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -23,7 +23,7 @@ export function formatMonthDay(dateStr: string): string {
 
 export function formatDateTime(d: Date): string {
   return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
+    timeZone: CHURCH_TIMEZONE,
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -76,7 +76,7 @@ export function academicYearLabel(dateStr: string): string {
 /** "Good morning" / "Good afternoon" / "Good evening" in church time. */
 export function greetingFor(now: Date = new Date()): string {
   const hour = Number(
-    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(now),
+    new Intl.DateTimeFormat('en-US', { timeZone: CHURCH_TIMEZONE, hour: 'numeric', hour12: false }).format(now),
   )
   if (hour < 12) return 'Good morning'
   // F0096 — the prototype flipped at 18:00 (OG getGreeting, L1711-1714). At 17

@@ -6,7 +6,7 @@ import { lessonPrepClasses } from '@/lib/portal/data/lesson-prep'
 import { loadAgendaWeek } from '@/lib/portal/data/agenda'
 import { normaliseWeekStart, schoolYearWeeks } from '@/lib/portal/agenda'
 import { WeekSheetPicker } from './WeekSheetPicker'
-import { mondayOf, todayInNewYork } from '@/lib/portal/dates'
+import { mondayOf, churchToday } from '@/lib/portal/dates'
 import { Avatar, PageHeader, Card, EmptyState, Badge, LinkButton } from '@/components/portal/ui'
 import { PrintButton } from '@/components/portal/PrintButton'
 import { cn } from '@/lib/utils'
@@ -36,7 +36,7 @@ export default async function AgendaWeekPage({
   const linkedPick = linked.find((c) => c.id === searchParams.class) ?? null
   const classId = classes.some((c) => c.id === searchParams.class) ? searchParams.class! : linkedPick?.id ?? classes[0]!.id
   const cls = linkedPick ?? (await requireClassAccess(user, classId, 'class.read'))
-  const today = todayInNewYork()
+  const today = churchToday()
   const week = normaliseWeekStart(searchParams.week) ?? mondayOf(today)
   const view = await loadAgendaWeek(cls.id, week)
 

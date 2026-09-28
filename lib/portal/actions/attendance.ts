@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
-import { parseDateOnly, toUTCDate, todayInNewYork } from '../dates'
+import { parseDateOnly, toUTCDate, churchToday } from '../dates'
 import { isFutureDate } from '../attendance-rules'
 import { syncAutoFollowUps } from '../followup-sync'
 import { awardAttendancePoints, reverseAttendancePoints } from '../attendance-award'
@@ -35,7 +35,7 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
 
     const date = parseDateOnly(input.date)
     if (!date) throw new PortalError('Pick a valid date.')
-    if (isFutureDate(date, todayInNewYork())) {
+    if (isFutureDate(date, churchToday())) {
       throw new PortalError('You cannot take attendance for a day that has not happened yet.')
     }
     const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
@@ -174,7 +174,7 @@ export async function removeAttendanceSession(
       classId: cls.id,
       studentIds: students.map((s) => s.id),
       threshold: cls.visitationThreshold,
-      asOf: todayInNewYork(),
+      asOf: churchToday(),
     })
 
     await audit(

@@ -136,6 +136,14 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial, pinKept
         ) : classes.length === 0 ? (
           <p className="text-[12.5px] text-parch-500">No active classes yet.</p>
         ) : (
+          <>
+          {/* 2026-09-28 — an overseer set up a new class and could not see how
+              to add a servant already serving elsewhere: ticking another box
+              was always allowed, but nothing on the form said so. */}
+          <p className="mb-2.5 text-[12px] text-parch-600">
+            Tick every class they serve. A servant can serve in more than one class, and keeps the others when you tick
+            a new one.
+          </p>
           <ul className={cn(GRID2, 'gap-y-2')}>
             {classes.map((c) => {
               const m = form.classes.find((x) => x.classId === c.id)
@@ -167,6 +175,7 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial, pinKept
               )
             })}
           </ul>
+          </>
         )}
         <div className="mt-4 max-w-xs">
           <Field label="Stage coordinator" htmlFor="stageOversight" hint="Separate from a class position — can view every class in this stage.">

@@ -4,7 +4,7 @@ import { Phone, UserX } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listUnassigned, unassignedWhere, type UnassignedChild } from '@/lib/portal/data/unassigned'
-import { ageOn, todayInNewYork } from '@/lib/portal/dates'
+import { ageOn, churchToday } from '@/lib/portal/dates'
 import { formatDateTime } from '@/lib/portal/format'
 import { formatPhone } from '@/lib/portal/phones'
 import { PageHeader, Card, EmptyState } from '@/components/portal/ui'
@@ -30,7 +30,7 @@ export default async function UnassignedPage() {
       select: { id: true, name: true },
     }),
   ])
-  const today = todayInNewYork()
+  const today = churchToday()
   const isAdmin = user.role === 'ADMIN'
 
   return (

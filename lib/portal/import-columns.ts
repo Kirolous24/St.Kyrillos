@@ -27,17 +27,34 @@ export const STUDENT_IMPORT_COLUMNS = {
   firstName: ['first', 'first name', 'firstname'],
   lastName: ['last', 'last name', 'lastname'],
   classRef: ['class', 'class id', 'classid', 'class name'],
-  grade: ['grade'],
+  grade: ['grade', 'grade level', 'school grade'],
   gender: ['gender', 'sex'],
-  dob: ['dob', 'date of birth', 'birthday', 'birth date'],
-  fatherName: ['father name', 'father', 'fathername'],
-  fatherPhone: ['father phone', 'fatherphone'],
-  motherName: ['mother name', 'mother', 'mothername'],
-  motherPhone: ['mother phone', 'motherphone'],
-  parentEmails: ['parentemails', 'parent emails', 'parent email', 'parentemail', 'emails'],
-  email: ['student email', 'studentemail', 'email'],
-  phone: ['student phone', 'studentphone', 'phone', 'mobile', 'cell'],
-  address: ['address'],
+  // 2026-09-28 — the headings people actually write, including the form's own
+  // "Father's phone" (normalised to "father s phone"). A heading not listed
+  // here is not read at all, and the preview now says so. No bare "mom" or
+  // "dad": "Mom #" normalises to "mom", and a column of phone numbers would
+  // have been read as names.
+  dob: ['dob', 'd o b', 'date of birth', 'birthday', 'birth date', 'birthdate', 'birth day'],
+  fatherName: ['father name', 'father', 'fathername', 'father s name', 'dad name', 'dad s name'],
+  fatherPhone: [
+    'father phone', 'fatherphone', 'father s phone', 'father cell', 'father s cell', 'father phone number',
+    'father s phone number', 'dad phone', 'dad s phone', 'dad cell',
+  ],
+  motherName: ['mother name', 'mother', 'mothername', 'mother s name', 'mom name', 'mom s name'],
+  motherPhone: [
+    'mother phone', 'motherphone', 'mother s phone', 'mother cell', 'mother s cell', 'mother phone number',
+    'mother s phone number', 'mom phone', 'mom s phone', 'mom cell',
+  ],
+  parentEmails: [
+    'parentemails', 'parent emails', 'parent email', 'parentemail', 'emails', 'parent s email', 'parents email',
+    'parents emails', 'parent s emails',
+  ],
+  email: ['student email', 'studentemail', 'email', 'student s email', 'email address', 'student email address'],
+  phone: [
+    'student phone', 'studentphone', 'phone', 'mobile', 'cell', 'student s phone', 'phone number', 'cell phone',
+    'student phone number', 'student s phone number',
+  ],
+  address: ['address', 'home address', 'street address'],
   notes: ['notes', 'note'],
 } as const
 
@@ -93,6 +110,28 @@ export interface StudentImportPlan {
  * parsed by `parseCsvRecords`, the keys of any one row, since every row is
  * given a key per header whether its cell is filled or not.
  */
+/** Every heading spelling the student import reads, normalised. */
+const KNOWN_STUDENT_HEADINGS: ReadonlySet<string> = new Set(Object.values(STUDENT_IMPORT_COLUMNS).flat())
+
+/**
+ * A sheet's headings split into the ones the import reads and the ones it
+ * does not (2026-09-28). A heading it does not know is skipped silently, so a
+ * column of mothers' phones under "Mom #" never arrived and nobody knew; the
+ * preview names them now. `normalise` is the CSV reader's own header rule.
+ */
+export function describeStudentColumns(
+  headers: readonly string[],
+  normalise: (header: string) => string,
+): { used: string[]; ignored: string[] } {
+  const used: string[] = []
+  const ignored: string[] = []
+  for (const header of headers) {
+    if (!header.trim()) continue
+    ;(KNOWN_STUDENT_HEADINGS.has(normalise(header)) ? used : ignored).push(header.trim())
+  }
+  return { used, ignored }
+}
+
 /**
  * Whether a row of normalised cells is a student sheet's column names: it
  * names the children or carries their IDs. Finds the header under a title

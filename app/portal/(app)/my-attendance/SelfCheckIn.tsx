@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { markMyServantAttendance } from '@/lib/portal/actions/servant-attendance'
 import { Card, Callout, buttonClass } from '@/components/portal/ui'
 import { formatLongDate } from '@/lib/portal/format'
@@ -17,16 +18,25 @@ const CHOICES: Array<{ value: Status; label: string; tone: string }> = [
 ]
 
 /**
- * Self check-in for the current week. `markMyServantAttendance` existed and
- * worked but nothing called it — the only way a servant could mark themselves
- * was the team-wide grid on Servants Attendance, a page that reads as a
- * coordinator tool, so plain servants did not know to look there.
+ * Self check-in. `markMyServantAttendance` existed and worked but nothing
+ * called it — the only way a servant could mark themselves was the team-wide
+ * grid on Servants Attendance, a page that reads as a coordinator tool, so
+ * plain servants did not know to look there.
+ *
+ * 2026-09-28: the arrows step back through past weeks, so a Sunday nobody
+ * marked can still be marked. The card never goes past this week.
  */
 export function SelfCheckIn({
   weekStart,
+  thisWeek,
+  prev,
+  next,
   activities,
 }: {
   weekStart: string
+  thisWeek: string
+  prev: string | null
+  next: string | null
   activities: Array<{ key: string; label: string; status: Status | null }>
 }) {
   const router = useRouter()
@@ -45,11 +55,40 @@ export function SelfCheckIn({
     })
   }
 
+  const isThisWeek = weekStart === thisWeek
+  const stepClass = 'grid h-8 w-8 place-items-center rounded-[8px] border border-parch-200 bg-parch-50 text-parch-600 hover:text-brand-800'
+  const weekHref = (week: string) => `/portal/my-attendance?week=${week}`
+
   return (
     <Card
-      title="Mark yourself this week"
+      title={isThisWeek ? 'Mark yourself this week' : 'Mark yourself for an earlier week'}
       icon={<CheckCircle2 className="h-4 w-4" aria-hidden />}
-      action={<span className="text-[11px] text-parch-500">Week of {formatLongDate(weekStart)}</span>}
+      action={
+        <span className="flex items-center gap-1.5">
+          {prev ? (
+            <Link href={weekHref(prev)} className={stepClass} aria-label="Previous week" scroll={false}>
+              <ChevronLeft className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : (
+            <span className={cn(stepClass, 'opacity-40')} aria-hidden><ChevronLeft className="h-4 w-4" /></span>
+          )}
+          <span className="px-1 text-[11px] font-semibold text-parch-600" data-testid="self-mark-week">
+            Week of {formatLongDate(weekStart)}
+          </span>
+          {next ? (
+            <Link href={weekHref(next)} className={stepClass} aria-label="Next week" scroll={false}>
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </Link>
+          ) : (
+            <span className={cn(stepClass, 'opacity-40')} aria-hidden><ChevronRight className="h-4 w-4" /></span>
+          )}
+          {!isThisWeek && (
+            <Link href={weekHref(thisWeek)} className="ml-1 text-[11px] font-semibold text-brand-800 underline" scroll={false}>
+              This week
+            </Link>
+          )}
+        </span>
+      }
     >
       {activities.length === 0 ? (
         <p className="text-[12.5px] text-parch-500">No servant activities are set up yet.</p>

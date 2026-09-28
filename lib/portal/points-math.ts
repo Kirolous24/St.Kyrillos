@@ -74,13 +74,19 @@ export type ManualPoints =
 /**
  * What a servant's Give or Remove writes to the ledger.
  *
- * - **Give:** one church-wide activity, at the value the admin set.
+ * - **Give:** an activity at its set value: a church-wide one, or one of the
+ *   class's own (2026-09-28: the church let classes count their own way again,
+ *   each class setting its own activities and values). Never another class's.
  * - **Remove:** always DEDUCTION_POINTS, and only with a reason.
  *
- * No amount typed on the page is ever used. A class-made activity or a one-off
- * figure is how two classes ended up counting points differently.
+ * No amount typed on the page is ever used: the value is the activity's.
  */
-export function resolveManualPoints(mode: 'add' | 'remove', activity: GiveActivity | null, reasonRaw?: string): ManualPoints {
+export function resolveManualPoints(
+  mode: 'add' | 'remove',
+  activity: GiveActivity | null,
+  reasonRaw: string | undefined,
+  classId: string,
+): ManualPoints {
   const reason = (reasonRaw ?? '').trim()
   if (mode === 'remove') {
     if (!reason) return { ok: false, error: 'Pick a reason before taking points away.' }
@@ -95,7 +101,8 @@ export function resolveManualPoints(mode: 'add' | 'remove', activity: GiveActivi
       reason: reason.length > 80 ? reason : null,
     }
   }
-  if (!activity || !activity.isActive || activity.classId !== null || activity.points <= 0) {
+  const usable = activity && activity.isActive && activity.points > 0 && (activity.classId === null || activity.classId === classId)
+  if (!activity || !usable) {
     return { ok: false, error: 'Pick one of the activities on the list.' }
   }
   return { ok: true, points: activity.points, activityKey: activity.key, label: activity.label, reason: reason || null }

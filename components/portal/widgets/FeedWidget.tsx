@@ -4,7 +4,7 @@ import type { PortalUser } from '@/lib/portal/permissions'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { countRecentPosts } from '@/lib/portal/data/feed'
 import { classCheckInsToday, listAnnouncements, loadAchievements, readingStateFor } from '@/lib/portal/data/community'
-import { addDays, todayInNewYork, toUTCDate } from '@/lib/portal/dates'
+import { addDays, churchToday, toUTCDate } from '@/lib/portal/dates'
 import { Card, Badge, ProgressBar, IconTile } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
  * feeds and who has read today. Returns null when a person has neither.
  */
 export async function FeedWidget({ user }: { user: PortalUser }): Promise<JSX.Element | null> {
-  const today = todayInNewYork()
+  const today = churchToday()
   return user.studentId ? StudentCards({ user, studentId: user.studentId, today }) : StaffCards({ user, today })
 }
 

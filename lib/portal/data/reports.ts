@@ -12,7 +12,7 @@ import { requireClassAccess, listVisibleClasses } from './classes'
 import { studentName } from './students'
 import { followUpCaseWhere, groupSummaries } from './groups'
 import { rankStudents } from '../points-math'
-import { todayInNewYork, toUTCDate, newYorkDayStart, formatDateOnly, addDays } from '../dates'
+import { churchToday, toUTCDate, churchDayStart, formatDateOnly, addDays } from '../dates'
 import {
   attendanceRate,
   countAttendanceCells,
@@ -76,7 +76,7 @@ export async function listSessions(): Promise<SessionOption[]> {
  * Mount the bell with these: `<NotificationBell />` loads them itself.
  */
 export const loadNotifications = cache(async (user: PortalUser): Promise<PortalNotification[]> => {
-  const today = todayInNewYork()
+  const today = churchToday()
   const [items, read] = await Promise.all([
     buildFacts(user, today),
     prisma.notificationRead.findMany({ where: { accountId: user.accountId }, select: { key: true } }),
@@ -131,7 +131,7 @@ async function buildFacts(user: PortalUser, today: string): Promise<PortalNotifi
       announcements: announcements.map((a) => ({
         id: a.id,
         title: a.title,
-        date: a.date ? formatDateOnly(a.date) : todayInNewYork(a.createdAt),
+        date: a.date ? formatDateOnly(a.date) : churchToday(a.createdAt),
       })),
       ownBirthday: me.dob ? formatDateOnly(me.dob) : null,
     })
@@ -445,7 +445,7 @@ async function studentRowsForClasses(
   const classIds = [...ids]
 
   const range = { gte: toUTCDate(input.from), lte: toUTCDate(input.to) }
-  const stamped = { gte: newYorkDayStart(input.from), lt: newYorkDayStart(addDays(input.to, 1)) }
+  const stamped = { gte: churchDayStart(input.from), lt: churchDayStart(addDays(input.to, 1)) }
 
   const [students, records, quizzes, points] = await Promise.all([
     prisma.student.findMany({
@@ -527,7 +527,7 @@ export async function loadChurchReport(
   // AttendanceRecord.date is a @db.Date, so UTC midnight is the whole story.
   // createdAt/submittedAt are instants: they have to be bounded by the church's
   // own midnights, or an evening service lands in the neighbouring month.
-  const stamped = { gte: newYorkDayStart(input.from), lt: newYorkDayStart(addDays(input.to, 1)) }
+  const stamped = { gte: churchDayStart(input.from), lt: churchDayStart(addDays(input.to, 1)) }
   const attendanceWhere = {
     classId: { in: ids },
     date: range,
@@ -642,7 +642,7 @@ export async function loadReportCards(
 ): Promise<ReportCardsData> {
   const cls = await requireClassAccess(user, input.classId, 'student.read')
   const range = { gte: toUTCDate(input.from), lte: toUTCDate(input.to) }
-  const stamped = { gte: newYorkDayStart(input.from), lt: newYorkDayStart(addDays(input.to, 1)) }
+  const stamped = { gte: churchDayStart(input.from), lt: churchDayStart(addDays(input.to, 1)) }
 
   const students = await prisma.student.findMany({
     where: { classId: cls.id },

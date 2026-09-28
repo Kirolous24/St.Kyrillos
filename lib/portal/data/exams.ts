@@ -8,7 +8,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { can, type Action, type PortalUser, type StageKey } from '../permissions'
 import { PortalError } from '../action-result'
-import { formatDateOnly, todayInNewYork } from '../dates'
+import { formatDateOnly, churchToday } from '../dates'
 import {
   percentageOf,
   questionRates,
@@ -347,7 +347,7 @@ export async function studentExams(studentId: string): Promise<{ today: string; 
   const or: Prisma.ExamWhereInput[] = []
   if (student.classId) or.push({ classId: student.classId })
   if (student.class?.stage) or.push({ classId: null, stage: student.class.stage })
-  if (or.length === 0) return { today: todayInNewYork(), rows: [] }
+  if (or.length === 0) return { today: churchToday(), rows: [] }
 
   const exams = await prisma.exam.findMany({
     where: { AND: [{ OR: or }, { status: { not: 'DRAFT' } }] },
@@ -373,7 +373,7 @@ export async function studentExams(studentId: string): Promise<{ today: string; 
   })
 
   return {
-    today: todayInNewYork(),
+    today: churchToday(),
     rows: exams.map((e) => ({
       id: e.id,
       title: e.title,

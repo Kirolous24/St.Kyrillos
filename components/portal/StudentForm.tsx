@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, Users, KeyRound } from 'lucide-react'
 import { createStudent, updateStudent, moveStudent, type StudentFormInput } from '@/lib/portal/actions/students'
+import { studentFormState } from '@/lib/portal/student-form'
 import { Field, inputClass, selectClass, textareaClass, buttonClass, Card, Callout } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -31,20 +32,7 @@ export function StudentForm({ mode, classId, studentId, initial, backHref, class
   const [error, setError] = useState('')
   const [created, setCreated] = useState<{ loginId: string; pin: string; studentId: string } | null>(null)
   const [moveTo, setMoveTo] = useState(classId ?? '')
-  const [form, setForm] = useState<StudentFormInput>({
-    firstName: initial?.firstName ?? '',
-    lastName: initial?.lastName ?? '',
-    gender: (initial?.gender as StudentFormInput['gender']) ?? '',
-    dob: initial?.dob ?? '',
-    grade: initial?.grade ?? '',
-    address: initial?.address ?? '',
-    fatherName: initial?.fatherName ?? '',
-    fatherPhone: initial?.fatherPhone ?? '',
-    motherName: initial?.motherName ?? '',
-    motherPhone: initial?.motherPhone ?? '',
-    parentEmails: initial?.parentEmails ?? '',
-    notes: initial?.notes ?? '',
-  })
+  const [form, setForm] = useState<StudentFormInput>(() => studentFormState(initial))
 
   // In edit mode the field moves an existing student; in create mode it is
   // the class the new student is added to. The prototype's "Add Student to Any

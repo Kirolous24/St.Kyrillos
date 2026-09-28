@@ -3,14 +3,14 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { requireStudentRead, studentName } from '@/lib/portal/data/students'
 import { loadAchievements } from '@/lib/portal/data/community'
 import { LEVELS } from '@/lib/portal/achievements'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { CHURCH_TIMEZONE, churchToday } from '@/lib/portal/dates'
 import { PageHeader, StatCard, ProgressBar, EmptyState } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
 export const metadata = { title: 'Achievements' }
 
 const AWARDED_FORMAT = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
+  timeZone: CHURCH_TIMEZONE,
   month: 'short',
   day: 'numeric',
   year: 'numeric',
@@ -18,7 +18,7 @@ const AWARDED_FORMAT = new Intl.DateTimeFormat('en-US', {
 
 export default async function AchievementsPage({ searchParams }: { searchParams: { student?: string } }) {
   const user = await requirePortalUser()
-  const today = todayInNewYork()
+  const today = churchToday()
 
   // A student only ever sees their own record; anyone else must ask for a
   // student they are allowed to read (this 404s otherwise).

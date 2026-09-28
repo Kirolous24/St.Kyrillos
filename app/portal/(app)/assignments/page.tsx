@@ -4,7 +4,7 @@ import { BookOpen, CalendarClock, CalendarDays, ClipboardList, History, Star, Us
 import { requirePortalUser } from '@/lib/portal/session'
 import { assignmentsForServant } from '@/lib/portal/data/agenda'
 import { groupAssignmentsByWeek, weekDistanceLabel, type Assignment, type AssignmentWeek } from '@/lib/portal/agenda'
-import { mondayOf, todayInNewYork } from '@/lib/portal/dates'
+import { mondayOf, churchToday } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import { PageHeader, Card, Badge, EmptyState, StatCard, LinkButton, IconTile } from '@/components/portal/ui'
@@ -48,7 +48,7 @@ export default async function AssignmentsPage() {
     )
   }
 
-  const today = todayInNewYork()
+  const today = churchToday()
   const all = await assignmentsForServant(user.servantId, today)
   const { upcoming, past, undated } = groupAssignmentsByWeek(all, today)
   // `upcoming` holds this week AND every future week, so upcoming[0] is only

@@ -2,7 +2,7 @@ import { BookOpen, ChevronDown, ExternalLink, Flame, Sparkles } from 'lucide-rea
 import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { loadDailyReadings, readingStateFor, classCheckInsToday } from '@/lib/portal/data/community'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import { groupReadingsByService } from '@/lib/portal/readings'
@@ -15,7 +15,7 @@ export const metadata = { title: 'Daily Readings' }
 
 export default async function ReadingsPage() {
   const user = await requirePortalUser()
-  const today = todayInNewYork()
+  const today = churchToday()
 
   const day = await loadDailyReadings(today)
 

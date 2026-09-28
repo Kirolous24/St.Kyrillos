@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { CalendarClock, ClipboardList, FileQuestion } from 'lucide-react'
 import type { PortalUser } from '@/lib/portal/permissions'
 import { listExams, studentExams } from '@/lib/portal/data/exams'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { formatMonthDay } from '@/lib/portal/format'
 import {
   examStatusFor,
@@ -136,7 +136,7 @@ async function studentCard(user: PortalUser): Promise<JSX.Element | null> {
 }
 
 async function staffCard(user: PortalUser): Promise<JSX.Element | null> {
-  const today = todayInNewYork()
+  const today = churchToday()
   const rows = await listExams(user, null)
   /**
    * F0094 — the prototype's widget was "Recent Exams"; the port made it "Open

@@ -11,7 +11,7 @@ import { nextBirthdayForTopbar } from '@/lib/portal/data/dashboard'
 import { loadNotifications } from '@/lib/portal/data/reports'
 import { withNavBadges, withUnassignedFlag } from '@/lib/portal/nav'
 import { countUnassigned } from '@/lib/portal/data/unassigned'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 
 export const metadata: Metadata = {
   title: { default: 'Sunday School Portal', template: '%s | Sunday School' },
@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function PortalAppLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePortalUser()
-  const today = todayInNewYork()
+  const today = churchToday()
   const nextBirthday = await nextBirthdayForTopbar(user, today)
   // Already loaded by <NotificationBell /> below; loadNotifications is
   // request-cached, so reading it here costs no extra query.

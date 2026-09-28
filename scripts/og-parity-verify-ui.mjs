@@ -38,14 +38,14 @@ const shot = async (n) => page.screenshot({ path: `${SHOTS}/${n}.png`, fullPage:
  * before this existed. Use it rather than reaching for innerText directly.
  */
 /**
- * Today in the church's timezone, as the portal computes it (todayInNewYork).
+ * Today in the church's timezone, as the portal computes it (churchToday).
  *
  * NOT `new Date().toISOString().slice(0,10)`: after 8pm ET that is already
  * tomorrow, so a row seeded with the UTC date lands on a day the app does not
  * think is today. One check asserted "marks today as read" against a reading
  * seeded for tomorrow, and failed only in the evening.
  */
-const churchToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+const churchToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
 /** "2026-09-" — the current month in church time, for seeding dated rows. */
 const churchMonthPrefix = () => `${churchToday().slice(0, 7)}-`
 

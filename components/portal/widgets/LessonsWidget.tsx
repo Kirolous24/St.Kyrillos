@@ -3,7 +3,7 @@ import { BookOpen, CalendarDays, Star, UserCheck } from 'lucide-react'
 import type { PortalUser } from '@/lib/portal/permissions'
 import { weekAssignmentsForServant } from '@/lib/portal/data/agenda'
 import { nextPlannedLessons } from '@/lib/portal/data/lessons'
-import { mondayOf, todayInNewYork } from '@/lib/portal/dates'
+import { mondayOf, churchToday } from '@/lib/portal/dates'
 import { weekLabel, type Assignment } from '@/lib/portal/agenda'
 import { formatLongDate } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
@@ -24,7 +24,7 @@ const KIND_ICON = {
 export async function LessonsWidget({ user }: { user: PortalUser }): Promise<JSX.Element | null> {
   if (!user.servantId) return null
 
-  const today = todayInNewYork()
+  const today = churchToday()
   const monday = mondayOf(today)
   const [assignments, lessons] = await Promise.all([
     weekAssignmentsForServant(user.servantId, monday),

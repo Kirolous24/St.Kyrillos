@@ -19,7 +19,7 @@ import { STAGE_LABEL, TITLE_LABEL, timeAgo } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import { RosterExportButton } from './RosterExportButton'
 import { RosterFilter } from './RosterFilter'
-import { formatDateOnly, todayInNewYork, ageOn } from '@/lib/portal/dates'
+import { formatDateOnly, churchToday, ageOn } from '@/lib/portal/dates'
 import { ensureInitialSplits, loadClassGroups } from '@/lib/portal/data/groups'
 import { effectiveServant, groupHealth } from '@/lib/portal/groups'
 import { GroupsPanel } from './GroupsPanel'
@@ -88,12 +88,12 @@ export default async function ClassPage({ params, searchParams }: { params: { id
     }),
   ])
   const totals = await classTotals([cls.id])
-  const digest = await classMonthDigest(user, cls.id, monthOf(todayInNewYork()))
+  const digest = await classMonthDigest(user, cls.id, monthOf(churchToday()))
   const ranked = new Map(
     rankStudents(students.map((s) => ({ studentId: s.id, name: studentName(s), total: totals.get(s.id) ?? 0 }))).map((r) => [r.studentId, r]),
   )
   const openSet = new Set(openCases.map((c) => c.studentId))
-  const today = todayInNewYork()
+  const today = churchToday()
 
   // Scored the same way as the official Reports page: one verdict per (student,
   // week), every student on the roster expected at every Sunday the class held,

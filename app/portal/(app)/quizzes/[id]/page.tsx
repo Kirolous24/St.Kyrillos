@@ -3,7 +3,7 @@ import { BookOpen, ClipboardList } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { studentExamPaper } from '@/lib/portal/data/exams'
 import { examStatusFor } from '@/lib/portal/exams'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { Card, EmptyState, LinkButton, PageHeader } from '@/components/portal/ui'
 import { QuizTaker } from './QuizTaker'
@@ -22,7 +22,7 @@ export default async function TakeQuizPage({ params }: { params: { id: string } 
     { id: paper.id, status: paper.status, dueDate: paper.dueDate, reopenedFor: paper.reopenedFor },
     user.studentId,
     [],
-    todayInNewYork(),
+    churchToday(),
   )
 
   if (status !== 'available') {

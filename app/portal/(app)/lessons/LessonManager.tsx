@@ -29,7 +29,7 @@ import {
   textareaClass,
 } from '@/components/portal/ui'
 import { formatLongDate } from '@/lib/portal/format'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -374,7 +374,7 @@ export function LessonManager({ classId, className, planned, taught, servants, c
                         const result = await saveLesson({
                           classId,
                           title: draft.title.trim(),
-                          date: draft.date || todayInNewYork(),
+                          date: draft.date || churchToday(),
                           topics: draft.topics.split(',').map((t) => t.trim()).filter(Boolean),
                           notes: draft.notes.trim() || undefined,
                           links: draft.links.filter((l) => l.url.trim()),

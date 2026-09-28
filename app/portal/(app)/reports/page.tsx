@@ -11,7 +11,7 @@ import {
   loadChurchStudentRows,
 } from '@/lib/portal/data/reports'
 import { exportAttendanceMatrixCsv, exportChurchReportCsv, exportAttendanceDetailCsv } from '@/lib/portal/actions/reports'
-import { todayInNewYork, addDays, parseDateOnly } from '@/lib/portal/dates'
+import { churchToday, addDays, parseDateOnly } from '@/lib/portal/dates'
 import { formatLongDate, STAGE_LABEL } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import {
@@ -87,7 +87,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
   // Students have their own progress pages; reports are a servant's tool.
   if (user.role === 'STUDENT') notFound()
 
-  const today = todayInNewYork()
+  const today = churchToday()
   const [classes, churchScope, sessions] = await Promise.all([
     reportClasses(user),
     churchReportScope(user),

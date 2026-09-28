@@ -969,7 +969,11 @@ export interface BackupSummary {
 export type ImportRowStatus = 'created' | 'updated' | 'skipped' | 'error'
 
 export interface ImportRowResult {
-  /** 1-based data row number, matching what the admin sees in their sheet. */
+  /**
+   * The row's number in the spreadsheet itself, the one down its left side:
+   * the first child under a normal header row is row 2 (2026-09-28; it used
+   * to count data rows from 1, so it never matched the sheet).
+   */
   row: number
   name: string
   loginId: string | null
@@ -985,6 +989,8 @@ export interface ImportSummary {
   skipped: number
   errors: number
   rows: ImportRowResult[]
+  /** A student import's headings: the ones it read, and the ones it did not. */
+  columns?: { used: string[]; ignored: string[] }
 }
 
 export interface RepairResult {

@@ -22,7 +22,7 @@ import { LessonsWidget } from '@/components/portal/widgets/LessonsWidget'
 import { FeedWidget } from '@/components/portal/widgets/FeedWidget'
 import { NotCheckedInWidget, TopPerformersWidget, RecentActivityWidget } from '@/components/portal/widgets/ActivityWidgets'
 import { scoreBand, SCORE_BAND_TONE } from '@/lib/portal/exams'
-import { hourInNewYork } from '@/lib/portal/dates'
+import { churchHour } from '@/lib/portal/dates'
 import { ensureInitialSplits } from '@/lib/portal/data/groups'
 
 export default async function PortalHome() {
@@ -55,7 +55,7 @@ async function StaffHome() {
    * has even met, so it waits until early afternoon, once classes have finished.
    * Church time, not the server's.
    */
-  const afterClasses = isSunday && hourInNewYork() >= 13
+  const afterClasses = isSunday && churchHour() >= 13
   const unmarkedToday = data.classes.filter((c) => c.sessionsToday.length === 0)
   const registers = data.classes
     .flatMap((c) => (c.register ? [{ c, r: c.register }] : []))

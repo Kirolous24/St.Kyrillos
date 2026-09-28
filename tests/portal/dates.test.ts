@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseDateOnly,
-  todayInNewYork,
+  churchToday,
   mondayOf,
   addDays,
   ageOn,
   daysUntilBirthday,
   formatDateOnly,
-  newYorkDayStart,
+  churchDayStart,
   weekdayName,
   sundayOnOrBefore,
 } from '@/lib/portal/dates'
@@ -33,13 +33,18 @@ describe('parseDateOnly', () => {
   })
 })
 
-describe('todayInNewYork', () => {
-  it('uses the Eastern calendar day, not UTC', () => {
-    // 2026-09-20 02:30 UTC is still Saturday 2026-09-19 22:30 in New York (EDT)
-    expect(todayInNewYork(new Date('2026-09-20T02:30:00Z'))).toBe('2026-09-19')
-    // 2026-01-10 04:30 UTC is 2026-01-09 23:30 EST
-    expect(todayInNewYork(new Date('2026-01-10T04:30:00Z'))).toBe('2026-01-09')
-    expect(todayInNewYork(new Date('2026-01-10T05:30:00Z'))).toBe('2026-01-10')
+describe('churchToday', () => {
+  it('uses the Central calendar day in Antioch, not UTC', () => {
+    // 2026-09-20 02:30 UTC is still Saturday 2026-09-19 21:30 in Nashville (CDT)
+    expect(churchToday(new Date('2026-09-20T02:30:00Z'))).toBe('2026-09-19')
+    // 2026-01-10 05:30 UTC is 2026-01-09 23:30 CST; midnight is 06:00 UTC
+    expect(churchToday(new Date('2026-01-10T05:30:00Z'))).toBe('2026-01-09')
+    expect(churchToday(new Date('2026-01-10T06:30:00Z'))).toBe('2026-01-10')
+  })
+  it('does not start Sunday at 11 PM on Saturday (it did on New York time)', () => {
+    // Saturday 2026-09-26 23:30 in Nashville is 2026-09-27 04:30 UTC.
+    expect(churchToday(new Date('2026-09-27T04:30:00Z'))).toBe('2026-09-26')
+    expect(churchToday(new Date('2026-09-27T05:00:00Z'))).toBe('2026-09-27')
   })
 })
 
@@ -83,23 +88,23 @@ describe('daysUntilBirthday', () => {
   })
 })
 
-describe('newYorkDayStart', () => {
+describe('churchDayStart', () => {
   it('is the church own midnight, not UTC midnight', () => {
     // Report windows are picked in church time; PointEntry.createdAt and
     // QuizResult.submittedAt are instants, so an evening Vespers row must not
     // fall into the neighbouring month.
-    expect(newYorkDayStart('2026-09-01').toISOString()).toBe('2026-09-01T04:00:00.000Z') // EDT
-    expect(newYorkDayStart('2026-01-01').toISOString()).toBe('2026-01-01T05:00:00.000Z') // EST
+    expect(churchDayStart('2026-09-01').toISOString()).toBe('2026-09-01T05:00:00.000Z') // CDT
+    expect(churchDayStart('2026-01-01').toISOString()).toBe('2026-01-01T06:00:00.000Z') // CST
   })
   it('follows the daylight-saving changeover', () => {
-    expect(newYorkDayStart('2026-03-08').toISOString()).toBe('2026-03-08T05:00:00.000Z')
-    expect(newYorkDayStart('2026-03-09').toISOString()).toBe('2026-03-09T04:00:00.000Z')
-    expect(newYorkDayStart('2026-11-01').toISOString()).toBe('2026-11-01T04:00:00.000Z')
-    expect(newYorkDayStart('2026-11-02').toISOString()).toBe('2026-11-02T05:00:00.000Z')
+    expect(churchDayStart('2026-03-08').toISOString()).toBe('2026-03-08T06:00:00.000Z')
+    expect(churchDayStart('2026-03-09').toISOString()).toBe('2026-03-09T05:00:00.000Z')
+    expect(churchDayStart('2026-11-01').toISOString()).toBe('2026-11-01T05:00:00.000Z')
+    expect(churchDayStart('2026-11-02').toISOString()).toBe('2026-11-02T06:00:00.000Z')
   })
   it('keeps an evening record inside the month it happened in', () => {
-    const sepEnd = newYorkDayStart('2026-10-01')
-    const vespers = new Date('2026-10-01T00:30:00.000Z') // 20:30 on 30 Sep in New York
+    const sepEnd = churchDayStart('2026-10-01')
+    const vespers = new Date('2026-10-01T00:30:00.000Z') // 19:30 on 30 Sep in Nashville
     expect(vespers.getTime() < sepEnd.getTime()).toBe(true)
   })
 })

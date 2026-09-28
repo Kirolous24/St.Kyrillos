@@ -7,7 +7,7 @@ import { ensureInitialSplits, loadClassGroups } from '@/lib/portal/data/groups'
 import { effectiveServant } from '@/lib/portal/groups'
 import { classTotals } from '@/lib/portal/data/dashboard'
 import { absenceStreakAgainst, type HistoryRow } from '@/lib/portal/attendance-rules'
-import { todayInNewYork, formatDateOnly, daysBetween, daysUntilBirthday, ageOn } from '@/lib/portal/dates'
+import { churchToday, formatDateOnly, daysBetween, daysUntilBirthday, ageOn } from '@/lib/portal/dates'
 import { waLink } from '@/lib/portal/phones'
 import { PageHeader, Card, Badge, EmptyState, Avatar, SectionTitle, buttonClass } from '@/components/portal/ui'
 import { CheckInButton } from '@/components/portal/CheckInButton'
@@ -68,7 +68,7 @@ export default async function MyGroupPage() {
     )
   }
 
-  const today = todayInNewYork()
+  const today = churchToday()
   const classIds = mineByClass.map((g) => g.classId)
   const [details, sundayRows, heldRows, openCases, lastContacts, points] = await Promise.all([
     prisma.student.findMany({
@@ -126,7 +126,7 @@ export default async function MyGroupPage() {
                 const since = formatDateOnly(d.createdAt)
                 const streak = absenceStreakAgainst(held, rows, since)
                 const last = lastContactByKid.get(k.id) ?? null
-                const lastDays = last ? daysBetween(todayInNewYork(last), today) : null
+                const lastDays = last ? daysBetween(churchToday(last), today) : null
                 return { k, d, rows, streak, last, lastDays, openCase: caseByKid.get(k.id) ?? null }
               })
               // Who needs a call first: an open case, then nobody has reached

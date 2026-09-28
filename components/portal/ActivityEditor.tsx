@@ -19,11 +19,20 @@ export interface ActivityRow {
 const ICONS = ['📖', '🙏', '✝️', '⛪', '🕊️', '📿', '🎵', '🎤', '🎶', '🕯️', '✅', '⭐', '🌟', '✨', '🏆', '🎯', '🤝', '👏', '💪', '📝', '🧠', '❤️', '🎁', '😇']
 
 /**
- * The one list of point activities every class gives from (2026-09-27). Classes
- * used to make their own, at their own values, so the same homework earned 2 in
- * one class and 10 in another. The values live here now, and only here.
+ * A list of point activities to add to, rename, revalue or remove.
+ *
+ * - With no `forClass`, it is the church-wide list every class gives from; only
+ *   the admin edits it, in Sessions & Points.
+ * - With `forClass`, it is that class's own activities, at its own values
+ *   (2026-09-28), edited by the class's servants on its Points page.
  */
-export function ActivityEditor({ activities }: { activities: ActivityRow[] }) {
+export function ActivityEditor({
+  activities,
+  forClass = null,
+}: {
+  activities: ActivityRow[]
+  forClass?: { id: string; name: string } | null
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [rows, setRows] = useState(activities)
@@ -50,10 +59,17 @@ export function ActivityEditor({ activities }: { activities: ActivityRow[] }) {
   if (activities.map((a) => a.id).join() !== rows.map((r) => r.id).join()) setRows(activities)
 
   return (
-    <Card title="Point activities (every class)" icon={<Star className="h-4 w-4" aria-hidden />} className="mt-4">
+    <Card
+      title={forClass ? `Class activities · ${forClass.name}` : 'Point activities (every class)'}
+      icon={<Star className="h-4 w-4" aria-hidden />}
+      className="mt-4"
+    >
       <p className="mb-3.5 text-[12.5px] text-parch-600">
-        Every class gives points from this one list, at these values. Taking points away always costs{' '}
-        {DEDUCTION_POINTS}. A change applies from now on; points already given keep their value.
+        {forClass
+          ? `Only ${forClass.name} sees these, next to the activities every class has. You choose what each is worth.`
+          : 'Every class sees these activities at these values. A class can add its own on its Points page.'}{' '}
+        Taking points away always costs {DEDUCTION_POINTS}. A change applies from now on; points already given keep their
+        value.
       </p>
 
       {error && <div className="mb-3" role="alert"><Callout tone="bad">{error}</Callout></div>}
@@ -97,7 +113,7 @@ export function ActivityEditor({ activities }: { activities: ActivityRow[] }) {
                 disabled={pending}
                 aria-label={`Remove ${r.label}`}
                 onClick={() => {
-                  if (!window.confirm(`Remove "${r.label}" from every class? Points already given for it stay.`)) return
+                  if (!window.confirm(`Remove "${r.label}" from ${forClass ? forClass.name : 'every class'}? Points already given for it stay.`)) return
                   run(() => removeActivity(r.id))
                 }}
                 className={cn(buttonClass('ghost', 'sm'), 'min-h-[40px] text-[#B91C1C]')}
@@ -144,7 +160,13 @@ export function ActivityEditor({ activities }: { activities: ActivityRow[] }) {
           disabled={pending || !draft.label.trim()}
           onClick={() =>
             run(
-              () => createActivity({ label: draft.label.trim(), points: draft.points, icon: draft.icon.trim() || undefined }),
+              () =>
+                createActivity({
+                  ...(forClass ? { classId: forClass.id } : {}),
+                  label: draft.label.trim(),
+                  points: draft.points,
+                  icon: draft.icon.trim() || undefined,
+                }),
               () => setDraft({ label: '', points: 2, icon: '' }),
             )
           }

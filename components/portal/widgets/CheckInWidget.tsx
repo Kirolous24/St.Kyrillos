@@ -5,7 +5,7 @@ import { can, type PortalUser } from '@/lib/portal/permissions'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { listServantActivities } from '@/lib/portal/data/servant-attendance'
 import { accentFor } from '@/lib/portal/accents'
-import { dayOfWeek, mondayOf, todayInNewYork, toUTCDate } from '@/lib/portal/dates'
+import { dayOfWeek, mondayOf, churchToday, toUTCDate } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { buildStudentPayload, type CheckInStatus } from '@/lib/portal/qr'
 import { Card, Callout, Badge, LinkButton, IconTile } from '@/components/portal/ui'
@@ -59,7 +59,7 @@ const STATUS_TONE: Record<CheckInStatus, 'good' | 'warn' | 'bad'> = {
 }
 
 async function ServantCards({ user, servantId }: { user: PortalUser; servantId: string }) {
-  const today = todayInNewYork()
+  const today = churchToday()
   const weekStart = mondayOf(today)
   const isSunday = dayOfWeek(today) === 0
 

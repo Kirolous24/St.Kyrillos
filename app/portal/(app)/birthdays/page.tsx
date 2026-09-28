@@ -6,7 +6,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
 import { upcomingBirthdays, birthdaysInWeek } from '@/lib/portal/birthdays'
-import { todayInNewYork, formatDateOnly, toUTCDate, mondayOf, addDays } from '@/lib/portal/dates'
+import { churchToday, formatDateOnly, toUTCDate, mondayOf, addDays } from '@/lib/portal/dates'
 import { formatShortDate, formatMonthDay, formatLongDate } from '@/lib/portal/format'
 import { PageHeader, Card, Badge, Avatar, EmptyState, LinkButton } from '@/components/portal/ui'
 
@@ -114,7 +114,7 @@ export default async function BirthdaysPage({ searchParams }: { searchParams: { 
   const user = await requirePortalUser()
   const classes = await listVisibleClasses(user)
   const classIds = classes.map((c) => c.id)
-  const today = todayInNewYork()
+  const today = churchToday()
   // The prototype had a full roster as well as the near-term board; at 60 days
   // anyone further out appeared nowhere in the portal at all.
   const showAll = searchParams.show === 'all'

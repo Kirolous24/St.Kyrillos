@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { loadClassStudentRows } from './reports'
 import { monthLabel, monthRange } from '../reports'
-import { newYorkDayStart, addDays } from '../dates'
+import { churchDayStart, addDays } from '../dates'
 import type { PortalUser } from '../permissions'
 
 export interface ClassMonthDigest {
@@ -44,7 +44,7 @@ export async function classMonthDigest(
   month: string,
 ): Promise<ClassMonthDigest> {
   const { from, to } = monthRange(month)
-  const stamped = { gte: newYorkDayStart(from), lt: newYorkDayStart(addDays(to, 1)) }
+  const stamped = { gte: churchDayStart(from), lt: churchDayStart(addDays(to, 1)) }
 
   // Attendance and points for the window come free from the report loader,
   // which is already period-scoped and already gated on class access.

@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/prisma'
-import { todayInNewYork, addDays, formatDateOnly, toUTCDate, mondayOf, newYorkDayStart, sundayOnOrBefore } from '../dates'
+import { churchToday, addDays, formatDateOnly, toUTCDate, mondayOf, churchDayStart, sundayOnOrBefore } from '../dates'
 import { upcomingBirthdays, birthdaysInWeek } from '../birthdays'
 import { rankStudents } from '../points-math'
 import { presentStreak } from '../achievements'
@@ -22,7 +22,7 @@ export async function classTotals(classIds: string[]) {
 }
 
 export async function staffOverview(user: PortalUser) {
-  const today = todayInNewYork()
+  const today = churchToday()
   const classes = await listVisibleClasses(user)
   const classIds = classes.map((c) => c.id)
   // The same scope as the Follow-ups page: the total and each class's chip
@@ -134,14 +134,14 @@ export async function staffOverview(user: PortalUser) {
   })
   const monthStart = `${today.slice(0, 7)}-01`
   const newStudentsThisMonth = classIds.length
-    ? await prisma.student.count({ where: { classId: { in: classIds }, createdAt: { gte: newYorkDayStart(monthStart) } } })
+    ? await prisma.student.count({ where: { classId: { in: classIds }, createdAt: { gte: churchDayStart(monthStart) } } })
     : 0
 
   // ── The prototype's remaining dashboard tiles and widgets ────────────────
   // OG L4526-4544 (the stat row) and L4390-4496 (the widget column). These are
   // all read-only aggregates over data the portal already stores.
   const churchWideRole = user.role === 'ADMIN' || user.role === 'PASTOR'
-  const dayStart = newYorkDayStart(today)
+  const dayStart = churchDayStart(today)
   const [examTotal, examActive, quizScoreRows, activityRows, presentToday, pointsToday] = await Promise.all([
     prisma.exam.count({ where: examScopeWhere(user) }),
     prisma.exam.count({
@@ -281,7 +281,7 @@ export async function staffOverview(user: PortalUser) {
 }
 
 export async function studentOverview(user: PortalUser) {
-  const today = todayInNewYork()
+  const today = churchToday()
   const me = await prisma.student.findUnique({
     where: { id: user.studentId ?? '' },
     select: {
@@ -339,7 +339,7 @@ export async function studentOverview(user: PortalUser) {
     // has one definition (examStatusFor), not two.
     studentExams(me.id),
     prisma.pointEntry.aggregate({
-      where: { studentId: me.id, undone: false, createdAt: { gte: newYorkDayStart(`${today.slice(0, 7)}-01`) } },
+      where: { studentId: me.id, undone: false, createdAt: { gte: churchDayStart(`${today.slice(0, 7)}-01`) } },
       _sum: { points: true },
     }),
   ])

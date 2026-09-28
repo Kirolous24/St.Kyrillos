@@ -2,7 +2,7 @@ import { Flame, CalendarCheck, Percent, QrCode, Star } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
 import { loadMyServantHistory, listServantActivities } from '@/lib/portal/data/servant-attendance'
-import { addDays, formatDateOnly, mondayOf, todayInNewYork, toUTCDate } from '@/lib/portal/dates'
+import { addDays, formatDateOnly, mondayOf, churchToday, toUTCDate } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import {
   attendanceRate,
@@ -13,6 +13,7 @@ import {
   type SessionWeekRow,
 } from '@/lib/portal/qr'
 import { PageHeader, Card, StatCard, Badge, EmptyState, ProgressBar, TableWrap, Th, Td, Callout, LinkButton } from '@/components/portal/ui'
+import { selfMarkNeighbours, selfMarkWeek } from '@/lib/portal/self-mark'
 import { SelfCheckIn } from './SelfCheckIn'
 
 export const metadata = { title: 'My Attendance' }
@@ -87,12 +88,16 @@ function StreakBanner({ streak, unit }: { streak: number; unit: string }) {
 
 /* ── Route ────────────────────────────────────────────────────────────────── */
 
-export default async function MyAttendancePage() {
+export default async function MyAttendancePage({ searchParams }: { searchParams: { week?: string } }) {
   const user = await requirePortalUser()
-  const today = todayInNewYork()
+  const today = churchToday()
   const fromWeek = addDays(mondayOf(today), -7 * (WEEKS_BACK - 1))
 
   const thisWeek = mondayOf(today)
+  // The week the self check-in card is on: this week unless the servant
+  // stepped back to one they forgot to mark (2026-09-28).
+  const markWeek = selfMarkWeek(searchParams.week, thisWeek, fromWeek)
+  const markNav = { weekStart: markWeek, thisWeek, ...selfMarkNeighbours(markWeek, thisWeek, fromWeek) }
 
   if (user.studentId) return <StudentAttendance studentId={user.studentId} fromWeek={fromWeek} />
 
@@ -103,7 +108,7 @@ export default async function MyAttendancePage() {
     user.servantId ??
     (await prisma.servant.findUnique({ where: { accountId: user.accountId }, select: { id: true } }))?.id ??
     null
-  if (servantId) return <ServantAttendance servantId={servantId} fromWeek={fromWeek} thisWeek={thisWeek} />
+  if (servantId) return <ServantAttendance servantId={servantId} fromWeek={fromWeek} markNav={markNav} />
 
   // Staff with no Servant profile at all — a pure ADMIN who also serves on a
   // Sunday. They had no way to record themselves anywhere in the portal; the
@@ -119,7 +124,7 @@ export default async function MyAttendancePage() {
           subtitle="Nothing recorded yet — mark your first week below."
         />
         <SelfCheckIn
-          weekStart={thisWeek}
+          {...markNav}
           activities={activities.map((a) => ({ key: a.key, label: a.label, status: null }))}
         />
       </>
@@ -139,15 +144,23 @@ export default async function MyAttendancePage() {
 
 /* ── Servant ──────────────────────────────────────────────────────────────── */
 
-async function ServantAttendance({ servantId, fromWeek, thisWeek }: { servantId: string; fromWeek: string; thisWeek: string }) {
+async function ServantAttendance({
+  servantId,
+  fromWeek,
+  markNav,
+}: {
+  servantId: string
+  fromWeek: string
+  markNav: { weekStart: string; thisWeek: string; prev: string | null; next: string | null }
+}) {
   const [{ overall, byWeek }, allActivities] = await Promise.all([
     loadMyServantHistory(servantId, fromWeek),
     listServantActivities(),
   ])
-  // Every active activity is offered for the current week, not only the ones
-  // somebody has already recorded — otherwise the first person to mark a week
-  // has nothing to click.
-  const currentCells = byWeek.find((w) => w.week === thisWeek)?.cells ?? []
+  // Every active activity is offered for the week on the card, not only the
+  // ones somebody has already recorded — otherwise the first person to mark a
+  // week has nothing to click.
+  const currentCells = byWeek.find((w) => w.week === markNav.weekStart)?.cells ?? []
   const selfActivities = allActivities.map((a) => ({
     key: a.key,
     label: a.label,
@@ -202,7 +215,7 @@ async function ServantAttendance({ servantId, fromWeek, thisWeek }: { servantId:
       <StreakBanner streak={streak} unit="Week streak" />
 
       <div className="mb-4">
-        <SelfCheckIn weekStart={thisWeek} activities={selfActivities} />
+        <SelfCheckIn {...markNav} activities={selfActivities} />
       </div>
 
       {byWeek.length === 0 ? (

@@ -4,7 +4,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { listExams, assignableClasses } from '@/lib/portal/data/exams'
 import { prisma } from '@/lib/prisma'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { studentName } from '@/lib/portal/data/students'
 import { PageHeader, StatCard, LinkButton } from '@/components/portal/ui'
 import { ClassPicker } from '@/components/portal/ClassPicker'
@@ -24,7 +24,7 @@ export default async function ExamsPage({ searchParams }: { searchParams: { clas
     assignableClasses(user),
   ])
   const canWrite = writable.length > 0
-  const today = todayInNewYork()
+  const today = churchToday()
 
   // Roster for the bulk-reopen picker: the students of every class this user
   // may write exams for. The action re-filters per exam, so a selection that

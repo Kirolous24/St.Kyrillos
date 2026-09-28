@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { formatDateOnly, todayInNewYork, toUTCDate } from '../dates'
+import { formatDateOnly, churchToday, toUTCDate } from '../dates'
 import { parseLessonLinks, type LessonLink } from '../agenda'
 
 export interface LessonView {
@@ -135,7 +135,7 @@ export async function loadLessonForAction(id: string) {
 export async function nextPlannedLesson(
   classIds: string[],
   servantId?: string,
-  todayKey = todayInNewYork(),
+  todayKey = churchToday(),
 ): Promise<LessonView | null> {
   if (classIds.length === 0) return null
   const common = {
@@ -169,7 +169,7 @@ export async function nextPlannedLesson(
 export async function nextPlannedLessons(
   classIds: string[],
   servantId?: string,
-  todayKey = todayInNewYork(),
+  todayKey = churchToday(),
   limit = 3,
 ): Promise<LessonView[]> {
   if (classIds.length === 0) return []

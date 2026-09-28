@@ -3,7 +3,7 @@ import { Award } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireStudentRead, studentName } from '@/lib/portal/data/students'
 import { certificateText } from '@/lib/portal/certificates'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { formatLongDate, academicYearLabel } from '@/lib/portal/format'
 import { CHURCH_INFO } from '@/lib/constants'
 import { PageHeader } from '@/components/portal/ui'
@@ -39,7 +39,7 @@ export default async function CertificatePage({
   if (user.role === 'STUDENT') notFound()
   const s = await requireStudentRead(user, params.id)
 
-  const today = todayInNewYork()
+  const today = churchToday()
   const text = certificateText(searchParams.occasion)
   const period = (searchParams.period ?? '').trim() || academicYearLabel(today).replace('Academic Year ', '')
   const presentedBy = (searchParams.by ?? '').trim() || 'St. Kyrillos Sunday School'

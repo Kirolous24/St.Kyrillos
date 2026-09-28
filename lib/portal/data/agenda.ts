@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { addDays, formatDateOnly, mondayOf, todayInNewYork, toUTCDate } from '../dates'
+import { addDays, formatDateOnly, mondayOf, churchToday, toUTCDate } from '../dates'
 import {
   AGENDA_ACTIVITIES,
   agendaActivityLabel,
@@ -102,7 +102,7 @@ const weekSelect = {
 
 /** The stored week, or an empty one ready to be filled in. Never null. */
 export async function loadAgendaWeek(classId: string, weekStart: string): Promise<AgendaWeekView> {
-  const monday = normaliseWeekStart(weekStart) ?? mondayOf(todayInNewYork())
+  const monday = normaliseWeekStart(weekStart) ?? mondayOf(churchToday())
   const week = await prisma.agendaWeek.findUnique({
     where: { classId_weekStart: { classId, weekStart: toUTCDate(monday) } },
     select: weekSelect,
@@ -196,7 +196,7 @@ export async function listAgendaWeeks(classId: string, take = 60): Promise<Agend
       items: { select: { topic: true, servantId: true } },
     },
   })
-  const today = todayInNewYork()
+  const today = churchToday()
   return weeks.map((w) => {
     const weekStart = formatDateOnly(w.weekStart)
     const ordinal = agendaWeekName(weekStart, today)
@@ -262,7 +262,7 @@ export async function agendaCsvForClass(classId: string): Promise<string> {
  */
 export async function assignmentsForServant(
   servantId: string,
-  todayKey = todayInNewYork(),
+  todayKey = churchToday(),
   weeksBack = 8,
 ): Promise<Assignment[]> {
   const from = toUTCDate(addDays(mondayOf(todayKey), -7 * weeksBack))

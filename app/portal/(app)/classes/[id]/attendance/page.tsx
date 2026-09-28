@@ -4,7 +4,7 @@ import { requireClassAccess } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
 import { CalendarCheck } from 'lucide-react'
 import { PageHeader, EmptyState, Card } from '@/components/portal/ui'
-import { parseDateOnly, todayInNewYork, toUTCDate, formatDateOnly } from '@/lib/portal/dates'
+import { parseDateOnly, churchToday, toUTCDate, formatDateOnly } from '@/lib/portal/dates'
 import { formatShortDate } from '@/lib/portal/format'
 import { sessionTrend } from '@/lib/portal/reports'
 import { PortalChart } from '@/components/portal/PortalChart'
@@ -24,7 +24,7 @@ export default async function AttendancePage({
   const cls = await requireClassAccess(user, params.id, 'attendance.write')
 
   const sessions = await prisma.attendanceSession.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } })
-  const date = parseDateOnly(searchParams.date) ?? todayInNewYork()
+  const date = parseDateOnly(searchParams.date) ?? churchToday()
 
   // F0209 — 'sunday' was the unconditional fallback, so once an admin switched
   // that session off the register opened pointed at a key the save path no
@@ -174,7 +174,7 @@ export default async function AttendancePage({
           key={`${date}:${sessionKey}`}
           classId={cls.id}
           date={date}
-          today={todayInNewYork()}
+          today={churchToday()}
           sessionKey={sessionKey}
           sessions={sessions.map((s) => ({ key: s.key, label: s.label, points: s.points }))}
           students={students.map((s) => ({ id: s.id, name: studentName(s), photo: s.account.photo }))}

@@ -118,19 +118,20 @@ export default async function HelpPage() {
           title="How points work"
           href={user.role === 'ADMIN' ? '/portal/admin/sessions' : user.role === 'PASTOR' ? '/portal/leaderboard' : '/portal/points'}
         >
-          {/* 2026-09-27 — points are the same in every class: one church-wide list
-              of activities, set by the admin, so the leaderboard compares like
-              with like. Classes no longer make their own. */}
-          Points are the same in every class. Children earn them for each session they attend, for their quiz
-          scores, and for the activities on one church-wide list. In a class&rsquo;s <b className={S}>Points</b> tab,
-          pick the children and an activity, then <b className={S}>+ Give</b>. Taking points away always costs 2 and
-          needs a reason.{' '}
+          {/* 2026-09-28 — sessions and the church-wide activities are the same
+              in every class; each class may also add its own activities, at
+              values it chooses (the church decided so a day after making them
+              church-wide only). */}
+          Children earn points for each session they attend, for their quiz scores, and for activities. Every class
+          has the church&rsquo;s activities, and a class can add its own under <b className={S}>Class activities</b>{' '}
+          and choose what each is worth. In a class&rsquo;s <b className={S}>Points</b> tab, pick the children and an
+          activity, then <b className={S}>+ Give</b>. Taking points away always costs 2 and needs a reason.{' '}
           {user.role === 'ADMIN' ? (
             <>
-              You set every value, for sessions and activities, in <b className={S}>Sessions &amp; Points</b>.
+              You set the session values and the church&rsquo;s activities in <b className={S}>Sessions &amp; Points</b>.
             </>
           ) : (
-            <>The admin sets the values in Sessions &amp; Points.</>
+            <>The admin sets the session values and the church&rsquo;s activities in Sessions &amp; Points.</>
           )}
         </Topic>
         <Topic icon={<Contact className={ICON} />} tone="#DC2626" title="Correct a student’s details" href={studentsHref}>

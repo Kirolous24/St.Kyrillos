@@ -32,7 +32,7 @@ export interface PortalNotification {
 }
 
 export interface NotificationFacts {
-  /** "Today" in America/New_York, from todayInNewYork(). */
+  /** "Today" in church time, from churchToday(). */
   today: string
   /** Published exams this student has not submitted yet. */
   pendingExams?: readonly { id: string; title: string; dueDate: string | null }[]

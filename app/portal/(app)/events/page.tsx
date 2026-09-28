@@ -2,7 +2,7 @@ import Image from 'next/image'
 import { Clock, ExternalLink, MapPin, Share2, Mail, Users, Play } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listEvents, type EventView } from '@/lib/portal/data/community'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { formatLongDate, formatShortDate, initials, formatTimeOfDay } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import { youtubeId, youtubeThumbnail } from '@/lib/portal/links'
@@ -263,7 +263,7 @@ function LinkPreview({ href }: { href: string }) {
 
 export default async function EventsPage() {
   const user = await requirePortalUser()
-  const today = todayInNewYork()
+  const today = churchToday()
   const { scope, upcoming, past } = await listEvents(user, today)
 
   const canTargetAll = user.role === 'ADMIN' || user.role === 'PASTOR'

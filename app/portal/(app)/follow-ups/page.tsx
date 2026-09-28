@@ -5,7 +5,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { resolveReasonLabel, contactMethodLabel } from '@/lib/portal/followups'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
-import { todayInNewYork, formatDateOnly, daysBetween } from '@/lib/portal/dates'
+import { churchToday, formatDateOnly, daysBetween } from '@/lib/portal/dates'
 import { formatMonthDay } from '@/lib/portal/format'
 import { PageHeader, Card, StatCard, Badge, EmptyState, LinkButton, Callout } from '@/components/portal/ui'
 import { NewCaseForm } from './NewCaseForm'
@@ -65,7 +65,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
   const classes = scopedTo ? [scopedTo] : visible
   const classIds = classes.map((c) => c.id)
   const showDone = searchParams.show === 'done'
-  const today = todayInNewYork()
+  const today = churchToday()
 
   /**
    * Follow-up groups (2026-09-26). A plain servant's list is their own group

@@ -5,7 +5,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { PageHeader } from '@/components/portal/ui'
 import { SessionEditor } from './SessionEditor'
 import { ServantActivityEditor } from './ServantActivityEditor'
-import { ActivityEditor } from './ActivityEditor'
+import { ActivityEditor } from '@/components/portal/ActivityEditor'
 
 export const metadata = { title: 'Sessions & Points' }
 
@@ -21,7 +21,7 @@ export default async function AdminSessionsPage() {
     <>
       <PageHeader
         title="Sessions & Points"
-        subtitle="What a student earns, the same in every class: for each session attended, and for each activity. Changes apply from now on."
+        subtitle="What a student earns for each session attended, and for the activities every class has. Classes can add their own on their Points page. Changes apply from now on."
         icon={<CalendarCheck className="h-5 w-5" />}
       />
       <SessionEditor sessions={sessions.map((s) => ({ key: s.key, label: s.label, points: s.points, isActive: s.isActive, icon: s.icon }))} />

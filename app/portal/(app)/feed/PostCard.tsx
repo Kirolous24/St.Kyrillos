@@ -7,6 +7,7 @@ import { BookOpen, ExternalLink, Link2, Megaphone, PartyPopper, Pencil, Pin, Pin
 import { deletePost, togglePin, toggleReaction } from '@/lib/portal/actions/feed'
 import { REACTIONS, FEED_TAGS, FEED_TAG_TONE, type FeedTagKey, type FeedPostView } from '@/lib/portal/data/feed'
 import { formatDateTime } from '@/lib/portal/format'
+import { CHURCH_TIMEZONE } from '@/lib/portal/dates'
 import { youtubeId, youtubeThumbnail } from '@/lib/portal/links'
 import { Card, Badge, Avatar } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
@@ -25,9 +26,9 @@ const TAG_ICON: Record<FeedTagKey, typeof BookOpen> = {
  * of 31 December the server clock is already in the new year while the church
  * is not, and a post would sprout a year label hours early.
  */
-const CHURCH_YEAR = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric' })
+const CHURCH_YEAR = new Intl.DateTimeFormat('en-US', { timeZone: CHURCH_TIMEZONE, year: 'numeric' })
 const CHURCH_DATE_WITH_YEAR = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
+  timeZone: CHURCH_TIMEZONE,
   month: 'short',
   day: 'numeric',
   year: 'numeric',

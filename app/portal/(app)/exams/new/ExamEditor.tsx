@@ -14,7 +14,7 @@ import {
   selectClass,
   textareaClass,
 } from '@/components/portal/ui'
-import { todayInNewYork } from '@/lib/portal/dates'
+import { churchToday } from '@/lib/portal/dates'
 import { cn } from '@/lib/utils'
 
 export interface EditorQuestion {
@@ -228,7 +228,7 @@ export function ExamEditor({
             <input
               id="exam-due"
               type="date"
-              min={exam ? undefined : todayInNewYork()}
+              min={exam ? undefined : churchToday()}
               className={inputClass}
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}

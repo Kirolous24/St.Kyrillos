@@ -5,15 +5,8 @@ import { useRouter } from 'next/navigation'
 import { UserPlus } from 'lucide-react'
 import { createManualCase } from '@/lib/portal/actions/followups'
 import { Card, Callout, Field, inputClass, selectClass, textareaClass, buttonClass } from '@/components/portal/ui'
+import { RESOLVE_REASONS } from '@/lib/portal/followups'
 
-const RESOLVE_REASONS: Array<{ value: string; label: string }> = [
-  { value: 'attending_again', label: 'Coming again' },
-  { value: 'moved', label: 'Moved away' },
-  { value: 'sick', label: 'Unwell' },
-  { value: 'family', label: 'Family situation' },
-  { value: 'lost_interest', label: 'Lost interest' },
-  { value: 'other', label: 'Other' },
-]
 
 export function NewCaseForm({ students, today }: { students: Array<{ id: string; label: string }>; today: string }) {
   const router = useRouter()
@@ -96,7 +89,7 @@ export function NewCaseForm({ students, today }: { students: Array<{ id: string;
             <Field label="How was it sorted?" htmlFor="case-reason">
               <select id="case-reason" value={resolveReason} onChange={(e) => setResolveReason(e.target.value)} className={selectClass} required>
                 <option value="">Choose…</option>
-                {RESOLVE_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                {RESOLVE_REASONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
               </select>
             </Field>
             <Field

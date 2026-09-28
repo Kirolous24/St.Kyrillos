@@ -1,8 +1,12 @@
 // Date-only helpers. Every value is a "YYYY-MM-DD" string; arithmetic is done
 // in UTC so it never drifts with the server's timezone. "Today" is computed
-// in America/New_York because that is where the church is.
+// in church time: Central, because the church is in Antioch, Tennessee.
+//
+// 2026-09-28: this was America/New_York, so every time the portal showed was
+// an hour ahead of everyone's phone, and a new day (and week) began at 11 PM.
+// The public site's schedule was already on Central (lib/constants.ts).
 
-export const CHURCH_TIMEZONE = 'America/New_York'
+export const CHURCH_TIMEZONE = 'America/Chicago'
 
 const ISO_RE = /^(\d{4})-(\d{1,2})-(\d{1,2})/
 const US_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
@@ -37,7 +41,7 @@ const LOOSE_US_RE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/
  * 07/10/11 is 2011 and 03/04/85 is 1985: the latest such year that is not
  * after `today`. Month first, as everywhere else in the portal.
  */
-export function parseBirthDate(raw: string | null | undefined, today: string = todayInNewYork()): string | null {
+export function parseBirthDate(raw: string | null | undefined, today: string = churchToday()): string | null {
   const strict = parseDateOnly(raw)
   if (strict || !raw) return strict
   const m = LOOSE_US_RE.exec(raw.trim())
@@ -86,14 +90,14 @@ function churchOffsetMs(at: Date): number {
  * instants, so filtering them on UTC midnight would shift the report window
  * 4-5 hours early and file an evening Vespers row into the wrong month.
  */
-export function newYorkDayStart(dateStr: string): Date {
+export function churchDayStart(dateStr: string): Date {
   const utcMidnight = toUTCDate(dateStr)
   const guess = new Date(utcMidnight.getTime() - churchOffsetMs(utcMidnight))
   // Re-read the offset at the candidate instant so a DST changeover lands right.
   return new Date(utcMidnight.getTime() - churchOffsetMs(guess))
 }
 
-export function todayInNewYork(now: Date = new Date()): string {
+export function churchToday(now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: CHURCH_TIMEZONE,
     year: 'numeric',
@@ -182,7 +186,7 @@ export function sundayOnOrBefore(dateStr: string): string {
  * most useful thing on the page. The server's clock is wherever Vercel put it,
  * so the church's own hour has to be asked for explicitly.
  */
-export function hourInNewYork(at: Date = new Date()): number {
+export function churchHour(at: Date = new Date()): number {
   const hour = new Intl.DateTimeFormat('en-US', {
     timeZone: CHURCH_TIMEZONE,
     hour: 'numeric',

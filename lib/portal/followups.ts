@@ -8,6 +8,9 @@
  */
 export const RESOLVE_REASONS = [
   { key: 'attending_again', label: 'Attending again' },
+  // Asked for by a coordinator closing a case on 2026-09-27: the child was
+  // not missing, they prayed at another church that Sunday.
+  { key: 'other_church', label: 'Prayed at another church' },
   { key: 'moved', label: 'Moved away' },
   { key: 'sick', label: 'Illness' },
   { key: 'family', label: 'Family circumstance' },
@@ -16,6 +19,12 @@ export const RESOLVE_REASONS = [
 ] as const
 
 export type ResolveReasonKey = (typeof RESOLVE_REASONS)[number]['key']
+
+/**
+ * The keys, for the server's checks. The list used to be copied into the
+ * actions and the new-case form, so a reason added here was refused there.
+ */
+export const RESOLVE_REASON_KEYS = RESOLVE_REASONS.map((r) => r.key) as [ResolveReasonKey, ...ResolveReasonKey[]]
 
 const RESOLVE_BY_KEY = new Map<string, string>(RESOLVE_REASONS.map((r) => [r.key, r.label]))
 

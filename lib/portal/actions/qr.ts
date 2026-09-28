@@ -14,7 +14,7 @@ import { audit } from '../audit'
 import { studentName } from '../data/students'
 import { awardAttendancePoints, type AttendanceAwardRecord } from '../attendance-award'
 import { undoPoints } from './points'
-import { formatDateOnly, mondayOf, parseDateOnly, todayInNewYork, toUTCDate } from '../dates'
+import { formatDateOnly, mondayOf, parseDateOnly, churchToday, toUTCDate } from '../dates'
 import { formatLongDate } from '../format'
 import {
   buildTokenPayload,
@@ -150,7 +150,7 @@ export async function createGroupCode(raw: CreateGroupCodeInput): Promise<Action
       names.push(cls.name)
     }
 
-    const date = parseDateOnly(input.date) ?? todayInNewYork()
+    const date = parseDateOnly(input.date) ?? churchToday()
     const expiresAt = expiryFrom(new Date(), GROUP_CODE_TTL_MS)
     const token = generateToken()
 
@@ -221,7 +221,7 @@ export async function createMeetingCode(raw: z.infer<typeof MeetingSchema>): Pro
     const activity = await prisma.servantActivity.findUnique({ where: { key: input.activityKey } })
     if (!activity || !activity.isActive) throw new PortalError('That servant activity no longer exists.')
 
-    const weekStart = mondayOf(parseDateOnly(input.weekStart) ?? todayInNewYork())
+    const weekStart = mondayOf(parseDateOnly(input.weekStart) ?? churchToday())
     const row = await prisma.qrToken.create({
       data: {
         token: generateToken(),
@@ -382,7 +382,7 @@ async function redeemStudent(accountId: string, studentId: string, name: string,
   if (token.kind === 'STUDENT_ATTENDANCE') {
     const session = await prisma.attendanceSession.findUnique({ where: { key: token.sessionKey ?? '' } })
     if (!session || !session.isActive) throw new PortalError('That session is no longer available.')
-    const date = token.date ? formatDateOnly(token.date) : todayInNewYork()
+    const date = token.date ? formatDateOnly(token.date) : churchToday()
     const day = toUTCDate(date)
 
     const outcome: RedeemOutcome = {
@@ -487,7 +487,7 @@ async function redeemMeeting(accountId: string, servantId: string, name: string,
   if (!activityKey) throw new PortalError('This code is not tied to a servant activity.')
   const activity = await prisma.servantActivity.findUnique({ where: { key: activityKey } })
   if (!activity || !activity.isActive) throw new PortalError('That servant activity no longer exists.')
-  const weekStart = token.weekStart ? formatDateOnly(token.weekStart) : mondayOf(todayInNewYork())
+  const weekStart = token.weekStart ? formatDateOnly(token.weekStart) : mondayOf(churchToday())
 
   const outcome: RedeemOutcome = {
     title: activity.label,
@@ -566,7 +566,7 @@ export async function resolveScan(raw: ScanStudentInput): Promise<ActionResult<R
     })
     if (!student) throw new PortalError(`No student with ID ${loginId} in ${cls.name}.`)
 
-    const date = parseDateOnly(input.date) ?? todayInNewYork()
+    const date = parseDateOnly(input.date) ?? churchToday()
     let already = false
     if (input.mode === 'ATTENDANCE' && input.sessionKey) {
       const existing = await prisma.attendanceRecord.findUnique({
@@ -597,7 +597,7 @@ export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<S
     })
     if (!student) throw new PortalError(`No student with ID ${loginId} in ${cls.name}.`)
     const name = studentName(student)
-    const date = parseDateOnly(input.date) ?? todayInNewYork()
+    const date = parseDateOnly(input.date) ?? churchToday()
 
     if (input.mode === 'ATTENDANCE') {
       if (!input.sessionKey) throw new PortalError('Pick a session first.')

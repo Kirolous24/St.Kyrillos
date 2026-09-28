@@ -4,7 +4,7 @@ import { Award, CalendarCheck, GraduationCap, Users, Printer } from 'lucide-reac
 import { requirePortalUser } from '@/lib/portal/session'
 import { reportClasses, churchReportScope, listSessions, loadReportCards } from '@/lib/portal/data/reports'
 import { exportReportCardsCsv } from '@/lib/portal/actions/reports'
-import { todayInNewYork, parseDateOnly } from '@/lib/portal/dates'
+import { churchToday, parseDateOnly } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { attendanceBand, BAND_LABEL, prettyBadge, type Band, schoolYearMonths, RANK_MEDAL } from '@/lib/portal/reports'
 import {
@@ -86,7 +86,7 @@ export default async function ReportCardsPage({ searchParams }: { searchParams: 
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
 
-  const today = todayInNewYork()
+  const today = churchToday()
   // F0142 — this page offered a "Church reports" tab to everyone. A plain
   // servant has no church-wide scope, so /portal/reports?tab=church quietly
   // falls back to the Attendance tab: the tab looked like a place they could go

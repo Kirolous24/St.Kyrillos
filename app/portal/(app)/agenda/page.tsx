@@ -10,7 +10,7 @@ import { areLinked, linkedWith } from '@/lib/portal/lesson-links'
 import { formatLongDate } from '@/lib/portal/format'
 import { TEACHING_WRITE, normaliseWeekStart, weekDistanceLabel, agendaBlankTemplateRows, schoolYearWeeks, sundayOfWeek, weekLabel } from '@/lib/portal/agenda'
 import { toCsv } from '@/lib/portal/csv'
-import { addDays, mondayOf, todayInNewYork } from '@/lib/portal/dates'
+import { addDays, mondayOf, churchToday } from '@/lib/portal/dates'
 import {
   PageHeader,
   SectionTitle,
@@ -92,7 +92,7 @@ export default async function AgendaPage({
         .filter((c) => can(user, TEACHING_WRITE, { classId: c.id, classStage: c.stage }) && areLinked(rowOf(c.id), rowOf(cls.id)))
         .map((c) => ({ id: c.id, name: c.name }))
     : []
-  const today = todayInNewYork()
+  const today = churchToday()
   const thisMonday = mondayOf(today)
   const week = normaliseWeekStart(searchParams.week) ?? thisMonday
 

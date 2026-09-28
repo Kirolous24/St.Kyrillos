@@ -10,7 +10,7 @@ import { groupAssignmentsByWeek } from '@/lib/portal/agenda'
 import { loadMyServantHistory } from '@/lib/portal/data/servant-attendance'
 import { PageHeader, Card, StatCard, Avatar, Badge, LinkButton, SectionTitle } from '@/components/portal/ui'
 import { ROLE_LABEL, STAGE_LABEL, TITLE_LABEL, formatLongDate } from '@/lib/portal/format'
-import { formatDateOnly, ageOn, todayInNewYork, addDays, mondayOf } from '@/lib/portal/dates'
+import { formatDateOnly, ageOn, churchToday, addDays, mondayOf } from '@/lib/portal/dates'
 import { formatPhone } from '@/lib/portal/phones'
 import { ProfileForm } from './ProfileForm'
 
@@ -34,7 +34,7 @@ function Row({ label, value }: { label: string; value?: string | null }) {
  */
 export default async function MyProfilePage() {
   const user = await requirePortalUser()
-  const today = todayInNewYork()
+  const today = churchToday()
 
   const account = await prisma.account.findUnique({
     where: { id: user.accountId },
