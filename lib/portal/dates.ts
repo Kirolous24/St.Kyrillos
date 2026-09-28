@@ -29,6 +29,30 @@ export function parseDateOnly(raw: string | null | undefined): string | null {
   return null
 }
 
+const LOOSE_US_RE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/
+
+/**
+ * A date of birth as people type it into a spreadsheet (2026-09-28): whatever
+ * parseDateOnly reads, and also 10-26-2009, 10.26.2009 and two-digit years.
+ * 07/10/11 is 2011 and 03/04/85 is 1985: the latest such year that is not
+ * after `today`. Month first, as everywhere else in the portal.
+ */
+export function parseBirthDate(raw: string | null | undefined, today: string = todayInNewYork()): string | null {
+  const strict = parseDateOnly(raw)
+  if (strict || !raw) return strict
+  const m = LOOSE_US_RE.exec(raw.trim())
+  if (!m) return null
+  const month = Number(m[1])
+  const day = Number(m[2])
+  let year = Number(m[3])
+  if (m[3]!.length === 2) {
+    year += 2000
+    const thisCentury = build(year, month, day)
+    if (thisCentury && thisCentury > today) year -= 100
+  }
+  return build(year, month, day)
+}
+
 export function toUTCDate(dateStr: string): Date {
   return new Date(`${dateStr}T00:00:00.000Z`)
 }

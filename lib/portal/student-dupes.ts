@@ -6,8 +6,13 @@
  * child already in the portal. Before a row creates anyone, it is checked
  * against every child on file by name, spelled any of the usual ways.
  *
+ * The rest of a servant's class import lives here too: which class a row's
+ * Class cell means, and the template's example row.
+ *
  * Pure, so the rules are testable without a database.
  */
+
+import { normalizePhone } from './phones'
 
 const SWAPS: ReadonlyArray<[string, string]> = [
   ['ph', 'f'],
@@ -42,22 +47,106 @@ export interface KnownStudent {
   /** YYYY-MM-DD */
   dob: string | null
   className: string | null
+  classId?: string | null
+  /** The child's and parents' numbers, as familyPhones gives them. */
+  phones?: readonly string[]
+}
+
+/** A child's and parents' numbers, digits only; anything too short to be a number is dropped. */
+export function familyPhones(...raw: Array<string | null | undefined>): string[] {
+  return raw.map((p) => normalizePhone(p)).filter((p): p is string => !!p && p.length >= 7)
 }
 
 /**
- * The child already on file that a new row names, or null. A birthday on both
- * sides that differs means two children who share a name.
+ * The child already on file that a new row names, or null.
+ *
+ * A birthday on both sides that differs means two children who share a name,
+ * unless they also share a phone number (2026-09-28): then it is one child
+ * whose birthday was typed differently. A sister shares the phone but not the
+ * name, so a phone alone never matches.
  */
 export function findDuplicateStudent(
-  row: { firstName: string; lastName: string; dob: string | null },
+  row: { firstName: string; lastName: string; dob: string | null; phones?: readonly string[] },
   known: readonly KnownStudent[],
 ): KnownStudent | null {
   const key = studentNameKey(row.firstName, row.lastName)
   if (!key) return null
+  const sameFamily = (k: KnownStudent) => !!row.phones?.some((p) => k.phones?.includes(p))
   return (
     known.find(
-      (k) => studentNameKey(k.firstName, k.lastName) === key && (!row.dob || !k.dob || row.dob === k.dob),
+      (k) =>
+        studentNameKey(k.firstName, k.lastName) === key &&
+        (!row.dob || !k.dob || row.dob === k.dob || sameFamily(k)),
     ) ?? null
+  )
+}
+
+/**
+ * Values in a Class column that mean "take this student out of their class".
+ * Anything else blank simply leaves the existing assignment alone — a sheet
+ * that only carries phone numbers must never detach a roster.
+ */
+const CLASS_NONE: ReadonlySet<string> = new Set(['none', 'no class', 'unassigned', 'remove', '-'])
+
+/**
+ * What a row's Class cell (the Class column, or Class name when that is
+ * blank) asks for.
+ *
+ * - Blank: the class the import is for (with none, the child stays put).
+ * - none, remove, -: off their class.
+ * - A class id or name: that class.
+ * - Anything else is `unknown` in the admin's import, so a typo never sends
+ *   a child to the default class. In a class import it is not a class at
+ *   all (2026-09-28): servants wrote grades like "11th" under Class name,
+ *   copying the template, and every row failed. There the row goes into the
+ *   class, like a blank cell.
+ */
+export function readRowClass(args: {
+  classRef: string
+  findClass: (ref: string) => string | null
+  defaultClassId: string | null
+  classImport: boolean
+}): { classId: string | null; namedClassId: string | null; clearsClass: boolean; unknown: boolean } {
+  const ref = args.classRef.trim()
+  const keep = { classId: args.defaultClassId, namedClassId: null, clearsClass: false, unknown: false }
+  if (!ref) return keep
+  if (CLASS_NONE.has(ref.toLowerCase())) return { classId: null, namedClassId: null, clearsClass: true, unknown: false }
+  const found = args.findClass(ref)
+  if (found) return { classId: found, namedClassId: found, clearsClass: false, unknown: false }
+  return args.classImport ? keep : { classId: null, namedClassId: null, clearsClass: false, unknown: true }
+}
+
+/**
+ * The template's one example row. Its numbers are 555-01xx, which are never
+ * real, so a row still carrying the example's name and father's phone was
+ * left in by mistake and adds nobody. The Class name cell is blank: it used
+ * to say "Grade 3", and servants copied that and wrote grades there.
+ */
+export const STUDENT_TEMPLATE_EXAMPLE = {
+  id: '',
+  firstName: 'Mina',
+  lastName: 'Gerges',
+  classId: '',
+  className: '',
+  grade: '3rd',
+  gender: 'male',
+  dob: '2017-04-09',
+  email: '',
+  phone: '',
+  fatherName: 'Gerges Samir',
+  fatherPhone: '615-555-0147',
+  motherName: 'Mariam Gerges',
+  motherPhone: '615-555-0148',
+  parentEmails: 'gerges@example.com; mariam@example.com',
+  address: '123 Main St, Antioch TN',
+  notes: 'Leave the ID blank for a new student — one is assigned on import.',
+} as const
+
+export function isTemplateExample(row: { firstName: string; lastName: string; fatherPhone: string | null }): boolean {
+  const example = STUDENT_TEMPLATE_EXAMPLE
+  return (
+    studentNameKey(row.firstName, row.lastName) === studentNameKey(example.firstName, example.lastName) &&
+    normalizePhone(row.fatherPhone) === normalizePhone(example.fatherPhone)
   )
 }
 

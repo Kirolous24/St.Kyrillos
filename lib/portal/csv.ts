@@ -98,11 +98,41 @@ export function normaliseHeader(header: string): string {
   return header.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
-export function parseCsvRecords(text: string): Record<string, string>[] {
+/** How many filled rows `isHeader` looks through for the column names. */
+const HEADER_SEARCH_ROWS = 5
+
+const isFilled = (row: readonly string[]) => row.some((cell) => cell.trim() !== '')
+
+/**
+ * The rows under the header, keyed by its normalised column names.
+ *
+ * The header is the first row with anything in it (2026-09-28). A sheet saved
+ * from Google Sheets can start with an empty row, and reading that as the
+ * header left every column unnamed, so every row of a servant's class list
+ * failed. `isHeader` looks a little further, past a title above the column
+ * names: the first of the first few filled rows it accepts is the header, and
+ * when it accepts none, the first filled row still is.
+ */
+export function parseCsvRecords(
+  text: string,
+  options: { isHeader?: (headers: string[]) => boolean } = {},
+): Record<string, string>[] {
   const rows = parseCsv(text)
-  if (rows.length === 0) return []
-  const headers = rows[0]!.map(normaliseHeader)
-  return rows.slice(1).map((cells) => {
+  const first = rows.findIndex(isFilled)
+  if (first < 0) return []
+  let headerAt = first
+  if (options.isHeader) {
+    for (let i = first, looked = 0; i < rows.length && looked < HEADER_SEARCH_ROWS; i++) {
+      if (!isFilled(rows[i]!)) continue
+      looked++
+      if (options.isHeader(rows[i]!.map(normaliseHeader))) {
+        headerAt = i
+        break
+      }
+    }
+  }
+  const headers = rows[headerAt]!.map(normaliseHeader)
+  return rows.slice(headerAt + 1).map((cells) => {
     const rec: Record<string, string> = {}
     headers.forEach((h, idx) => {
       if (h) rec[h] = (cells[idx] ?? '').trim()

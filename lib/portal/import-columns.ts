@@ -93,6 +93,16 @@ export interface StudentImportPlan {
  * parsed by `parseCsvRecords`, the keys of any one row, since every row is
  * given a key per header whether its cell is filled or not.
  */
+/**
+ * Whether a row of normalised cells is a student sheet's column names: it
+ * names the children or carries their IDs. Finds the header under a title
+ * (2026-09-28).
+ */
+export function looksLikeStudentHeader(headers: Iterable<string>): boolean {
+  const plan = studentImportColumns(headers)
+  return plan.namesGiven || plan.has('loginId')
+}
+
 export function studentImportColumns(headers: Iterable<string>): StudentImportPlan {
   const keys = new Set(headers)
   const has = (column: StudentImportColumn) =>

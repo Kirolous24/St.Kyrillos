@@ -7,19 +7,28 @@ import { Prisma, PortalRole, type ClassTitle, type Stage } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
-import { parseDateOnly, toUTCDate, formatDateOnly } from '../dates'
+import { parseBirthDate, toUTCDate, formatDateOnly } from '../dates'
 import { normalizePhone } from '../phones'
 import { splitName, formatFullName } from '../names'
 import { objectsToCsv, parseCsvRecords } from '../csv'
 import { studentName } from '../data/students'
 import { assertClassAction, requireClassAccess } from '../data/classes'
-import { classImportRowProblem, findDuplicateStudent, type KnownStudent } from '../student-dupes'
+import {
+  classImportRowProblem,
+  familyPhones,
+  findDuplicateStudent,
+  isTemplateExample,
+  readRowClass,
+  STUDENT_TEMPLATE_EXAMPLE,
+  type KnownStudent,
+} from '../student-dupes'
 import { audit } from '../audit'
 import { randomPin } from '../credentials'
 import { hashPin, issuedPinFieldsFromHash } from '../pin-issue'
 import { placeNewKids } from '../data/groups'
 import type { PortalUser } from '../permissions'
 import {
+  looksLikeStudentHeader,
   studentImportColumns,
 } from '../import-columns'
 import {
@@ -221,40 +230,18 @@ const STUDENT_COLUMNS = [
  * STUDENT_COLUMNS verbatim, so a template filled in and re-imported round-trips
  * through exportStudentsCsv unchanged.
  *
- * F0057 — any servant may fetch it; only an admin may upload one. The September
- * rush is real, and a servant typing thirty new children in one at a time is the
- * half of the job worth handing over: this sheet holds no church data, so there
- * is nothing to leak and nothing to undo. Importing is the other half, and it
- * stays with the office — it creates accounts, sets PINs, and can move a child
- * out of somebody else's class, which is a church-wide act rather than a
- * class-level one.
+ * F0057 — any servant may fetch it; this sheet holds no church data, so there
+ * is nothing to leak. Since 2026-09-27 a servant may also import it into their
+ * own class. The example row is STUDENT_TEMPLATE_EXAMPLE, which an import
+ * recognises and skips if it is left in.
  */
 export async function studentImportTemplateCsv(): Promise<ActionResult<{ filename: string; csv: string }>> {
   return runAction(async () => {
     const user = await requirePortalUser()
     if (user.role === 'STUDENT') throw new PortalError('That is a servant\u2019s tool.')
-    const example: Record<string, string> = {
-      id: '',
-      firstName: 'Mina',
-      lastName: 'Gerges',
-      classId: '',
-      className: 'Grade 3',
-      grade: '3rd',
-      gender: 'male',
-      dob: '2017-04-09',
-      email: '',
-      phone: '',
-      fatherName: 'Gerges Samir',
-      fatherPhone: '615-555-0147',
-      motherName: 'Mariam Gerges',
-      motherPhone: '615-555-0148',
-      parentEmails: 'gerges@example.com; mariam@example.com',
-      address: '123 Main St, Antioch TN',
-      notes: 'Leave the ID blank for a new student — one is assigned on import.',
-    }
     return {
       filename: 'students-import-template.csv',
-      csv: objectsToCsv(STUDENT_COLUMNS, [example]),
+      csv: objectsToCsv(STUDENT_COLUMNS, [STUDENT_TEMPLATE_EXAMPLE]),
     }
   })
 }
@@ -453,13 +440,6 @@ const NamedStudentRowSchema = StudentRowSchema.extend({
 })
 
 /**
- * Values in a Class column that mean "take this student out of their class".
- * Anything else blank simply leaves the existing assignment alone — a sheet
- * that only carries phone numbers must never detach a roster.
- */
-const CLASS_NONE: ReadonlySet<string> = new Set(['none', 'no class', 'unassigned', 'remove', '-'])
-
-/**
  * Upsert students by 4-digit login ID. A row whose ID is already in use updates
  * that student; a row with a blank or unused ID creates a new account with a
  * fresh PIN. An existing PIN is never touched, by any path.
@@ -472,6 +452,8 @@ const CLASS_NONE: ReadonlySet<string> = new Set(['none', 'no class', 'unassigned
  * **Servants (2026-09-27).** A servant imports into one class they can edit,
  * `defaultClassId`. Their rows may add children to that class and update
  * children already in it, and nothing else (lib/portal/student-dupes.ts).
+ * `classImport` gives the admin the same import from a class's own page, which
+ * promises that every row goes into that class.
  */
 /**
  * `preview` runs every check and reports exactly what the file would do without
@@ -482,20 +464,21 @@ const CLASS_NONE: ReadonlySet<string> = new Set(['none', 'no class', 'unassigned
 export async function importStudentsCsv(
   csvText: string,
   defaultClassId: string | null,
-  options: { preview?: boolean } = {},
+  options: { preview?: boolean; classImport?: boolean } = {},
 ): Promise<ActionResult<ImportSummary>> {
   return runAction(async () => {
     const user = await requirePortalUser()
     // The admin imports anywhere. Anyone else imports into one class they may
     // edit; a pastor or a child has no such class, so this refuses them too.
     let scope: { id: string; name: string } | null = null
-    if (user.role !== 'ADMIN') {
+    if (user.role !== 'ADMIN' || options.classImport === true) {
       if (!defaultClassId) throw new PortalError('Open your class first, then import into it.')
       const cls = await assertClassAction(user, defaultClassId, 'student.write')
       scope = { id: cls.id, name: cls.name }
     }
     const preview = options.preview === true
-    const records = parseCsvRecords(csvText ?? '')
+    // The column names may sit under empty rows or a title (2026-09-28).
+    const records = parseCsvRecords(csvText ?? '', { isHeader: looksLikeStudentHeader })
     if (records.length === 0) throw new PortalError('That file has no data rows.')
     if (records.length > MAX_IMPORT_ROWS) throw new PortalError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`)
 
@@ -538,6 +521,13 @@ export async function importStudentsCsv(
     const { namesGiven, writableFields, has: hasColumn, changedLabels } = studentImportColumns(
       Object.keys(records[0] ?? {}),
     )
+    // A file with neither names nor IDs can do nothing, and failing each row
+    // with the same message said nothing about why (2026-09-28).
+    if (!namesGiven && !hasColumn('loginId')) {
+      throw new PortalError(
+        'Could not find the column names in this file. Its first row should be the headings (ID, First name, Last name and so on), as in the template.',
+      )
+    }
     const RowSchema = namesGiven ? NamedStudentRowSchema : StudentRowSchema
 
     /**
@@ -583,6 +573,8 @@ export async function importStudentsCsv(
     for (let i = 0; i < records.length; i++) {
       const rec = records[i]!
       const rowNumber = i + 1
+      // An empty row between or after the children says nothing.
+      if (Object.values(rec).every((value) => value === '')) continue
       const rawName = pick(rec, 'name', 'full name', 'student', 'student name')
       const fallback = splitName(rawName)
       const draft = {
@@ -613,8 +605,10 @@ export async function importStudentsCsv(
       const input = parsed.data
 
       try {
-        const dob = input.dob ? parseDateOnly(input.dob) : null
-        if (input.dob && !dob) throw new PortalError(`"${input.dob}" is not a valid date of birth`)
+        const dob = input.dob ? parseBirthDate(input.dob) : null
+        if (input.dob && !dob) {
+          throw new PortalError(`"${input.dob}" is not a date of birth the import can read. Write it like 10/26/2009.`)
+        }
 
         // Three distinct intents, and only one of them may touch an existing
         // assignment by accident. A named class (or the picked default, for a
@@ -622,16 +616,13 @@ export async function importStudentsCsv(
         // blank cell with no default chosen means "this sheet says nothing
         // about classes" and must leave the student where they are.
         const classRef = input.classRef.trim()
-        const clearsClass = classRef !== '' && CLASS_NONE.has(classRef.toLowerCase())
-        let classId: string | null = null
-        let namedClassId: string | null = null
-        if (classRef && !clearsClass) {
-          classId = byId.get(classRef.toLowerCase()) ?? byName.get(classRef.toLowerCase()) ?? null
-          if (!classId) throw new PortalError(`Unknown class "${classRef}"`)
-          namedClassId = classId
-        } else if (!classRef) {
-          classId = defaultClassId
-        }
+        const { classId, namedClassId, clearsClass, unknown } = readRowClass({
+          classRef,
+          findClass: (ref) => byId.get(ref.toLowerCase()) ?? byName.get(ref.toLowerCase()) ?? null,
+          defaultClassId,
+          classImport: scope !== null,
+        })
+        if (unknown) throw new PortalError(`Unknown class "${classRef}"`)
 
         const emails = Array.from(
           new Set(
@@ -704,8 +695,11 @@ export async function importStudentsCsv(
         firstName: true,
         lastName: true,
         dob: true,
+        classId: true,
+        fatherPhone: true,
+        motherPhone: true,
         class: { select: { name: true } },
-        account: { select: { loginId: true } },
+        account: { select: { loginId: true, phone: true } },
       },
     })
     const known: KnownStudent[] = onFile.map((k) => ({
@@ -715,14 +709,23 @@ export async function importStudentsCsv(
       lastName: k.lastName,
       dob: k.dob ? formatDateOnly(k.dob) : null,
       className: k.class?.name ?? null,
+      classId: k.classId,
+      phones: familyPhones(k.fatherPhone, k.motherPhone, k.account.phone),
     }))
     const duplicateOf = new Map<number, KnownStudent>()
+    // The template's example row, left in by mistake, adds nobody.
+    const exampleRows = new Set<number>()
     for (const p of prepared) {
       if (!namesGiven || classifyStudentImportRow(p.loginId, existingByLoginId).kind !== 'create') continue
+      if (isTemplateExample({ firstName: p.data.firstName, lastName: p.data.lastName, fatherPhone: p.data.fatherPhone })) {
+        exampleRows.add(p.rowNumber)
+        continue
+      }
       const dob = p.data.dob ? formatDateOnly(p.data.dob) : null
-      const dup = findDuplicateStudent({ firstName: p.data.firstName, lastName: p.data.lastName, dob }, known)
+      const phones = familyPhones(p.data.fatherPhone, p.data.motherPhone, p.account.phone)
+      const dup = findDuplicateStudent({ firstName: p.data.firstName, lastName: p.data.lastName, dob, phones }, known)
       if (dup) duplicateOf.set(p.rowNumber, dup)
-      else known.push({ id: `row-${p.rowNumber}`, loginId: 'new', firstName: p.data.firstName, lastName: p.data.lastName, dob, className: `row ${p.rowNumber} of this file` })
+      else known.push({ id: `row-${p.rowNumber}`, loginId: 'new', firstName: p.data.firstName, lastName: p.data.lastName, dob, className: `row ${p.rowNumber} of this file`, phones })
     }
 
     // Pass 3: hash a fresh PIN for every row that will create an account, all
@@ -731,7 +734,10 @@ export async function importStudentsCsv(
     const toCreate = preview
       ? []
       : prepared.filter(
-          (p) => classifyStudentImportRow(p.loginId, existingByLoginId).kind === 'create' && !duplicateOf.has(p.rowNumber),
+          (p) =>
+            classifyStudentImportRow(p.loginId, existingByLoginId).kind === 'create' &&
+            !duplicateOf.has(p.rowNumber) &&
+            !exampleRows.has(p.rowNumber),
         )
     const newPins = toCreate.map(() => randomPin())
     const newHashes = await Promise.all(newPins.map(hashPin))
@@ -760,14 +766,27 @@ export async function importStudentsCsv(
           })
           if (problem) throw new PortalError(problem)
         }
+        if (exampleRows.has(p.rowNumber)) {
+          results.push({
+            row: p.rowNumber,
+            name: p.displayName,
+            loginId: null,
+            status: 'skipped',
+            message: 'This is the template’s example row. Skipped.',
+          })
+          continue
+        }
         const dup = duplicateOf.get(p.rowNumber)
         if (dup) {
+          // In a class import, a child found in another class stays there:
+          // moving children between classes is the admin's.
+          const bringInto = scope && dup.loginId !== 'new' && dup.classId !== scope.id ? scope.name : null
           results.push({
             row: p.rowNumber,
             name: p.displayName,
             loginId: p.loginId || null,
             status: 'skipped',
-            message: `Already here: ${dup.firstName} ${dup.lastName}${dup.loginId !== 'new' ? ` (ID ${dup.loginId})` : ''}, ${dup.className ?? 'no class'}. Skipped so nobody is added twice.`,
+            message: `Already here: ${dup.firstName} ${dup.lastName}${dup.loginId !== 'new' ? ` (ID ${dup.loginId})` : ''}, ${dup.className ?? 'no class'}. Skipped so nobody is added twice.${bringInto ? ` To bring them into ${bringInto}, ask the admin to move them.` : ''}`,
           })
           continue
         }
@@ -972,8 +991,10 @@ export async function importServantsCsv(
       const input = parsed.data
 
       try {
-        const birthday = input.birthday ? parseDateOnly(input.birthday) : null
-        if (input.birthday && !birthday) throw new PortalError(`"${input.birthday}" is not a valid birthday`)
+        const birthday = input.birthday ? parseBirthDate(input.birthday) : null
+        if (input.birthday && !birthday) {
+          throw new PortalError(`"${input.birthday}" is not a birthday the import can read. Write it like 2/14/1998.`)
+        }
         const email = input.email.toLowerCase() || null
         if (email && !EMAIL_RE.test(email)) throw new PortalError(`"${input.email}" is not a valid email`)
 

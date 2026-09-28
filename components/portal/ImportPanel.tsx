@@ -105,7 +105,7 @@ export function ImportPanel({
       // rewrites who serves which class. It committed on the first click.
       const result =
         kind === 'students'
-          ? await importStudentsCsv(csv, classId || null, { preview: true })
+          ? await importStudentsCsv(csv, classId || null, { preview: true, classImport: fixedClass !== null })
           : await importServantsCsv(csv, { preview: true })
       if (!result.ok) {
         setSummary(null)
@@ -137,7 +137,9 @@ export function ImportPanel({
     setError(null)
     startTransition(async () => {
       const result =
-        kind === 'students' ? await importStudentsCsv(csv, classId || null) : await importServantsCsv(csv)
+        kind === 'students'
+          ? await importStudentsCsv(csv, classId || null, { classImport: fixedClass !== null })
+          : await importServantsCsv(csv)
       if (!result.ok) {
         setSummary(null)
         setIsPreview(false)
