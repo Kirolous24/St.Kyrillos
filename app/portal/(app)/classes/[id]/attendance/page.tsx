@@ -3,7 +3,7 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { requireClassAccess } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
 import { CalendarCheck } from 'lucide-react'
-import { PageHeader, EmptyState, Card } from '@/components/portal/ui'
+import { PageHeader, EmptyState, Card, LinkButton } from '@/components/portal/ui'
 import { parseDateOnly, churchToday, toUTCDate, formatDateOnly } from '@/lib/portal/dates'
 import { formatShortDate } from '@/lib/portal/format'
 import { sessionTrend } from '@/lib/portal/reports'
@@ -32,8 +32,11 @@ export default async function AttendancePage({
   // that session off the register opened pointed at a key the save path no
   // longer accepts: a servant could mark a full class and lose every mark at
   // save. Prefer 'sunday' while it is live, otherwise the first session that is.
+  // A class with its own meeting (Pre-Servants, 2026-09-28) opens on it: most
+  // of its children are marked for Sunday School in their own class.
   const active =
     sessions.find((s) => s.key === searchParams.session) ??
+    sessions.find((s) => s.classId === cls.id) ??
     sessions.find((s) => s.key === 'sunday') ??
     sessions[0]
 
@@ -167,7 +170,24 @@ export default async function AttendancePage({
       )}
 
       {students.length === 0 ? (
-        <EmptyState title="No students in this class" />
+        // Still offer the other sessions: an empty one must not be a dead end.
+        <EmptyState
+          title={`Nobody to mark for ${active.label}`}
+          hint={sessions.length > 1 ? 'Pick another session:' : 'No students in this class yet.'}
+          action={
+            sessions.length > 1 ? (
+              <span className="flex flex-wrap justify-center gap-2">
+                {sessions
+                  .filter((s) => s.key !== sessionKey)
+                  .map((s) => (
+                    <LinkButton key={s.key} href={`/portal/classes/${cls.id}/attendance?session=${s.key}&date=${date}`} variant="secondary" size="sm">
+                      {s.label}
+                    </LinkButton>
+                  ))}
+              </span>
+            ) : undefined
+          }
+        />
       ) : (
         <AttendanceTaker
           // Remount when the sheet changes. `marks` is seeded from props via
