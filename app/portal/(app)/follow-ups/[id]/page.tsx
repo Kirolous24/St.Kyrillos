@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
 import { ClipboardList, History, Phone, Mail, Users, MessageCircle } from 'lucide-react'
 import { prisma } from '@/lib/prisma'

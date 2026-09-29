@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
 import { BarChart3, GraduationCap, Layers, UserCog, Users } from 'lucide-react'
 import { prisma } from '@/lib/prisma'

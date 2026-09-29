@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { UserCog, UserPlus, Search } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'

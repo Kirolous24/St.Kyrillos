@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useMemo, useState, useTransition } from 'react'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { useRouter } from 'next/navigation'
 import { Pencil, Undo2, Trash2, FolderInput } from 'lucide-react'
 import {

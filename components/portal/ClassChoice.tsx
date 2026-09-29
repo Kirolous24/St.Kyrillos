@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import type { ClassSummary } from '@/lib/portal/data/classes'
 import { PageHeader, Card, EmptyState } from './ui'
 import { STAGE_LABEL } from '@/lib/portal/format'

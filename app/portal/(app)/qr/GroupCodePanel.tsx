@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { QrCode, RefreshCw, XCircle, ClipboardCheck } from 'lucide-react'
 import { createGroupCode, createMeetingCode, codeStatus, endCode, type GroupCode } from '@/lib/portal/actions/qr'
 import { secondsLeft } from '@/lib/portal/qr'

@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { Check, Keyboard, ListChecks, ScanLine, SlidersHorizontal, Undo2, X } from 'lucide-react'
 import { scanStudent, resolveScan, undoScan } from '@/lib/portal/actions/qr'

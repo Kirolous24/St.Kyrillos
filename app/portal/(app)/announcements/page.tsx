@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { Megaphone } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listAnnouncements, announceableStage } from '@/lib/portal/data/community'

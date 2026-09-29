@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { BookOpenCheck, Flame, Megaphone, MessageSquare, Trophy } from 'lucide-react'
 import type { PortalUser } from '@/lib/portal/permissions'
 import { listVisibleClasses } from '@/lib/portal/data/classes'

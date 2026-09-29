@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { MessageSquare } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses, requireClassAccess } from '@/lib/portal/data/classes'

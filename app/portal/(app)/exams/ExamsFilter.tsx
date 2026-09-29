@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { ClipboardList, FileQuestion, Pencil, Trash2, Unlock } from 'lucide-react'
 import { deleteExams, bulkReopenExams } from '@/lib/portal/actions/exams'
 import type { ExamListRow } from '@/lib/portal/data/exams'

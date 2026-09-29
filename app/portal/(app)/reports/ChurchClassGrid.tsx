@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { GraduationCap, Printer } from 'lucide-react'
 import { ClassCard, Badge, buttonClass, checkboxClass } from '@/components/portal/ui'
 import { accentFor } from '@/lib/portal/accents'

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { Link as LinkIcon, Copy } from 'lucide-react'
 import { shareAgendaWeek } from '@/lib/portal/actions/agenda'
 import { Callout, buttonClass } from '@/components/portal/ui'

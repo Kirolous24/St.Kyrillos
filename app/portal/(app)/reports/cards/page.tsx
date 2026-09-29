@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
 import { Award, CalendarCheck, GraduationCap, Users, Printer } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'

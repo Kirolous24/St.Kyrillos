@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { redirect } from 'next/navigation'
 import { BarChart3, ClipboardList, GraduationCap, HelpCircle, Pencil, Percent, Send, ThumbsDown, Trophy, Users } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'

@@ -2,5 +2,24 @@
   "extends": "next/core-web-vitals",
   "rules": {
     "react/no-unescaped-entities": "off"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["app/portal/**/*.{ts,tsx}", "components/portal/**/*.{ts,tsx}", "lib/portal/**/*.{ts,tsx}"],
+      "excludedFiles": ["components/portal/Link.tsx"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "next/link",
+                "message": "Use @/components/portal/Link: it loads a page only when someone is about to open it. next/link's background prefetching was most of the portal's Vercel CPU (see lib/portal/intent-prefetch.ts)."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

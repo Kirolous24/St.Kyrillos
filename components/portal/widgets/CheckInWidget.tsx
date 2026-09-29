@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { QrCode, ScanLine, CalendarCheck, UserX } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { can, type PortalUser } from '@/lib/portal/permissions'

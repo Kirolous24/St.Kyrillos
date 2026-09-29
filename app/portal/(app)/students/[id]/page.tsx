@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { Star, CalendarCheck, Trophy, AlertTriangle, History, User, HeartHandshake, Camera, Award, GraduationCap, BookMarked, Flame } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { membershipsOf } from '@/lib/portal/data/class-members'

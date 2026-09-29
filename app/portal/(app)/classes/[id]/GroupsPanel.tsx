@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { useRouter } from 'next/navigation'
 import { UsersRound, Shuffle } from 'lucide-react'
 import { applySplit, moveKidToGroup, previewSplit } from '@/lib/portal/actions/groups'

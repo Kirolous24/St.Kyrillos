@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { Compass } from 'lucide-react'
 import { PageHeader, EmptyState, buttonClass } from '@/components/portal/ui'
 

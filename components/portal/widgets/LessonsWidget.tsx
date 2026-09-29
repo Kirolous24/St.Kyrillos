@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { BookOpen, CalendarDays, Star, UserCheck } from 'lucide-react'
 import type { PortalUser } from '@/lib/portal/permissions'
 import { weekAssignmentsForServant } from '@/lib/portal/data/agenda'

@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { BellRing, ChevronRight } from 'lucide-react'
 import { loadNotifications } from '@/lib/portal/data/reports'
 import { Card, Badge } from '@/components/portal/ui'

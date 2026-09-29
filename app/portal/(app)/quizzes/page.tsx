@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { BookOpen, CalendarClock, CheckCircle2, ChevronDown, ClipboardList, Lock, Percent, XCircle } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { studentExams, type StudentExamRow } from '@/lib/portal/data/exams'

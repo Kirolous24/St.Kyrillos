@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { cn } from '@/lib/utils'
 import { Cake, CalendarDays, Users } from 'lucide-react'
 import { prisma } from '@/lib/prisma'

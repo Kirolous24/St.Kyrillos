@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { CountUp } from './CountUp'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'

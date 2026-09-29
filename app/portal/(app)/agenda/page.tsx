@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { CalendarDays, ChevronLeft, ChevronRight, Link2, Printer } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireClassAccess } from '@/lib/portal/data/classes'

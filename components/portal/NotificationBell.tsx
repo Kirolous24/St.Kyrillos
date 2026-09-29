@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { Bell, Check, X } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { loadNotifications } from '@/lib/portal/data/reports'

@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
 import { Users, UserCog, Star, CalendarCheck, QrCode, Printer, KeyRound, MessageSquare, BookOpen, ClipboardList, HeartHandshake, Camera, Trophy, History } from 'lucide-react'
 import { prisma } from '@/lib/prisma'

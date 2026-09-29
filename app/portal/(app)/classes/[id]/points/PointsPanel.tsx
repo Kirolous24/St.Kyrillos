@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { Trophy, Star, History, Search, Eye, Pencil } from 'lucide-react'
 import { givePoints, undoPoints } from '@/lib/portal/actions/points'
 import { DEDUCTION_POINTS } from '@/lib/portal/points-math'

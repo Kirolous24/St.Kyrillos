@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { markMyServantAttendance } from '@/lib/portal/actions/servant-attendance'

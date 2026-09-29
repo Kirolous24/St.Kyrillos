@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import {
   GraduationCap, Users, UserCog, HeartHandshake, Cake, Trophy, Sparkles,
   CalendarCheck, UserPlus, ClipboardList, BookOpen, Printer, QrCode, BarChart3, TrendingDown, TrendingUp,

@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { AlertCircle, RefreshCw, Trophy } from 'lucide-react'
 import { Card, Badge } from '@/components/portal/ui'
 import { timeAgo } from '@/lib/portal/format'

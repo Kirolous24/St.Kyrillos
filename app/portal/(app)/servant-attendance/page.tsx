@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
 import { BarChart3, CalendarClock, ClipboardCheck, History } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'

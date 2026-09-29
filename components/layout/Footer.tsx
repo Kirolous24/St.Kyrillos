@@ -2,12 +2,14 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Facebook, Youtube, Mail, Phone, MapPin, ArrowRight, Heart } from 'lucide-react'
 import { CHURCH_INFO, SOCIAL_LINKS, FOOTER_LINKS } from '@/lib/constants'
-import { auth } from '@/lib/auth'
 
-export async function Footer() {
-  const session = await auth()
-  const adminHref = session ? '/admin/dashboard' : '/admin/login'
-  const adminLabel = session ? 'Dashboard' : 'Log In'
+// The footer is on every public page, so it must not read the session: doing
+// that made all of them re-render on the server for every visitor and crawler.
+// /admin/login already sends a signed-in admin straight to the dashboard.
+const adminHref = '/admin/login'
+const adminLabel = 'Log In'
+
+export function Footer() {
   const currentYear = new Date().getFullYear()
 
   return (

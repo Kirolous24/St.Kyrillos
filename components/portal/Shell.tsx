@@ -1,7 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/portal/Link'
+// Only the phone bottom bar uses next/link directly: its five tabs keep Next's
+// light prefetch so a child's tap shows the loading outline at once.
+// eslint-disable-next-line no-restricted-imports
+import NextLink from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
@@ -359,7 +363,6 @@ export function Shell({
               <Link
                 key={item.href}
                 href={item.href}
-                prefetch
                 onClick={() => setOpen(false)}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
@@ -630,7 +633,7 @@ export function Shell({
           // sidebar does not have.
           const badge = nav.find((n) => n.href === item.href)?.badge
           return (
-            <Link
+            <NextLink
               key={item.href}
               href={item.href}
               aria-current={active ? 'page' : undefined}
@@ -653,7 +656,7 @@ export function Shell({
                 ) : null}
               </span>
               <span className="text-[10px] font-semibold tracking-[0.1px]">{item.label}</span>
-            </Link>
+            </NextLink>
           )
         })}
         <button
