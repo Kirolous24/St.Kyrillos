@@ -57,3 +57,39 @@ describe('"Prayed at another church" (2026-09-28)', () => {
     expect(read('app/portal/(app)/follow-ups/NewCaseForm.tsx')).toMatch(/import \{ RESOLVE_REASONS \} from '@\/lib\/portal\/followups'/)
   })
 })
+
+describe('changing a contact note after it is saved (2026-09-28)', async () => {
+  const { mayChangeContactNote } = await import('@/lib/portal/followups')
+  const base = { method: 'call', writtenByMe: false, canWrite: true, canManage: false }
+  it('the servant who wrote it may', () => {
+    expect(mayChangeContactNote({ ...base, writtenByMe: true })).toBe(true)
+  })
+  it("a coordinator, overseer or the admin may change anyone's", () => {
+    expect(mayChangeContactNote({ ...base, canManage: true })).toBe(true)
+  })
+  it("another servant of the class may not rewrite someone else's", () => {
+    expect(mayChangeContactNote(base)).toBe(false)
+  })
+  it('nobody without follow-up access to the class, even the writer', () => {
+    expect(mayChangeContactNote({ ...base, writtenByMe: true, canWrite: false })).toBe(false)
+  })
+  it('the "Case resolved" entry changes by reopening the case, not here', () => {
+    expect(mayChangeContactNote({ ...base, method: 'resolved', writtenByMe: true, canManage: true })).toBe(false)
+  })
+})
+
+describe('the note actions check who may change a note first', async () => {
+  const { readFileSync } = await import('node:fs')
+  const path = await import('node:path')
+  const src = readFileSync(path.resolve(__dirname, '../../lib/portal/actions/followups.ts'), 'utf8')
+  for (const name of ['editContactNote', 'deleteContactNote', 'moveContactNote']) {
+    it(`${name} loads the note through the permission check before writing`, () => {
+      const at = src.indexOf(`export async function ${name}(`)
+      const body = src.slice(at, src.indexOf('\n}\n', at))
+      const guard = body.indexOf('await loadNoteToChange(')
+      expect(guard).toBeGreaterThan(-1)
+      expect(guard).toBeLessThan(body.search(/prisma\.followUpLog\.(update|delete)/))
+      expect(body).toMatch(/await audit\(/)
+    })
+  }
+})

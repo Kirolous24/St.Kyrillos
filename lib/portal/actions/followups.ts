@@ -8,7 +8,8 @@ import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { audit } from '../audit'
-import { RESOLVE_REASON_KEYS, resolveReasonLabel } from '../followups'
+import { contactMethodLabel, mayChangeContactNote, RESOLVE_REASON_KEYS, resolveReasonLabel } from '../followups'
+import { can } from '../permissions'
 import { studentName } from '../data/students'
 import { parseDateOnly, toUTCDate, churchToday, churchDayStart, daysBetween } from '../dates'
 
@@ -365,5 +366,128 @@ export async function logCheckIn(raw: z.infer<typeof CheckInSchema>): Promise<Ac
     revalidatePath('/portal/follow-ups')
     if (open) revalidatePath(`/portal/follow-ups/${open.id}`)
     return { onCase: !!open }
+  })
+}
+
+/* ── Fixing a contact note after it is saved (2026-09-28) ─────────────────── */
+
+/**
+ * A servant logged a call on the wrong child and had no way to fix it: a note
+ * could not be edited, moved or deleted, only the whole case. Now the servant
+ * who wrote a note, and the class's coordinator, stage overseer and admin, can
+ * do all three (mayChangeContactNote). Every change is in the activity log.
+ */
+async function loadNoteToChange(logId: string) {
+  const user = await requirePortalUser()
+  const log = await prisma.followUpLog.findUnique({
+    where: { id: logId },
+    select: {
+      id: true, caseId: true, studentId: true, method: true, byId: true,
+      case: { select: { classId: true } },
+      student: { select: { firstName: true, lastName: true, classId: true } },
+    },
+  })
+  if (!log) throw new PortalError('That note no longer exists.')
+  const classId = log.case?.classId ?? log.student.classId
+  const cls = classId ? await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true, name: true, stage: true } }) : null
+  if (!cls) throw new PortalError('This child has no class.')
+  const ctx = { classId: cls.id, classStage: cls.stage }
+  const allowed = mayChangeContactNote({
+    method: log.method,
+    writtenByMe: log.byId === user.accountId,
+    canWrite: can(user, 'followup.write', ctx),
+    canManage: can(user, 'group.manage', ctx),
+  })
+  if (!allowed) {
+    throw new PortalError(
+      log.method === 'resolved'
+        ? 'This entry is the case being resolved. Reopen the case to change it.'
+        : 'Only the servant who wrote this note, or the class coordinator, can change it.',
+    )
+  }
+  return { user, log, cls }
+}
+
+function revalidateNote(caseId: string | null, studentId: string): void {
+  if (caseId) revalidatePath(`/portal/follow-ups/${caseId}`)
+  revalidatePath(`/portal/students/${studentId}`)
+  revalidatePath('/portal/follow-ups')
+  revalidatePath('/portal/my-group')
+}
+
+const EditNoteSchema = z.object({
+  logId: z.string().min(1),
+  method: z.enum(['call', 'text', 'whatsapp', 'email', 'visit', 'other']),
+  result: z.enum(['reached', 'no_answer', 'left_message', 'will_come', 'other']).nullable().optional(),
+  note: z.string().trim().max(1000).optional(),
+})
+
+export async function editContactNote(raw: z.infer<typeof EditNoteSchema>): Promise<ActionResult> {
+  return runAction(async () => {
+    const input = EditNoteSchema.parse(raw)
+    const { user, log } = await loadNoteToChange(input.logId)
+    await prisma.followUpLog.update({
+      where: { id: log.id },
+      data: { method: input.method, result: input.result ?? null, note: input.note || null },
+    })
+    await audit(user, 'followup.note.edit', 'student', log.studentId, `${studentName(log.student)}: edited a ${contactMethodLabel(input.method).toLowerCase()} note`)
+    revalidateNote(log.caseId, log.studentId)
+    return undefined
+  })
+}
+
+export async function deleteContactNote(logId: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const { user, log } = await loadNoteToChange(z.string().min(1).parse(logId))
+    await prisma.followUpLog.delete({ where: { id: log.id } })
+    await audit(user, 'followup.note.delete', 'student', log.studentId, `${studentName(log.student)}: deleted a ${contactMethodLabel(log.method).toLowerCase()} note`)
+    revalidateNote(log.caseId, log.studentId)
+    return undefined
+  })
+}
+
+const MoveNoteSchema = z.object({ logId: z.string().min(1), studentId: z.string().min(1) })
+
+/**
+ * Put a note on the child it was meant for. It joins that child's open case in
+ * the same class if they have one, and otherwise their profile's contact
+ * history, as a check-in does.
+ */
+export async function moveContactNote(raw: z.infer<typeof MoveNoteSchema>): Promise<ActionResult<{ caseId: string | null }>> {
+  return runAction(async () => {
+    const input = MoveNoteSchema.parse(raw)
+    const { user, log, cls } = await loadNoteToChange(input.logId)
+    if (input.studentId === log.studentId) throw new PortalError('That is already the child this note is on.')
+    const target = await prisma.student.findUnique({
+      where: { id: input.studentId },
+      select: { id: true, firstName: true, lastName: true, classId: true, memberships: { select: { classId: true } } },
+    })
+    if (!target) throw new PortalError('Child not found.')
+    // The same class the note belongs to, or another class of the child's this
+    // servant follows up.
+    const targetClasses = studentClassIds(target)
+    let classId: string | null = targetClasses.includes(cls.id) ? cls.id : null
+    if (!classId) {
+      for (const id of targetClasses) {
+        if (await assertClassAction(user, id, 'followup.write').then(() => true, () => false)) {
+          classId = id
+          break
+        }
+      }
+    }
+    if (!classId) throw new PortalError('You do not follow up that child.')
+    await assertClassAction(user, classId, 'followup.write')
+    const open = await prisma.followUpCase.findFirst({ where: { studentId: target.id, classId, status: 'OPEN' }, select: { id: true } })
+    await prisma.followUpLog.update({ where: { id: log.id }, data: { studentId: target.id, caseId: open?.id ?? null } })
+    await audit(
+      user,
+      'followup.note.move',
+      'student',
+      target.id,
+      `Moved a ${contactMethodLabel(log.method).toLowerCase()} note from ${studentName(log.student)} to ${studentName(target)}`,
+    )
+    revalidateNote(log.caseId, log.studentId)
+    revalidateNote(open?.id ?? null, target.id)
+    return { caseId: open?.id ?? null }
   })
 }

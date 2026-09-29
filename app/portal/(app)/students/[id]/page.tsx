@@ -21,7 +21,9 @@ import { onFileAccountIds } from '@/lib/portal/data/logins'
 import { pinVaultEnabled } from '@/lib/portal/pin-vault'
 import { loadClassGroups } from '@/lib/portal/data/groups'
 import { effectiveServant } from '@/lib/portal/groups'
-import { contactMethodLabel, contactResultLabel } from '@/lib/portal/followups'
+import { contactMethodLabel, contactResultLabel, mayChangeContactNote } from '@/lib/portal/followups'
+import { rosterWhere } from '@/lib/portal/class-members'
+import { ContactNoteActions } from '@/components/portal/ContactNoteActions'
 import { CheckInButton } from '@/components/portal/CheckInButton'
 import { GroupPicker } from './GroupPicker'
 import { UndoEntryButton } from './PointsLedgerRow'
@@ -56,10 +58,44 @@ export default async function StudentPage({ params }: { params: { id: string } }
           where: { studentId: s.id },
           orderBy: { at: 'desc' },
           take: 10,
-          select: { id: true, method: true, result: true, note: true, at: true, caseId: true, by: { select: { displayName: true } } },
+          select: {
+            id: true, method: true, result: true, note: true, at: true, caseId: true, byId: true,
+            case: { select: { classId: true } }, by: { select: { displayName: true } },
+          },
         }),
       ])
     : [[], []]
+
+  // Notes this user may still fix (2026-09-28): their own, or any as the
+  // class's coordinator, overseer or admin. A note belongs to its case's class,
+  // or to the child's own class when it is on no case.
+  const noteClassIds = Array.from(new Set(contactLog.map((l) => l.case?.classId ?? s.classId).filter((c): c is string => !!c)))
+  const noteClasses = noteClassIds.length
+    ? await prisma.schoolClass.findMany({ where: { id: { in: noteClassIds } }, select: { id: true, stage: true } })
+    : []
+  const stageOf = new Map(noteClasses.map((c) => [c.id, c.stage]))
+  const changeableNotes = new Map<string, string>() // note id -> its class
+  for (const l of contactLog) {
+    const classId = l.case?.classId ?? s.classId
+    if (!classId) continue
+    const ctx = { classId, classStage: stageOf.get(classId) }
+    const ok = mayChangeContactNote({
+      method: l.method,
+      writtenByMe: l.byId === user.accountId,
+      canWrite: can(user, 'followup.write', ctx),
+      canManage: can(user, 'group.manage', ctx),
+    })
+    if (ok) changeableNotes.set(l.id, classId)
+  }
+  const moveTargets = new Map<string, Array<{ id: string; name: string }>>()
+  for (const classId of Array.from(new Set(changeableNotes.values()))) {
+    const kids = await prisma.student.findMany({
+      where: { AND: [rosterWhere(classId), { id: { not: s.id } }] },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      select: { id: true, firstName: true, lastName: true },
+    })
+    moveTargets.set(classId, kids.map((k) => ({ id: k.id, name: studentName(k) })))
+  }
   const myGroup = classGroups[0] ?? null
   const groupOwner = myGroup
     ? effectiveServant(myGroup.kids.find((k) => k.id === s.id)?.groupServantId ?? null, new Set(myGroup.servants.map((sv) => sv.id)))
@@ -576,6 +612,13 @@ export default async function StudentPage({ params }: { params: { id: string } }
                           </Link>
                         )}
                         {l.note && <p className="text-[11.5px] text-parch-600">{l.note}</p>}
+                        {changeableNotes.has(l.id) && (
+                          <ContactNoteActions
+                            note={{ id: l.id, method: l.method, result: l.result, note: l.note }}
+                            childName={studentName(s)}
+                            moveTo={moveTargets.get(changeableNotes.get(l.id)!) ?? []}
+                          />
+                        )}
                       </li>
                     ))}
                   </ul>

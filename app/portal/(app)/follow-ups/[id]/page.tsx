@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation'
 import { ClipboardList, History, Phone, Mail, Users, MessageCircle } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
-import { resolveReasonLabel, contactMethodLabel } from '@/lib/portal/followups'
+import { resolveReasonLabel, contactMethodLabel, mayChangeContactNote } from '@/lib/portal/followups'
+import { rosterWhere } from '@/lib/portal/class-members'
+import { ContactNoteActions } from '@/components/portal/ContactNoteActions'
 import { requireClassAccess } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
 import { can } from '@/lib/portal/permissions'
@@ -23,12 +25,29 @@ export default async function CasePage({ params }: { params: { id: string } }) {
       resolvedBy: { select: { displayName: true } }, createdBy: { select: { displayName: true } },
       student: { select: { id: true, firstName: true, lastName: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true, parentEmails: true } },
       class: { select: { name: true } },
-      logs: { orderBy: { at: 'desc' }, select: { id: true, method: true, note: true, result: true, at: true, by: { select: { displayName: true } } } },
+      logs: { orderBy: { at: 'desc' }, select: { id: true, method: true, note: true, result: true, at: true, byId: true, by: { select: { displayName: true } } } },
     },
   })
   if (!c) notFound()
   const cls = await requireClassAccess(user, c.classId, 'class.read')
   const canWrite = can(user, 'followup.write', { classId: cls.id, classStage: cls.stage })
+  // Notes this user may still fix: their own, or any as coordinator (2026-09-28).
+  const canManage = can(user, 'group.manage', { classId: cls.id, classStage: cls.stage })
+  const changeable = new Set(
+    c.logs
+      .filter((l) => mayChangeContactNote({ method: l.method, writtenByMe: l.byId === user.accountId, canWrite, canManage }))
+      .map((l) => l.id),
+  )
+  const moveTo =
+    changeable.size > 0
+      ? (
+          await prisma.student.findMany({
+            where: { AND: [rosterWhere(cls.id), { id: { not: c.student.id } }] },
+            orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+            select: { id: true, firstName: true, lastName: true },
+          })
+        ).map((k) => ({ id: k.id, name: studentName(k) }))
+      : []
   const s = c.student
   const hasContacts = Boolean(s.fatherPhone || s.motherPhone || s.fatherName || s.motherName) || s.parentEmails.length > 0
 
@@ -103,6 +122,9 @@ export default async function CasePage({ params }: { params: { id: string } }) {
                       {formatDateTime(l.at)}
                       {l.by ? ` · ${l.by.displayName}` : ''}
                     </p>
+                    {changeable.has(l.id) && (
+                      <ContactNoteActions note={{ id: l.id, method: l.method, result: l.result, note: l.note }} childName={studentName(s)} moveTo={moveTo} />
+                    )}
                   </li>
                 ))}
               </ol>

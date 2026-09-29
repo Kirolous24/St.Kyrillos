@@ -77,3 +77,31 @@ export function contactResultLabel(key: string | null | undefined): string | nul
   if (!key) return null
   return RESULT_LABELS[key] ?? key
 }
+
+/** The contact results a note can record, in the order the form offers them. */
+export const CONTACT_RESULTS = [
+  { key: 'reached', label: 'Reached' },
+  { key: 'no_answer', label: 'No answer' },
+  { key: 'left_message', label: 'Left message' },
+  { key: 'will_come', label: 'Will come' },
+  { key: 'other', label: 'Other' },
+] as const
+
+/**
+ * Who may change, move or delete a contact note after it is saved
+ * (2026-09-28): the servant who wrote it, and the class's coordinator, the
+ * stage overseer and the admin (`group.manage`). Nobody else rewrites another
+ * servant's record. The "Case resolved" entry belongs to the case: it changes
+ * by reopening the case.
+ */
+export function mayChangeContactNote(args: {
+  method: string
+  writtenByMe: boolean
+  /** followup.write on the note's class. */
+  canWrite: boolean
+  /** group.manage on the note's class. */
+  canManage: boolean
+}): boolean {
+  if (args.method === 'resolved' || !args.canWrite) return false
+  return args.writtenByMe || args.canManage
+}
