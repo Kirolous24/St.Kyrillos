@@ -32,11 +32,13 @@ const BASELINE_HEADERS = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
+    // Only the hosts the site shows through next/image: YouTube thumbnails in
+    // the portal (lib/portal/links.ts) and the livestream thumbnail that the
+    // YouTube API returns (i.ytimg.com or a numbered mirror). A wildcard let
+    // anyone use /_next/image to fetch and resize images from any site.
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
+      { protocol: 'https', hostname: 'img.youtube.com' },
+      { protocol: 'https', hostname: '*.ytimg.com' },
     ],
   },
   async headers() {

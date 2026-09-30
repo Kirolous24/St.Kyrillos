@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
 
-// Renders the current week's live events — must never be served from a stale
-// static cache (matches app/page.tsx).
-export const dynamic = 'force-dynamic'
+// Renders the current week's events. Built once and shared rather than rebuilt
+// per visit: schedule edits and the daily Coptic job rebuild it at once
+// (revalidatePath), so the hour is only a backstop. Matches app/(site)/page.tsx.
+export const revalidate = 3600
 import { MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { WeeklyScheduleSection } from '@/components/home/WeeklyScheduleSection'

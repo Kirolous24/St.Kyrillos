@@ -27,11 +27,12 @@ export async function GET(req: Request) {
       return { created: 0, skipped: null as null };
     });
 
-    if (materialized.created > 0) {
-      revalidatePath("/");
-      revalidatePath("/schedule");
-      revalidatePath("/admin/dashboard");
-    }
+    // Home and Schedule are built once and reused, so rebuild them every day,
+    // not only when events were added: this is what moves them on to a new
+    // week and picks up the Coptic days cached above.
+    revalidatePath("/");
+    revalidatePath("/schedule");
+    if (materialized.created > 0) revalidatePath("/admin/dashboard");
 
     return NextResponse.json({
       message: `Cached ${Object.keys(data).length} days; materialized ${materialized.created} weekly-service events`,

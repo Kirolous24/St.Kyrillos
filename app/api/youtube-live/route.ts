@@ -2,11 +2,18 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { LIVESTREAM } from '@/lib/constants'
 
-// Don't let Vercel edge cache responses — we rely on server-side rate limiting
-// (VERIFY_INTERVAL_MS / SEARCH_INTERVAL_MS) to protect quota. An aggressive edge
-// cache once pinned a 5-day-old "live" response because the cached entry persisted
-// across deploys and stream lifecycles.
+// Run the route on every request that reaches it; never build one answer at
+// deploy time. A "live" answer once stayed up for five days after the stream
+// ended, so every answer says both how long Vercel's CDN may share it and how
+// long it may serve it stale: 20 + 10 seconds while live, so an ended stream is
+// gone within 30 seconds, and 30 + 30 otherwise. Sharing keeps the cost flat:
+// however many people watch, the route runs about three times a minute rather
+// than once a minute per viewer. VERIFY_INTERVAL_MS / SEARCH_INTERVAL_MS still
+// gate YouTube quota. tests/youtube-live-cache.test.ts holds these limits.
 export const dynamic = 'force-dynamic'
+
+const LIVE_CACHE = 'public, s-maxage=20, stale-while-revalidate=10'
+const OFFLINE_CACHE = 'public, s-maxage=30, stale-while-revalidate=30'
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
 const SEARCH_INTERVAL_MS = 15 * 60 * 1000 // 15 minutes between search.list calls (100 units each)
@@ -88,7 +95,7 @@ export async function GET() {
         watchUrl: `https://www.youtube.com/watch?v=${status.videoId}`,
         viewers: status.viewers,
       }, {
-        headers: { 'Cache-Control': 'no-store, must-revalidate' },
+        headers: { 'Cache-Control': LIVE_CACHE },
       })
     }
 
@@ -133,7 +140,7 @@ export async function GET() {
             embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1`,
             watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
           }, {
-            headers: { 'Cache-Control': 'no-store, must-revalidate' },
+            headers: { 'Cache-Control': LIVE_CACHE },
           })
         } else {
           console.log('[YouTube Live] 🔍 search.list found no live stream')
@@ -149,7 +156,7 @@ export async function GET() {
       hasUpcoming: false,
       message: 'No live stream currently',
     }, {
-      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=30' },
+      headers: { 'Cache-Control': OFFLINE_CACHE },
     })
   } catch (error) {
     console.error('Error checking livestream status:', error)

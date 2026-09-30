@@ -1,4 +1,8 @@
-export const dynamic = 'force-dynamic'
+// Built once and shared by every visitor instead of rebuilt per visit. Schedule
+// edits and the daily Coptic job rebuild it at once (revalidatePath in
+// app/api/schedule, app/api/weekly-services and app/api/coptic/cron), so the
+// hour is only a backstop.
+export const revalidate = 3600
 
 import type { Metadata } from 'next'
 import { SITE_URL } from '@/lib/constants'
