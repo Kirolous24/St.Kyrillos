@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { isUniqueViolation } from '@/lib/prisma-errors'
-import { auth } from '@/lib/auth'
+import { siteAdminSession } from '@/lib/site-admin'
 import { logActivity, formatEventDetail } from '@/lib/activity-log'
 import { dateStrToNoonUTC, isWithinWindow } from '@/lib/schedule-window'
 import { isValidDuration, isValidSortOrder, isValidDateStr } from '@/lib/schedule-validation'
@@ -17,7 +17,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -74,7 +74,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

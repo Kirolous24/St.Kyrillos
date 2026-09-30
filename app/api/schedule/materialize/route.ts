@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import { auth } from '@/lib/auth'
+import { siteAdminSession } from '@/lib/site-admin'
 import { materializeWeeklyServices } from '@/lib/weekly-services-materialize'
 
 // Ensure the rolling window is populated from the enabled weekly services.
@@ -8,7 +8,7 @@ import { materializeWeeklyServices } from '@/lib/weekly-services-materialize'
 // reusable by the daily cron. Auth: an admin session OR the Vercel cron secret.
 export async function POST(request: Request) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     const authHeader = request.headers.get('authorization')
     const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`
 

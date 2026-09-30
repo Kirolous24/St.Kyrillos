@@ -20,6 +20,23 @@
           }
         ]
       }
+    },
+    {
+      "files": ["app/api/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/lib/auth",
+                "importNames": ["auth"],
+                "message": "Use siteAdminSession() from @/lib/site-admin. auth() also returns portal logins, children's included, and middleware.ts does not guard /api. A route that must admit portal accounts checks session.user.kind itself (see app/api/coptic/refresh)."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+// eslint-disable-next-line no-restricted-imports -- admits the portal's ADMIN too, and checks session.user.kind itself below
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getCopticDayDataBatch } from "@/lib/coptic-api";

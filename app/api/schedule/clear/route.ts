@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/lib/auth'
+import { siteAdminSession } from '@/lib/site-admin'
 
 // DELETE events for a date range
 export async function POST(request: Request) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

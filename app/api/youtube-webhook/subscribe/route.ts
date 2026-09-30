@@ -2,16 +2,24 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { LIVESTREAM, SITE_URL } from '@/lib/constants'
 import { recordHubAttempt, readHubAttempt } from '@/lib/youtube-hub'
+import { siteAdminSession } from '@/lib/site-admin'
 
 const WEBHOOK_SECRET = process.env.YOUTUBE_WEBHOOK_SECRET
 const PUBSUBHUBBUB_HUB = 'https://pubsubhubbub.appspot.com/subscribe'
 
 /**
- * POST — Subscribe (or renew) to YouTube PubSubHubbub notifications.
- * Called by the Vercel cron job every 7 days, or manually.
- * Protected by CRON_SECRET for cron calls.
+ * POST — Subscribe (or renew) to YouTube PubSubHubbub notifications, on
+ * demand. The daily renewal runs through ../cron/route.ts, so nothing calls
+ * this on a schedule. Auth: a website admin or the cron secret. It used to
+ * have none, so anyone could make it write to the database and call the hub.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  const session = await siteAdminSession()
+  const authHeader = request.headers.get('authorization')
+  const isCron = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`
+  if (!session && !isCron) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   try {
     const callbackUrl = `${SITE_URL}/api/youtube-webhook`

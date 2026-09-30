@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { siteAdminSession } from '@/lib/site-admin'
 import { prisma } from '@/lib/prisma'
 
 export async function DELETE() {
-  const session = await auth()
+  const session = await siteAdminSession()
   if (!session || session.user?.name !== 'Kirolous') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

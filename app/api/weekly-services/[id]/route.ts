@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/lib/auth'
+import { siteAdminSession } from '@/lib/site-admin'
 import { isValidDayOfWeek, isValidTime24, isValidDuration, time24ToSortOrder } from '@/lib/schedule-validation'
 import { materializeWeeklyServices } from '@/lib/weekly-services-materialize'
 
@@ -23,7 +23,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = params
@@ -75,7 +75,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id } = params

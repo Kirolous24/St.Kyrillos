@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/lib/auth'
+import { siteAdminSession } from '@/lib/site-admin'
 
 // GET all templates with nested days + events
 export async function GET() {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -33,7 +33,7 @@ export async function GET() {
 // POST create a new template with nested days + events
 export async function POST(request: Request) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

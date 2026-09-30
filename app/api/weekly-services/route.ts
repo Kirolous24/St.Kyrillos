@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
-import { auth } from '@/lib/auth'
+import { siteAdminSession } from '@/lib/site-admin'
 import { isValidDayOfWeek, isValidTime24, isValidDuration, time24ToSortOrder } from '@/lib/schedule-validation'
 import { materializeWeeklyServices } from '@/lib/weekly-services-materialize'
 
@@ -15,7 +15,7 @@ function revalidateScheduleSurfaces() {
 // GET all weekly services ordered by day + time
 export async function GET() {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const services = await prisma.weeklyService.findMany({
@@ -32,7 +32,7 @@ export async function GET() {
 // POST create a new weekly service
 export async function POST(request: Request) {
   try {
-    const session = await auth()
+    const session = await siteAdminSession()
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
