@@ -59,6 +59,9 @@ export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
     coordinatorOf: account.servant
       ? account.servant.classes.filter((c) => c.title === 'COORDINATOR').map((c) => c.classId)
       : [],
+    assistantOf: account.servant
+      ? account.servant.classes.filter((c) => c.title === 'ASSISTANT_COORDINATOR').map((c) => c.classId)
+      : [],
     stageOversight: account.servant?.stageOversight ?? null,
   }
 })

@@ -346,6 +346,7 @@ describe('mayReadExam / mayAuthorExams (staff-only exam surfaces)', () => {
     displayName: 'Test',
     classIds: ['c1'],
     coordinatorOf: [] as string[],
+    assistantOf: [] as string[],
     stageOversight: null as StageKey | null,
   }
   const student: PortalUser = { ...base, role: 'STUDENT', studentId: 's1' }

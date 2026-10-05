@@ -8,12 +8,12 @@ const classes: ClassScope[] = [
   { id: 'hs-girls', stage: 'HIGH_SCHOOL' },
 ]
 
-const admin: PortalUser = { accountId: 'a', role: 'ADMIN', displayName: 'Admin', classIds: [], coordinatorOf: [], stageOversight: null }
-const pastor: PortalUser = { accountId: 'p', role: 'PASTOR', displayName: 'Fr.', classIds: [], coordinatorOf: [], stageOversight: null }
-const servant: PortalUser = { accountId: 's', role: 'SERVANT', displayName: 'S', servantId: 'sv1', classIds: ['kg'], coordinatorOf: [], stageOversight: null }
+const admin: PortalUser = { accountId: 'a', role: 'ADMIN', displayName: 'Admin', classIds: [], coordinatorOf: [], assistantOf: [], stageOversight: null }
+const pastor: PortalUser = { accountId: 'p', role: 'PASTOR', displayName: 'Fr.', classIds: [], coordinatorOf: [], assistantOf: [], stageOversight: null }
+const servant: PortalUser = { accountId: 's', role: 'SERVANT', displayName: 'S', servantId: 'sv1', classIds: ['kg'], coordinatorOf: [], assistantOf: [], stageOversight: null }
 const coordinator: PortalUser = { ...servant, accountId: 'c', coordinatorOf: ['kg'] }
 const stageLead: PortalUser = { ...servant, accountId: 'st', stageOversight: 'ELEMENTARY' }
-const student: PortalUser = { accountId: 'k', role: 'STUDENT', displayName: 'K', studentId: 'stu1', classIds: ['kg'], coordinatorOf: [], stageOversight: null }
+const student: PortalUser = { accountId: 'k', role: 'STUDENT', displayName: 'K', studentId: 'stu1', classIds: ['kg'], coordinatorOf: [], assistantOf: [], stageOversight: null }
 
 describe('visibleClassIds', () => {
   it('admin and pastor see every class', () => {

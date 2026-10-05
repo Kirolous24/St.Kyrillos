@@ -24,6 +24,7 @@ const user = (over: Partial<PortalUser> & Pick<PortalUser, 'role'>): PortalUser 
   displayName: 'Test',
   classIds: [],
   coordinatorOf: [],
+  assistantOf: [],
   stageOversight: null,
   ...over,
 })

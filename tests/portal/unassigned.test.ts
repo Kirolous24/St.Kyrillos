@@ -14,7 +14,7 @@ const classes = [
   { id: '1st', stage: 'ELEMENTARY' as const },
   { id: '7th-8th-boys', stage: 'MIDDLE_SCHOOL' as const },
 ]
-const base = { displayName: 'X', classIds: [] as string[], coordinatorOf: [] as string[], stageOversight: null }
+const base = { displayName: 'X', classIds: [] as string[], coordinatorOf: [] as string[], assistantOf: [] as string[], stageOversight: null }
 const admin: PortalUser = { ...base, accountId: 'a', role: 'ADMIN' }
 const pastor: PortalUser = { ...base, accountId: 'p', role: 'PASTOR' }
 const servant: PortalUser = { ...base, accountId: 's', role: 'SERVANT', servantId: 'sv', classIds: ['kg'] }

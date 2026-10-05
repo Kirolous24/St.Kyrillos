@@ -70,9 +70,10 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
 
   /**
    * Follow-up groups (2026-09-26). A plain servant's list is their own group
-   * plus anybody in their class without a servant; a Coordinator, a stage
-   * overseer, the admin and the pastor see their whole scope, with who each
-   * child is assigned to. This narrows the list only: every case stays openable.
+   * plus anybody in their class without a servant; a Coordinator or Assistant
+   * Coordinator, a stage overseer, the admin and the pastor see their whole
+   * scope, with who each child is assigned to. This narrows the list only:
+   * every case stays openable.
    */
   await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
   const scope = followUpScope(user, classes)

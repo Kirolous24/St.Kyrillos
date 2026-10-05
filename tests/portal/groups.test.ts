@@ -140,13 +140,20 @@ describe('followUpScope', () => {
   const classes = [
     { id: 'kg', stage: 'ELEMENTARY' as const }, { id: '1st', stage: 'ELEMENTARY' as const }, { id: '7th', stage: 'MIDDLE_SCHOOL' as const },
   ]
-  const base = { role: 'SERVANT' as const, classIds: ['kg'], coordinatorOf: [] as string[], stageOversight: null }
+  const base = { role: 'SERVANT' as const, classIds: ['kg'], coordinatorOf: [] as string[], assistantOf: [] as string[], stageOversight: null }
 
   it('a plain servant gets their own class by group', () => {
     expect(followUpScope(base, classes)).toEqual({ whole: [], group: ['kg'] })
   })
   it('a class coordinator sees their class whole', () => {
     expect(followUpScope({ ...base, coordinatorOf: ['kg'] }, classes)).toEqual({ whole: ['kg'], group: [] })
+  })
+  it('an assistant coordinator sees their class whole too', () => {
+    expect(followUpScope({ ...base, assistantOf: ['kg'] }, classes)).toEqual({ whole: ['kg'], group: [] })
+  })
+  it('a title widens only the class it is held in', () => {
+    expect(followUpScope({ ...base, classIds: ['kg', '1st'], assistantOf: ['kg'] }, classes)).toEqual({ whole: ['kg'], group: ['1st'] })
+    expect(followUpScope({ ...base, classIds: ['kg', '1st'], coordinatorOf: ['1st'] }, classes)).toEqual({ whole: ['1st'], group: ['kg'] })
   })
   it('a stage overseer sees their stage whole, and still has their own group elsewhere', () => {
     expect(followUpScope({ ...base, classIds: ['7th'], stageOversight: 'ELEMENTARY' }, classes)).toEqual({ whole: ['kg', '1st'], group: ['7th'] })

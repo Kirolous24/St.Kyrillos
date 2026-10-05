@@ -17,6 +17,8 @@ export interface PortalUser {
   classIds: string[]
   /** Classes where the servant holds the Coordinator title. */
   coordinatorOf: string[]
+  /** Classes where the servant holds the Assistant Coordinator title. */
+  assistantOf: string[]
   stageOversight: StageKey | null
 }
 
@@ -118,8 +120,9 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
         case 'group.manage':
           // Arranging who follows whom is the coordinator's job: the stage
           // overseer for their stage, the class Coordinator for their class.
-          // Plain servants and assistants follow their group; they do not
-          // rearrange everyone else's (follow-up groups, 2026-09-26).
+          // Plain servants and assistants do not rearrange everyone else's
+          // (follow-up groups, 2026-09-26). Assistants see every group in
+          // their class (2026-10-04, `followUpScope`); seeing is not arranging.
           return stageRead || (!!ctx.classId && user.coordinatorOf.includes(ctx.classId))
         case 'unassigned.manage':
           // UNASSIGNED (2026-09-26): any servant of the class may take a child

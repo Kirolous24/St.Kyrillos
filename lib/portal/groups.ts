@@ -200,12 +200,13 @@ export function groupHealth(kids: readonly GroupKid[], servants: readonly GroupS
  * Which classes a person's follow-up list shows whole, and which by group.
  *
  * Admin and the pastor see everything. A stage overseer sees their stage whole,
- * and a class Coordinator their class. A plain servant, assistant coordinators
- * included, sees their own group plus anybody in their class without a servant.
- * This narrows a list; it never changes what anybody may open.
+ * and a class Coordinator or Assistant Coordinator their class (assistants
+ * since 2026-10-04). A plain servant sees their own group plus anybody in their
+ * class without a servant. This narrows a list; it never changes what anybody
+ * may open, and seeing every group is not arranging them (`group.manage`).
  */
 export function followUpScope(
-  user: Pick<PortalUser, 'role' | 'classIds' | 'coordinatorOf' | 'stageOversight'>,
+  user: Pick<PortalUser, 'role' | 'classIds' | 'coordinatorOf' | 'assistantOf' | 'stageOversight'>,
   classes: readonly { id: string; stage: StageKey }[],
 ): { whole: string[]; group: string[] } {
   if (user.role === 'ADMIN' || user.role === 'PASTOR') return { whole: classes.map((c) => c.id), group: [] }
@@ -213,7 +214,7 @@ export function followUpScope(
   const whole: string[] = []
   const group: string[] = []
   for (const c of classes) {
-    if (user.coordinatorOf.includes(c.id) || user.stageOversight === c.stage) whole.push(c.id)
+    if (user.coordinatorOf.includes(c.id) || user.assistantOf.includes(c.id) || user.stageOversight === c.stage) whole.push(c.id)
     else if (user.classIds.includes(c.id)) group.push(c.id)
   }
   return { whole, group }
