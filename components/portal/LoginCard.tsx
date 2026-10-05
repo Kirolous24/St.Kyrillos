@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Eye, KeyRound } from 'lucide-react'
 import { revealLogins } from '@/lib/portal/actions/logins'
+import { revealStudentLogins } from '@/lib/portal/actions/student-logins'
 import { resetServantPin } from '@/lib/portal/actions/admin'
 import { resetStudentPin } from '@/lib/portal/actions/students'
 import { Callout, Card, buttonClass } from './ui'
@@ -10,10 +11,14 @@ import { LoginShareButtons } from './LoginShareButtons'
 import { cn } from '@/lib/utils'
 
 /**
- * A person's ID and PIN, for the admin (option B). The PIN stays hidden until
- * asked for, and every Show is written to the activity log. Reissue works
- * whether or not a PIN is on file; a student is reissued through
- * resetStudentPin, anybody else through resetServantPin.
+ * A person's ID and PIN (option B). The PIN stays hidden until asked for, and
+ * every Show is written to the activity log. Reissue works whether or not a PIN
+ * is on file.
+ *
+ * With `studentId` it is a child's, for whoever can reset that PIN — their
+ * class's servants, the stage overseer and the admin (2026-10-04) — through
+ * the student logins actions and resetStudentPin. Without it, it is a
+ * servant's, for the admin alone, through the admin logins and resetServantPin.
  */
 export function LoginCard({
   accountId,
@@ -42,7 +47,7 @@ export function LoginCard({
   function show() {
     setError('')
     startTransition(async () => {
-      const r = await revealLogins([accountId])
+      const r = studentId ? await revealStudentLogins([studentId]) : await revealLogins([accountId])
       if (!r.ok) return setError(r.error)
       const row = r.data!.rows[0]
       if (row?.pin) setPin(row.pin)

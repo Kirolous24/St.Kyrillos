@@ -192,10 +192,11 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                 <RosterExportButton classId={cls.id} />
               </>
             )}
-            {/* Admin only, and it lives behind its own confirm: the prototype's
-                plaintext PIN export cannot be copied (PINs are hashed), so the
-                equivalent is to reset and print them once. */}
-            {user.role === 'ADMIN' && (
+            {/* The class's IDs and PINs on file (option B), for whoever can
+                reset a child's PIN: the class's servants, the stage overseer
+                and the admin (2026-10-04). Resetting the whole class is still
+                the admin's, on that page. */}
+            {canEditStudents && (
               <LinkButton href={`/portal/classes/${cls.id}/credentials`} variant="secondary">
                 <KeyRound className="h-4 w-4" aria-hidden /> Logins &amp; PINs
               </LinkButton>

@@ -136,6 +136,8 @@ const ROUTES = {
     notFound: [
       '/portal/classes/does-not-exist',
       '/portal/classes/high-school-girls',
+      // Another class's children's IDs and PINs (2026-10-04): never.
+      '/portal/classes/high-school-girls/credentials',
       '/portal/students/nope123',
       '/portal/exams/nope123',
       '/portal/follow-ups/nope123',
@@ -205,7 +207,12 @@ async function main() {
       continue
     }
     const plan = ROUTES[account.role]
-    for (const route of [...ROUTES.common, ...plan.ok, ...(plan.ok2 || [])]) await checkOk(jar, account.role, route)
+    // A servant opens their own class's IDs and PINs (2026-10-04). The backup
+    // keeps the old app's class ids; the import slugged them (slugifyClassId).
+    const own = account.role === 'servant' && account.classId
+      ? [`/portal/classes/${String(account.classId).toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}/credentials`]
+      : []
+    for (const route of [...ROUTES.common, ...plan.ok, ...(plan.ok2 || []), ...own]) await checkOk(jar, account.role, route)
     for (const route of plan.gone) await checkGone(jar, account.role, route)
     for (const route of plan.notFound ?? []) await checkNotFound(jar, account.role, route)
   }

@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { KeyRound, Printer } from 'lucide-react'
 import { resetClassPins, type ClassCredential } from '@/lib/portal/actions/admin'
-import { reissuePins, revealLogins } from '@/lib/portal/actions/logins'
+import { reissueStudentPins, revealStudentLogins } from '@/lib/portal/actions/student-logins'
 import { CONFIRM_PHRASE } from '@/lib/portal/reports'
 import { Card, Callout, buttonClass, inputClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
@@ -22,8 +22,9 @@ export interface ClassLogin {
  * Since option B (2026-09-26) the PINs the portal issues keep a sealed copy, so
  * "Current logins" prints the PINs the children already use without changing
  * any of them, and fills the gaps with new PINs only for the ones not on file.
- * The full reset below is still here for a fresh start; it invalidates every
- * PIN in the class, so it takes a typed confirmation.
+ * Since 2026-10-04 that is for the class's servants and stage overseer as well
+ * as the admin. The full reset below is the admin's alone, for a fresh start;
+ * it invalidates every PIN in the class, so it takes a typed confirmation.
  */
 export function ClassCredentials({
   classId,
@@ -31,12 +32,15 @@ export function ClassCredentials({
   studentCount,
   students,
   vaultEnabled,
+  canResetAll,
 }: {
   classId: string
   className: string
   studentCount: number
   students: ClassLogin[]
   vaultEnabled: boolean
+  /** The admin: the whole-class reset. */
+  canResetAll: boolean
 }) {
   const [pending, startTransition] = useTransition()
   const [typed, setTyped] = useState('')
@@ -94,6 +98,8 @@ export function ClassCredentials({
       </>
     )
   }
+
+  if (!canResetAll) return <CurrentLogins students={students} vaultEnabled={vaultEnabled} />
 
   return (
     <>
@@ -155,7 +161,7 @@ export function ClassCredentials({
 
 /**
  * The PINs the class uses now, read from the sealed copies. Nothing changes
- * unless the admin asks for new PINs for the children with none on file.
+ * unless somebody asks for new PINs for the children with none on file.
  */
 function CurrentLogins({ students, vaultEnabled }: { students: ClassLogin[]; vaultEnabled: boolean }) {
   const [pending, startTransition] = useTransition()
@@ -169,10 +175,10 @@ function CurrentLogins({ students, vaultEnabled }: { students: ClassLogin[]; vau
   function show() {
     setError('')
     startTransition(async () => {
-      const ids = students.filter((s) => s.onFile).map((s) => s.accountId)
+      const ids = students.filter((s) => s.onFile).map((s) => s.studentId)
       const next = new Map<string, string | null>(students.map((s) => [s.accountId, null]))
       if (ids.length > 0) {
-        const r = await revealLogins(ids)
+        const r = await revealStudentLogins(ids)
         if (!r.ok) return setError(r.error)
         for (const row of r.data!.rows) next.set(row.accountId, row.pin)
       }
@@ -183,8 +189,8 @@ function CurrentLogins({ students, vaultEnabled }: { students: ClassLogin[]; vau
   function reissueMissing() {
     setError('')
     startTransition(async () => {
-      const r = await reissuePins(
-        missing.map((s) => s.accountId),
+      const r = await reissueStudentPins(
+        missing.map((s) => s.studentId),
         typed,
       )
       if (!r.ok) return setError(r.error)

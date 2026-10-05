@@ -44,8 +44,13 @@ export default async function StudentPage({ params }: { params: { id: string } }
   const ctx = { classId: s.classId ?? undefined, classStage: s.class?.stage, studentId: s.id }
   const canWrite = can(user, 'student.write', ctx)
   const isAdmin = user.role === 'ADMIN'
-  // Option B: the admin sees and reissues this child's login from the Sign-in card.
-  const onFile = isAdmin ? (await onFileAccountIds([s.account.id])).has(s.account.id) : false
+  // The Sign-in card (option B): this child's ID and PIN for whoever can reset
+  // it — their class's servants, the stage overseer and the admin (2026-10-04).
+  // A grown-up who serves now keeps their Student row (F0850); that login is a
+  // servant's, so only the admin sees it, through the admin's own card.
+  const childLogin = s.account.role === 'STUDENT'
+  const showLogin = isAdmin || (canWrite && childLogin)
+  const onFile = showLogin ? (await onFileAccountIds([s.account.id])).has(s.account.id) : false
   const isSelf = user.studentId === s.id
   const today = churchToday()
   // Follow-up groups and contact history are the staff's pastoral record,
@@ -627,10 +632,10 @@ export default async function StudentPage({ params }: { params: { id: string } }
             </Card>
           )}
 
-          {isAdmin && (
+          {showLogin && (
             <LoginCard
               accountId={s.account.id}
-              studentId={s.id}
+              studentId={childLogin ? s.id : undefined}
               loginId={s.account.loginId}
               name={`${s.firstName} ${s.lastName}`.trim()}
               email={s.account.email ?? s.parentEmails[0] ?? null}
@@ -645,7 +650,6 @@ export default async function StudentPage({ params }: { params: { id: string } }
               hasImportNotes={!!s.importNotes}
               isAdmin={isAdmin}
               loginEnabled={s.account.isActive}
-              showPinReset={!isAdmin}
               unassignFrom={s.class && s.account.role === 'STUDENT' ? { id: s.class.id, name: s.class.name } : null}
             />
           )}

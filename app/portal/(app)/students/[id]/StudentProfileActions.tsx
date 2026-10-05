@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Settings } from 'lucide-react'
 import {
-  resetStudentPin,
   clearImportNotes,
   deleteStudentAndRedirect,
   convertStudentToServantAndRedirect,
@@ -15,77 +14,34 @@ import { UNASSIGN_REASON_MAX, UNASSIGN_REASON_MIN } from '@/lib/portal/unassigne
 import { Card, buttonClass, Callout, textareaClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
+/**
+ * A child's PIN is no longer here: since 2026-10-04 everyone who could reset it
+ * has the Sign-in card (components/portal/LoginCard), which shows the PIN on
+ * file, reissues it and shares it with the family.
+ */
 export function StudentProfileActions({
   studentId,
   hasImportNotes,
   isAdmin,
   loginEnabled,
-  showPinReset = true,
   unassignFrom = null,
 }: {
   studentId: string
   hasImportNotes: boolean
   isAdmin: boolean
   loginEnabled: boolean
-  /** False for the admin, whose Sign-in card already shows, reissues and shares the PIN. */
-  showPinReset?: boolean
   /** The class this child can be unassigned from; null when they are in none. */
   unassignFrom?: { id: string; name: string } | null
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [pin, setPin] = useState<{ loginId: string; pin: string } | null>(null)
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState(false)
   const [unassigning, setUnassigning] = useState(false)
   const [reason, setReason] = useState('')
 
   return (
     <Card title="Actions" icon={<Settings className="h-[15px] w-[15px]" />}>
       <div className="space-y-2.5">
-        {showPinReset && (pin ? (
-          <div className="rounded-[12px] border border-brand-gold/40 bg-brand-wash p-3.5 text-center">
-            <p className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">New PIN for ID {pin.loginId}</p>
-            <p className="font-serif text-[26px] font-bold tracking-[0.2em] text-brand-800 tabular-nums">{pin.pin}</p>
-            <p className="mt-1 text-[11px] text-parch-500">Shown once. Give it to the family.</p>
-            {/* F0012 — the PIN is shown once and then gone forever, so an admin
-                was reading eight digits off a screen and retyping them into a
-                message. One wrong digit and the family cannot sign in, and the
-                only fix is another reset. */}
-            <button
-              type="button"
-              className={cn(buttonClass('secondary', 'sm'), 'mt-2.5 min-h-[40px] w-full')}
-              onClick={() => {
-                const text = `St. Kyrillos Sunday School portal\n${window.location.origin}/portal/login\nStudent ID: ${pin.loginId}\nPIN: ${pin.pin}`
-                void navigator.clipboard
-                  ?.writeText(text)
-                  .then(() => {
-                    setError('')
-                    setCopied(true)
-                  })
-                  .catch(() => setError('This browser would not let the portal copy. Write the PIN down instead.'))
-              }}
-            >
-              {copied ? 'Copied — paste it to the family' : 'Copy ID and PIN'}
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            disabled={pending}
-            className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px] w-full')}
-            onClick={() => {
-              if (!confirm('Reset this student\'s PIN? The old PIN will stop working.')) return
-              startTransition(async () => {
-                const r = await resetStudentPin(studentId)
-                if (r.ok) setPin(r.data!)
-                else setError(r.error)
-              })
-            }}
-          >
-            Reset PIN
-          </button>
-        ))}
         {hasImportNotes && (
           <button
             type="button"

@@ -12,15 +12,19 @@ import { pinVaultEnabled } from '@/lib/portal/pin-vault'
 export const metadata = { title: 'Class logins' }
 
 /**
- * Admin-only. Resetting a whole class's PINs locks every one of them out until
- * the printed sheet has been handed round, so it is not a servant's button.
+ * A class's IDs and PINs, for whoever can reset a child's PIN: the class's
+ * servants, the stage overseer and the admin (2026-10-04). Resetting the whole
+ * class stays the admin's: it locks every child out until the printed sheet has
+ * been handed round, so it is not a servant's button.
  */
 export default async function ClassCredentialsPage({ params }: { params: { id: string } }) {
   const user = await requirePortalUser()
-  if (user.role !== 'ADMIN') notFound()
-  const cls = await requireClassAccess(user, params.id, 'class.read')
+  if (user.role === 'STUDENT') notFound()
+  const cls = await requireClassAccess(user, params.id, 'student.write')
   const roster = await prisma.student.findMany({
-    where: { classId: cls.id },
+    // Children's logins only: a grown-up who serves now keeps their Student
+    // row (F0850), and their PIN is a servant's.
+    where: { classId: cls.id, account: { role: 'STUDENT' } },
     orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
     select: { id: true, firstName: true, lastName: true, account: { select: { id: true, loginId: true } } },
   })
@@ -54,6 +58,7 @@ export default async function ClassCredentialsPage({ params }: { params: { id: s
           studentCount={studentCount}
           students={students}
           vaultEnabled={pinVaultEnabled()}
+          canResetAll={user.role === 'ADMIN'}
         />
       )}
     </div>
