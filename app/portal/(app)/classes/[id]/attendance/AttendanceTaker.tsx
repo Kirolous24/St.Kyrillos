@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Check, X, Save, Pencil } from 'lucide-react'
-import { saveAttendance } from '@/lib/portal/actions/attendance'
-import { attendanceChanges } from '@/lib/portal/attendance-rules'
+import { registerMarks, saveAttendance } from '@/lib/portal/actions/attendance'
+import { attendanceChanges, changedMarks, mergeRegister, registerBase, type RegisterMark } from '@/lib/portal/attendance-rules'
 import { Avatar, buttonClass, inputClass, Card } from '@/components/portal/ui'
 import { formatShortDate, formatDateTime } from '@/lib/portal/format'
 import { useChime } from '@/hooks/useChime'
@@ -30,6 +30,15 @@ interface Props {
 
 const NEXT: Record<Status, Status> = { ABSENT: 'PRESENT', PRESENT: 'EXCUSED', EXCUSED: 'ABSENT' }
 
+/** How often an open register asks what the other servants have saved. */
+const REGISTER_SYNC_MS = 15_000
+
+const storedKey = (rows: Props['existing']) =>
+  rows
+    .map((r) => `${r.studentId}:${r.status}:${r.reason ?? ''}`)
+    .sort()
+    .join('|')
+
 /**
  * F0008 — taking the register by tapping names made no sound, while scanning
  * the same children's cards made one for every scan. Tapping is the commoner
@@ -53,20 +62,96 @@ export function AttendanceTaker(props: Props) {
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
-  const initial = useMemo(() => {
-    const map = new Map<string, { status: Status; reason: Reason | null }>()
-    for (const s of props.students) map.set(s.id, { status: 'ABSENT', reason: null })
-    for (const e of props.existing) map.set(e.studentId, { status: e.status, reason: (e.reason as Reason) ?? null })
-    return map
-  }, [props.students, props.existing])
+  // Keyed on the ids themselves: every refresh hands down a new array, and a
+  // new roster would restart the register's sync below for nothing.
+  const rosterKey = props.students.map((s) => s.id).join(',')
+  const roster = useMemo(() => (rosterKey ? rosterKey.split(',') : []), [rosterKey])
 
-  const [marks, setMarks] = useState(initial)
+  /**
+   * The register as stored, and this servant's screen of it, kept in one state
+   * so a merge always sees the stored marks it is merging from.
+   *
+   * Several servants take one register at once (KG, 2026-10-04). `stored`
+   * follows what they all save; `marks` is what is stored plus this servant's
+   * own taps until they save them. A save sends only those taps, so it can
+   * never put back a child another servant has marked since this screen opened.
+   */
+  const [sheet, setSheet] = useState(() => ({
+    stored: props.existing,
+    marks: registerBase(
+      props.students.map((s) => s.id),
+      props.existing,
+    ),
+    lastSaved: props.lastSaved,
+  }))
+  const marks = sheet.marks
+  const setMarks = useCallback(
+    (update: (prev: Map<string, RegisterMark>) => Map<string, RegisterMark>) => setSheet((s) => ({ ...s, marks: update(s.marks) })),
+    [],
+  )
+
+  /** Take in the register as stored now: after this servant's save, or another's. */
+  const take = useCallback(
+    (stored: Props['existing'], lastSaved: Props['lastSaved']) =>
+      setSheet((s) =>
+        storedKey(s.stored) === storedKey(stored) && s.lastSaved?.at === lastSaved?.at
+          ? s
+          : { stored, marks: mergeRegister(roster, s.stored, s.marks, stored), lastSaved },
+      ),
+    [roster],
+  )
+  // The refresh after a save hands down the register as it now stands.
+  useEffect(() => {
+    take(props.existing, props.lastSaved)
+  }, [props.existing, props.lastSaved, take])
+
+  /**
+   * Each servant used to see only their own marks until they reloaded. While
+   * the register is on screen it asks what is stored every few seconds, and at
+   * once when the servant comes back to it. An answer to a question asked
+   * before a save began may predate that save, so it is dropped; the refresh
+   * after the save brings the newer one.
+   */
+  const ignoreBefore = useRef(0)
+  useEffect(() => {
+    let stopped = false
+    let busy = false
+    async function sync() {
+      if (stopped || busy || document.visibilityState !== 'visible') return
+      busy = true
+      const asked = Date.now()
+      try {
+        const r = await registerMarks({ classId: props.classId, date: props.date, sessionKey: props.sessionKey })
+        if (!stopped && r.ok && r.data && asked > ignoreBefore.current) take(r.data.marks, r.data.lastSaved)
+      } catch {
+        // Offline for a moment, or a new deploy: the next tick asks again.
+      } finally {
+        busy = false
+      }
+    }
+    // Also once on arrival: a page served from the browser's cache can be
+    // older than the register.
+    void sync()
+    const timer = window.setInterval(() => {
+      if (document.hasFocus()) void sync()
+    }, REGISTER_SYNC_MS)
+    const wake = () => void sync()
+    document.addEventListener('visibilitychange', wake)
+    window.addEventListener('focus', wake)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', wake)
+      window.removeEventListener('focus', wake)
+    }
+  }, [props.classId, props.date, props.sessionKey, take])
+
   const chime = useChime()
   const [confirming, setConfirming] = useState(false)
   // createPortal needs document, absent during the server render.
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
-  const hasExisting = props.existing.length > 0
+  const hasExisting = sheet.stored.length > 0
   const session = props.sessions.find((s) => s.key === props.sessionKey)
 
   const counts = useMemo(() => {
@@ -80,42 +165,36 @@ export function AttendanceTaker(props: Props) {
   }, [marks])
 
   /**
+   * What this servant has changed from what is stored, with a child nobody has
+   * marked reading as absent: an untouched screen has no changes, so nothing
+   * puts a confirm dialog in front of it. These are the only marks a save
+   * writes (KG, 2026-10-04).
+   */
+  const changes = useMemo(() => changedMarks(roster, sheet.stored, marks), [roster, sheet.stored, marks])
+  const dirty = changes.length > 0
+
+  /**
    * What this save would change, and who gains or loses points by it — the
    * prototype's confirm step. Computed by the unit-tested rule rather than
    * counted inline, because taking a student off PRESENT reverses the points
    * they were given and that has to be named before it happens.
    */
-  /**
-   * Has the servant actually touched the register?
-   *
-   * Not the same question as "does this differ from what is stored": with
-   * nothing stored, every student starts ABSENT, and saving that really would
-   * create rows and mark the day held — a change by any measure. But it is also
-   * the state of a page nobody has touched, so gating on the stored diff put a
-   * confirm dialog in front of an untouched screen.
-   */
-  const dirty = useMemo(() => {
-    for (const [id, m] of Array.from(marks.entries())) {
-      const was = initial.get(id)
-      if (!was || was.status !== m.status || (was.reason ?? null) !== (m.reason ?? null)) return true
-    }
-    return false
-  }, [marks, initial])
-
   const diff = useMemo(
     () =>
       attendanceChanges({
-        marks: Array.from(marks.entries()).map(([studentId, m]) => ({
-          studentId,
-          name: props.students.find((s) => s.id === studentId)?.name ?? '',
-          status: m.status,
-          reason: m.reason,
-        })),
-        existing: props.existing.map((e) => ({ studentId: e.studentId, status: e.status, reason: e.reason })),
+        marks: changes.map((c) => ({ ...c, name: props.students.find((s) => s.id === c.studentId)?.name ?? '' })),
+        existing: sheet.stored.map((e) => ({ studentId: e.studentId, status: e.status, reason: e.reason })),
         sessionPoints: session?.points ?? 0,
       }),
-    [marks, props.existing, props.students, session?.points],
+    [changes, sheet.stored, props.students, session?.points],
   )
+  // Children with no mark stored and none from this servant: a save records
+  // them absent, as it always has, but only where nobody else has marked them.
+  const unmarked = useMemo(() => {
+    const stored = new Set(sheet.stored.map((r) => r.studentId))
+    const changing = new Set(changes.map((c) => c.studentId))
+    return roster.filter((id) => !stored.has(id) && !changing.has(id)).length
+  }, [roster, sheet.stored, changes])
 
   function navigate(date: string, sessionKey: string) {
     router.push(`/portal/classes/${props.classId}/attendance?date=${date}&session=${sessionKey}`)
@@ -169,12 +248,15 @@ export function AttendanceTaker(props: Props) {
     const gained = diff.gains.length
     const lost = diff.losses.length
     const net = diff.netPoints
+    ignoreBefore.current = Date.now()
     startTransition(async () => {
       const result = await saveAttendance({
         classId: props.classId,
         date: props.date,
         sessionKey: props.sessionKey,
-        marks: Array.from(marks.entries()).map(([studentId, m]) => ({ studentId, status: m.status, reason: m.reason })),
+        // Only this servant's changes: the rest of the register may hold other
+        // servants' marks that are newer than this screen.
+        marks: changes.map((c) => ({ studentId: c.studentId, status: c.status, reason: c.reason as Reason | null })),
       })
       if (!result.ok) {
         chime('err')
@@ -192,10 +274,13 @@ export function AttendanceTaker(props: Props) {
           : net > 0
             ? ` +${net} pts for ${gained} student${gained === 1 ? '' : 's'}.`
             : ` ${net} pts from ${lost} student${lost === 1 ? '' : 's'}.`
+      // The register's totals from the server, so another servant's marks count.
+      const t = result.data!
       setMessage({
         kind: 'ok',
-        text: `Saved ${counts.p} present, ${counts.e} excused, ${counts.a} absent.${points}${extra ? ` ${extra}.` : ''}`,
+        text: `Saved ${t.present} present, ${t.excused} excused, ${t.absent} absent.${points}${extra ? ` ${extra}.` : ''}`,
       })
+      ignoreBefore.current = Date.now()
       router.refresh()
     })
   }
@@ -270,8 +355,8 @@ export function AttendanceTaker(props: Props) {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#F3F0EB] px-4 py-2.5">
           <p className="text-[12px] text-parch-500">
             {formatShortDate(props.date)} · {session?.label} · {props.students.length} student{props.students.length === 1 ? '' : 's'}
-            {hasExisting && props.lastSaved && (
-              <span className="block sm:ml-2 sm:inline">Last saved {formatDateTime(new Date(props.lastSaved.at))} by {props.lastSaved.by}</span>
+            {hasExisting && sheet.lastSaved && (
+              <span className="block sm:ml-2 sm:inline">Last saved {formatDateTime(new Date(sheet.lastSaved.at))} by {sheet.lastSaved.by}</span>
             )}
           </p>
           <div className="flex gap-2 print:hidden">
@@ -479,6 +564,13 @@ export function AttendanceTaker(props: Props) {
                 </p>
                 <p className="text-[12.5px] text-parch-600">{diff.reasonOnly.map((r) => r.name).join(', ')}</p>
               </div>
+            )}
+
+            {unmarked > 0 && (
+              <p className="mb-2.5 text-[12px] text-parch-600" data-testid="unmarked-note">
+                {unmarked === 1 ? 'The 1 child' : `The ${unmarked} children`} nobody has marked yet{' '}
+                {unmarked === 1 ? 'is' : 'are'} recorded absent. Marks other servants save are kept.
+              </p>
             )}
 
             <div className="mt-3.5 flex justify-end gap-2">

@@ -180,6 +180,81 @@ export interface MarkChange {
   delta: number
 }
 
+/* ── Several servants on one register ─────────────────────────────────────── */
+
+/**
+ * KG, 2026-10-04: two servants took the same register at once and the second
+ * save erased the first. Each save wrote every child as that servant's screen
+ * showed them, so a screen opened before the other servant saved put their
+ * "present" children back to absent and took their points. The prototype
+ * saved only what each servant changed (OG attSaveFB, L13004); these keep an
+ * open register to that, and in step with what the others save.
+ */
+export interface RegisterMark {
+  status: MarkStatus
+  reason: string | null
+}
+
+const sameMark = (a: RegisterMark, b: RegisterMark) => a.status === b.status && (a.reason ?? null) === (b.reason ?? null)
+
+/** What is stored for each child on the register; a child with no row reads as absent. */
+export function registerBase(roster: readonly string[], stored: readonly StoredMark[]): Map<string, RegisterMark> {
+  const byId = new Map(stored.map((s) => [s.studentId, s]))
+  return new Map(
+    roster.map((id) => {
+      const s = byId.get(id)
+      return [id, s ? { status: s.status, reason: s.reason ?? null } : { status: 'ABSENT' as const, reason: null }]
+    }),
+  )
+}
+
+/** The marks this servant changed from what is stored: the only ones a save writes. */
+export function changedMarks(
+  roster: readonly string[],
+  stored: readonly StoredMark[],
+  local: ReadonlyMap<string, RegisterMark>,
+): Array<{ studentId: string } & RegisterMark> {
+  const base = registerBase(roster, stored)
+  const out: Array<{ studentId: string } & RegisterMark> = []
+  for (const id of roster) {
+    const mine = local.get(id)
+    if (mine && !sameMark(mine, base.get(id)!)) out.push({ studentId: id, status: mine.status, reason: mine.reason ?? null })
+  }
+  return out
+}
+
+/** Who saved a register last, and when: its most recently written mark. */
+export function lastSavedOf(
+  rows: readonly { updatedAt: Date; markedBy: { displayName: string } | null }[],
+): { at: Date; by: string } | null {
+  return rows.reduce<{ at: Date; by: string } | null>((acc, r) => {
+    if (!acc || r.updatedAt > acc.at) return { at: r.updatedAt, by: r.markedBy?.displayName ?? 'a former servant' }
+    return acc
+  }, null)
+}
+
+/**
+ * Bring an open register up to date with what is stored now. A child this
+ * servant has not touched since `wasStored` takes the stored mark, which may be
+ * another servant's; a child they have touched keeps their tap until they save
+ * it or put it back.
+ */
+export function mergeRegister(
+  roster: readonly string[],
+  wasStored: readonly StoredMark[],
+  local: ReadonlyMap<string, RegisterMark>,
+  nowStored: readonly StoredMark[],
+): Map<string, RegisterMark> {
+  const was = registerBase(roster, wasStored)
+  const now = registerBase(roster, nowStored)
+  return new Map(
+    roster.map((id) => {
+      const mine = local.get(id)
+      return [id, !mine || sameMark(mine, was.get(id)!) ? now.get(id)! : mine]
+    }),
+  )
+}
+
 export interface AttendanceChanges {
   gains: MarkChange[]
   losses: MarkChange[]

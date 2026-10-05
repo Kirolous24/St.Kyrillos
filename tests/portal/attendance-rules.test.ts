@@ -6,7 +6,11 @@ import {
   latestHeldStatus,
   isFutureDate,
   attendanceChanges,
+  registerBase,
+  changedMarks,
+  mergeRegister,
 } from '@/lib/portal/attendance-rules'
+import type { RegisterMark } from '@/lib/portal/attendance-rules'
 
 type S = 'PRESENT' | 'EXCUSED' | 'ABSENT'
 const h = (rows: Array<[string, S]>) => rows.map(([date, status]) => ({ date, status }))
@@ -320,5 +324,61 @@ describe('attendanceChanges', () => {
       sessionPoints: 2,
     })
     expect(r.createsEmptyRegister).toBe(false)
+  })
+})
+
+/**
+ * KG, 2026-10-04: two servants took the same register at once and the second
+ * save erased the first, because every save wrote every child as that
+ * servant's screen showed them. A save now writes only what that servant
+ * changed, and an open register takes in what the others saved.
+ */
+describe('two servants on one register', () => {
+  const sheet = (entries: Array<[string, RegisterMark]>) => new Map<string, RegisterMark>(entries)
+  const roster = ['a', 'b', 'c']
+  const absent = { status: 'ABSENT' as const, reason: null }
+  const present = { status: 'PRESENT' as const, reason: null }
+
+  it('reads a child with nothing stored as absent', () => {
+    expect(registerBase(roster, [{ studentId: 'a', status: 'PRESENT', reason: null }])).toEqual(
+      sheet([['a', present], ['b', absent], ['c', absent]]),
+    )
+  })
+
+  it('saves only the children whose mark differs from what is stored', () => {
+    const stored = [{ studentId: 'a', status: 'PRESENT' as const, reason: null }]
+    const local = sheet([['a', present], ['b', absent], ['c', present]])
+    expect(changedMarks(roster, stored, local)).toEqual([{ studentId: 'c', status: 'PRESENT', reason: null }])
+  })
+
+  it('counts a new excuse reason as a change', () => {
+    const stored = [{ studentId: 'b', status: 'EXCUSED' as const, reason: 'sick' }]
+    const local = sheet([['a', absent], ['b', { status: 'EXCUSED' as const, reason: 'travel' }], ['c', absent]])
+    expect(changedMarks(roster, stored, local)).toEqual([{ studentId: 'b', status: 'EXCUSED', reason: 'travel' }])
+  })
+
+  it('shows a child this servant has not touched as another servant saved them', () => {
+    const local = sheet([['a', absent], ['b', present], ['c', absent]])
+    const merged = mergeRegister(roster, [], local, [{ studentId: 'a', status: 'PRESENT', reason: null }])
+    expect(merged.get('a')).toEqual(present)
+    expect(merged.get('b')).toEqual(present)
+  })
+
+  it("keeps this servant's unsaved tap over what another servant saved", () => {
+    const local = sheet([['a', absent], ['b', { status: 'EXCUSED' as const, reason: 'sick' }], ['c', absent]])
+    const merged = mergeRegister(roster, [], local, [{ studentId: 'b', status: 'PRESENT', reason: null }])
+    expect(merged.get('b')).toEqual({ status: 'EXCUSED', reason: 'sick' })
+  })
+
+  it('drops a tap from the changes once another servant has saved the same mark', () => {
+    const local = sheet([['a', present], ['b', absent], ['c', absent]])
+    const now = [{ studentId: 'a', status: 'PRESENT' as const, reason: null }]
+    expect(changedMarks(roster, now, mergeRegister(roster, [], local, now))).toEqual([])
+  })
+
+  it('follows a mark another servant took back', () => {
+    const was = [{ studentId: 'b', status: 'PRESENT' as const, reason: null }]
+    const now = [{ studentId: 'b', status: 'ABSENT' as const, reason: null }]
+    expect(mergeRegister(roster, was, registerBase(roster, was), now).get('b')).toEqual(absent)
   })
 })

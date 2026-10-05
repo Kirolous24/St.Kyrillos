@@ -11,6 +11,7 @@ import { PortalChart } from '@/components/portal/PortalChart'
 import { AttendanceTaker } from './AttendanceTaker'
 import { RemoveRegister } from './RemoveRegister'
 import { registerWhere, sessionsForClass } from '@/lib/portal/class-members'
+import { lastSavedOf } from '@/lib/portal/attendance-rules'
 
 export const metadata = { title: 'Attendance' }
 
@@ -99,10 +100,7 @@ export default async function AttendancePage({
     students.map((st) => ({ id: st.id, name: studentName(st) })),
   )
 
-  const lastSaved = existing.reduce<{ at: Date; by: string } | null>((acc, r) => {
-    if (!acc || r.updatedAt > acc.at) return { at: r.updatedAt, by: r.markedBy?.displayName ?? 'a former servant' }
-    return acc
-  }, null)
+  const lastSaved = lastSavedOf(existing)
 
   return (
     <>

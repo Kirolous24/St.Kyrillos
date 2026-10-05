@@ -7,7 +7,7 @@ import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseDateOnly, toUTCDate, churchToday } from '../dates'
-import { isFutureDate } from '../attendance-rules'
+import { isFutureDate, lastSavedOf } from '../attendance-rules'
 import { syncAutoFollowUps } from '../followup-sync'
 import { registerWhere } from '../class-members'
 import { awardAttendancePoints, reverseAttendancePoints } from '../attendance-award'
@@ -28,7 +28,19 @@ const SaveSchema = z.object({
 
 export type SaveAttendanceInput = z.infer<typeof SaveSchema>
 
-export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionResult<{ saved: number; opened: number; closed: number }>> {
+/**
+ * Save the marks a servant changed on a register.
+ *
+ * `marks` is what this servant changed, not the whole register (KG,
+ * 2026-10-04). Several servants take one register at once, and each screen is
+ * as old as the moment it opened: writing every child as that screen showed
+ * them let the second save put the first servant's "present" children back to
+ * absent and take their points. Children nobody has marked are still recorded
+ * absent, so the register is complete, but only where nothing is stored.
+ */
+export async function saveAttendance(
+  raw: SaveAttendanceInput,
+): Promise<ActionResult<{ saved: number; opened: number; closed: number; present: number; excused: number; absent: number }>> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = SaveSchema.parse(raw)
@@ -98,6 +110,25 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
           if (m.status === 'PRESENT') await awardAttendancePoints(tx, record, award)
           else await reverseAttendancePoints(tx, record, award)
         }
+
+        // Everyone else on the register is recorded absent, but only where
+        // nothing is stored: ON CONFLICT DO NOTHING leaves another servant's
+        // mark, or a scanned card, exactly as it is.
+        const marked = new Set(marks.map((m) => m.studentId))
+        const unmarked = classStudents.filter((s) => !marked.has(s.id))
+        if (unmarked.length > 0) {
+          await tx.attendanceRecord.createMany({
+            data: unmarked.map((s) => ({
+              studentId: s.id,
+              classId: cls.id,
+              date: day,
+              sessionKey: session.key,
+              status: 'ABSENT' as const,
+              markedById: user.accountId,
+            })),
+            skipDuplicates: true,
+          })
+        }
       },
       { timeout: 60_000, maxWait: 10_000 },
     )
@@ -105,12 +136,14 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
     // The follow-up rule watches Sunday School, and a class's own meeting
     // (2026-09-28). Shared with the QR check-in path so both stay in step (see
     // lib/portal/followup-sync.ts).
+    // The whole register, as before: the children nobody marked were just
+    // recorded absent, and their streaks move too.
     let opened = 0
     let closed = 0
     if (session.key === 'sunday' || session.classId === cls.id) {
       const synced = await syncAutoFollowUps({
         classId: cls.id,
-        studentIds: marks.map((m) => m.studentId),
+        studentIds: classStudents.map((s) => s.id),
         threshold: cls.visitationThreshold,
         asOf: date,
         session: { key: session.key, label: session.label },
@@ -119,14 +152,67 @@ export async function saveAttendance(raw: SaveAttendanceInput): Promise<ActionRe
       closed = synced.closed
     }
 
-    const present = marks.filter((m) => m.status === 'PRESENT').length
-    await audit(user, 'attendance.save', 'class', cls.id, `${cls.name}: ${session.label} on ${date} — ${present}/${marks.length} present`)
+    // The register as it now stands, everybody's marks included, for the
+    // confirmation and the audit line.
+    const totals = await prisma.attendanceRecord.groupBy({
+      by: ['status'],
+      where: { classId: cls.id, date: day, sessionKey: session.key, studentId: { in: classStudents.map((s) => s.id) } },
+      _count: { _all: true },
+    })
+    const count = (status: 'PRESENT' | 'EXCUSED') => totals.find((t) => t.status === status)?._count._all ?? 0
+    const present = count('PRESENT')
+    const excused = count('EXCUSED')
+    const absent = classStudents.length - present - excused
+    await audit(
+      user,
+      'attendance.save',
+      'class',
+      cls.id,
+      `${cls.name}: ${session.label} on ${date} — ${marks.length} changed; ${present}/${classStudents.length} present`,
+    )
 
     revalidatePath('/portal')
     revalidatePath(`/portal/classes/${cls.id}`)
     revalidatePath(`/portal/classes/${cls.id}/attendance`)
     revalidatePath('/portal/follow-ups')
-    return { saved: marks.length, opened, closed }
+    return { saved: marks.length, opened, closed, present, excused, absent }
+  })
+}
+
+const RegisterSchema = z.object({
+  classId: z.string().min(1),
+  date: z.string(),
+  sessionKey: z.string().min(1),
+})
+
+/**
+ * A register as it is stored right now, so an open register can take in what
+ * the other servants saved (KG, 2026-10-04). Read-only, and the same access as
+ * taking the register.
+ */
+export async function registerMarks(
+  raw: z.infer<typeof RegisterSchema>,
+): Promise<
+  ActionResult<{
+    marks: Array<{ studentId: string; status: 'PRESENT' | 'EXCUSED' | 'ABSENT'; reason: string | null }>
+    lastSaved: { at: string; by: string } | null
+  }>
+> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = RegisterSchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, 'attendance.write')
+    const date = parseDateOnly(input.date)
+    if (!date) throw new PortalError('Pick a valid date.')
+    const rows = await prisma.attendanceRecord.findMany({
+      where: { classId: cls.id, date: toUTCDate(date), sessionKey: input.sessionKey },
+      select: { studentId: true, status: true, reason: true, updatedAt: true, markedBy: { select: { displayName: true } } },
+    })
+    const last = lastSavedOf(rows)
+    return {
+      marks: rows.map((r) => ({ studentId: r.studentId, status: r.status, reason: r.reason })),
+      lastSaved: last ? { at: last.at.toISOString(), by: last.by } : null,
+    }
   })
 }
 

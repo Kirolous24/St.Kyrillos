@@ -107,6 +107,28 @@ async function signIn() {
   await page.waitForURL((u) => !String(u).includes('/portal/login'), { timeout: 30000 })
 }
 
+/**
+ * The two-people register check writes on a date before the portal existed,
+ * so nothing real is ever there; its rows, points and audit lines go on cleanup.
+ */
+const REGISTER_DATE = '2025-06-01'
+const runStarted = new Date()
+let register = null                                                  // { classId, sessionKey }
+
+async function cleanupRegister() {
+  if (!register) return 0
+  const where = { classId: register.classId, date: new Date(`${REGISTER_DATE}T00:00:00Z`), sessionKey: register.sessionKey }
+  const rows = await prisma.attendanceRecord.deleteMany({ where })   // linked awards cascade
+  // Compensating rows are not linked to a record; only this run's are removed.
+  await prisma.pointEntry.deleteMany({
+    where: { classId: register.classId, activityKey: register.sessionKey, attendanceRecordId: null, createdAt: { gte: runStarted } },
+  })
+  await prisma.portalAuditLog.deleteMany({
+    where: { entityId: register.classId, action: 'attendance.save', createdAt: { gte: runStarted } },
+  })
+  return rows.count
+}
+
 async function cleanup() {
   const accounts = await prisma.account.findMany({ where: { displayName: { startsWith: TAG } }, select: { id: true } })
   for (const a of accounts) await prisma.account.delete({ where: { id: a.id } }).catch(() => {})
@@ -250,10 +272,106 @@ try {
     }
   }
 
+  /* ---- two people on one register (KG, 2026-10-04) ---- */
+  // Two servants took KG's register at once and the second save erased the
+  // first: each save wrote every child as that screen showed them, so a screen
+  // opened before the other servant saved put their "present" children back to
+  // absent and took their points. A save now writes only its own changes, and
+  // an open register takes in the others' within seconds.
+  console.log('\nregister: two people at once')
+  {
+    const pinByLogin = new Map(backup.users.filter((u) => u.loginId && u.pin).map((u) => [String(u.loginId), String(u.pin)]))
+    const session = await prisma.attendanceSession.findFirst({
+      where: { isActive: true, classId: null, key: { not: 'sunday' } },  // no follow-up rule on these
+      orderBy: { sortOrder: 'asc' },
+      select: { key: true },
+    })
+    const candidates = await prisma.schoolClass.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true,
+        _count: { select: { students: true } },
+        servants: { where: { servant: { account: { isActive: true, role: 'SERVANT' } } }, select: { servant: { select: { account: { select: { loginId: true } } } } } },
+      },
+    })
+    const cls = candidates.find((c) => c._count.students >= 5 && c.servants.some((s) => pinByLogin.has(String(s.servant.account.loginId))))
+    const servantLogin = cls && String(cls.servants.find((s) => pinByLogin.has(String(s.servant.account.loginId))).servant.account.loginId)
+    if (!session || !cls) {
+      check('a class and a session to take a register in', false, `session ${session?.key}, class ${cls?.id}`)
+    } else {
+      register = { classId: cls.id, sessionKey: session.key }
+      await cleanupRegister()                                          // leftovers from a crashed run
+      const url = `/portal/classes/${cls.id}/attendance?date=${REGISTER_DATE}&session=${session.key}`
+      const servantPage = await (await browser.newContext({ viewport: { width: 1280, height: 1000 } })).newPage()
+      servantPage.on('response', (r) => { if (r.status() >= 500) serverErrors.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`) })
+      await servantPage.goto(BASE + '/portal/login', { waitUntil: 'networkidle' })
+      await servantPage.waitForTimeout(1500)                           // hydration
+      await servantPage.locator('#loginId').pressSequentially(servantLogin, { delay: 30 })
+      await servantPage.locator('#pin').pressSequentially(pinByLogin.get(servantLogin), { delay: 30 })
+      await servantPage.waitForSelector('button[type="submit"]:not([disabled])', { timeout: 15000 })
+      await servantPage.click('button[type="submit"]')
+      await servantPage.waitForURL((u) => !String(u).includes('/portal/login'), { timeout: 30000 })
+
+      // Both screens open before anybody saves.
+      const cardSel = 'button[aria-label$="Tap to change."]'
+      for (const p of [page, servantPage]) {
+        await p.goto(BASE + url, { waitUntil: 'networkidle' })
+        await p.waitForSelector(cardSel, { timeout: 20000 })
+        await p.waitForTimeout(800)
+      }
+      const names = await page.locator(cardSel).evaluateAll((els) =>
+        els.map((el) => el.getAttribute('aria-label').replace(/: (absent|present|excused)\. Tap to change\.$/, '')))
+      const first = names.slice(0, 3)
+      const second = names.slice(3, 5)
+      const card = (p, n) => p.locator(`button[aria-label^="${n.replace(/"/g, '\\"')}: "][aria-label$="Tap to change."]`)
+      const shown = async (p, list) => Promise.all(list.map(async (n) => (await card(p, n).getAttribute('aria-pressed')) === 'true'))
+      const markAndSave = async (p, list) => {
+        for (const n of list) await card(p, n).click()
+        await p.locator('div.sticky button', { hasText: /Save attendance|Update attendance/ }).click()
+        const dialog = p.locator('[role="dialog"][aria-label="Confirm attendance"]')
+        await dialog.waitFor({ timeout: 10000 })
+        await dialog.locator('button', { hasText: /^\s*Save\s*$/ }).click()
+        await p.locator('[role="status"]', { hasText: /^Saved/ }).waitFor({ timeout: 30000 })
+        await p.waitForLoadState('networkidle').catch(() => {})
+        await p.waitForTimeout(1500)
+      }
+      await markAndSave(page, first)                                   // the admin, first
+      await markAndSave(servantPage, second)                           // the servant, on a screen opened before that save
+
+      const kids = await prisma.student.findMany({ where: { classId: cls.id }, select: { id: true, firstName: true, lastName: true } })
+      const idOf = (n) => kids.find((k) => [k.firstName, k.lastName].filter(Boolean).join(' ') === n)?.id
+      const rows = await prisma.attendanceRecord.findMany({
+        where: { classId: cls.id, date: new Date(`${REGISTER_DATE}T00:00:00Z`), sessionKey: session.key },
+        select: { studentId: true, status: true, pointEntry: { select: { undone: true } } },
+      })
+      const row = (n) => rows.find((r) => r.studentId === idOf(n))
+      check("a second servant's save keeps the first one's marks", first.every((n) => row(n)?.status === 'PRESENT'),
+        first.map((n) => row(n)?.status ?? 'no row').join(','))
+      check('and their points', first.every((n) => row(n)?.pointEntry?.undone === false))
+      check("the second servant's own marks are saved", second.every((n) => row(n)?.status === 'PRESENT'),
+        second.map((n) => row(n)?.status ?? 'no row').join(','))
+      check('every other child is recorded, as before', rows.length === names.length, `${rows.length}/${names.length}`)
+      const secondSees = await shown(servantPage, first)
+      check("the second screen shows the first servant's marks after saving", secondSees.every(Boolean), secondSees.join(','))
+      let firstSees = []
+      const deadline = Date.now() + 25000
+      do {
+        firstSees = await shown(page, second)
+        if (firstSees.every(Boolean)) break
+        await page.waitForTimeout(1000)
+      } while (Date.now() < deadline)
+      check("the first screen takes in the second servant's marks, no reload", firstSees.every(Boolean), firstSees.join(','))
+      await servantPage.context().close()
+    }
+  }
+
   check('no 5xx responses during writes', serverErrors.length === 0, serverErrors.join(', '))
 } finally {
   const swept = await cleanup()
   if (swept) console.log(`\ncleanup: removed ${swept} leftover ${TAG} record(s)`)
+  const marks = await cleanupRegister().catch(() => 0)
+  if (marks) console.log(`cleanup: removed the ${marks}-mark test register`)
   await browser.close()
   await prisma.$disconnect()
 }
