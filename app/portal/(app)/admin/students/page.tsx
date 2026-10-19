@@ -48,7 +48,11 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
     },
     orderBy: [{ class: { sortOrder: 'asc' } }, { firstName: 'asc' }, { lastName: 'asc' }],
     take: 500,
-    select: { id: true, firstName: true, lastName: true, grade: true, classId: true, importNotes: true, class: { select: { name: true } }, account: { select: { loginId: true, photo: true, lastLoginAt: true } } },
+    select: {
+      id: true, firstName: true, lastName: true, grade: true, classId: true, importNotes: true,
+      fatherPhone: true, motherPhone: true,
+      class: { select: { name: true } }, account: { select: { loginId: true, photo: true, lastLoginAt: true, phone: true } },
+    },
   })
   const flagged = students.filter((s) => s.importNotes).length
 

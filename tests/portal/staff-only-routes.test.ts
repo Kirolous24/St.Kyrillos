@@ -31,7 +31,9 @@ describe('middleware: /portal/classes is staff-only', () => {
 
   it('does not block student routes that merely start with the same letters', () => {
     expect(visit('/portal/my-qr', 'STUDENT')).toBe('allowed')
-    expect(visit('/portal/leaderboard', 'STUDENT')).toBe('allowed')
+    // The leaderboard was here until 2026-10-19, when it became staff-only
+    // (kids see only their own points; tests/portal/kids-own-points.test.ts).
+    expect(visit('/portal/grades', 'STUDENT')).toBe('allowed')
     expect(visit('/portal/feed', 'STUDENT')).toBe('allowed')
   })
 })

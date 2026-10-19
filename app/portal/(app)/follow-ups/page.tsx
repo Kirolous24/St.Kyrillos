@@ -1,5 +1,5 @@
 import Link from '@/components/portal/Link'
-import { HeartHandshake, MessageSquare, CalendarClock, CircleCheck, CircleAlert } from 'lucide-react'
+import { HeartHandshake, MessageSquare, CalendarClock, CircleCheck, CircleAlert, Send } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { rostersWhere } from '@/lib/portal/class-members'
 import { requirePortalUser } from '@/lib/portal/session'
@@ -16,6 +16,14 @@ import { ClosedCaseCleanup } from './ClosedCaseCleanup'
 import { AssigneeFilter } from './AssigneeFilter'
 import { followUpScope } from '@/lib/portal/groups'
 import { assigneeByStudent, ensureInitialSplits, followUpCaseWhere, groupSummaries, loadClassGroups } from '@/lib/portal/data/groups'
+import { dueCaseWhere, excusedCaseWhere, excusesByStudent } from '@/lib/portal/data/excuses'
+import { currentExcuse, excuseState } from '@/lib/portal/excuses'
+import { ExcuseNote } from '@/components/portal/ExcuseNote'
+import { ExcuseControl } from '@/components/portal/ExcuseControl'
+import { KidPhones } from '@/components/portal/KidPhones'
+import { caseMessages } from '@/lib/portal/data/family-messages'
+import { fillMessage } from '@/lib/portal/family-messages'
+import { can } from '@/lib/portal/permissions'
 import type { Prisma } from '@prisma/client'
 
 export const metadata = { title: 'Follow-ups' }
@@ -130,18 +138,39 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
   // A Coordinator who also has a group sees their own children first, in the
   // same worst-first order; everyone else's follow.
   const mine = (c: (typeof fetched)[number]) => !!user.servantId && assignee.get(c.student.id)?.servantId === user.servantId
-  const cases = [...fetched.filter(mine), ...fetched.filter((c) => !mine(c))]
-  // Counts for the two summary tiles — display only, same scope as the list.
-  const [openCount, doneCount, summaries] = await Promise.all([
-    prisma.followUpCase.count({ where: { AND: [listWhere, { status: 'OPEN' }] } }),
+  const ordered = [...fetched.filter(mine), ...fetched.filter((c) => !mine(c))]
+  // Follow-up excuses (2026-10-19): a child excused today stays on the list,
+  // in its own section, and is not a call anybody owes.
+  const excuses = await excusesByStudent(fetched.map((c) => c.student.id), { endingFrom: today })
+  const excuseFor = (studentId: string) => currentExcuse(excuses.get(studentId) ?? [], today)
+  const excusedNow = (c: (typeof fetched)[number]) => {
+    const e = excuseFor(c.student.id)
+    return !!e && excuseState(e, today) === 'active'
+  }
+  const cases = showDone ? ordered : ordered.filter((c) => !excusedNow(c))
+  const excusedCases = showDone ? [] : ordered.filter(excusedNow)
+  // Counts for the summary tiles — display only, same scope as the list.
+  // "Open" is the calls still owed; the excused are counted apart.
+  const [openCount, excusedCount, doneCount, summaries, messages] = await Promise.all([
+    prisma.followUpCase.count({ where: { AND: [listWhere, { status: 'OPEN' }, dueCaseWhere(today)] } }),
+    prisma.followUpCase.count({ where: { AND: [listWhere, { status: 'OPEN' }, excusedCaseWhere(today)] } }),
     prisma.followUpCase.count({ where: { AND: [listWhere, { status: 'DONE' }] } }),
     coordinatorView ? groupSummaries(scope.whole) : Promise.resolve([]),
+    // Each class's own message for the composer (2026-10-19).
+    caseMessages(Array.from(new Set(fetched.map((c) => c.classId))), today),
   ])
+  const messageFor = (c: (typeof fetched)[number]) => {
+    const m = messages.get(c.classId)
+    return m ? fillMessage(m.body, { name: c.student.firstName.trim() || studentName(c.student), meeting: m.meeting, date: m.date }) : ''
+  }
+  // One message to every family whose child missed a meeting, when the page
+  // shows one class this person follows up.
+  const messageClass = classes.length === 1 && can(user, 'followup.write', { classId: classes[0]!.id, classStage: classes[0]!.stage }) ? classes[0]! : null
   // F0121 — the list is capped but the tiles counted everything, so a church
   // with 250 open cases read "250" above a list of 200 and nothing said the
   // list had stopped.
-  const shownCount = showDone ? doneCount : openCount
-  const truncated = cases.length >= CASE_LIMIT && shownCount > cases.length
+  const shownCount = showDone ? doneCount : openCount + excusedCount
+  const truncated = ordered.length >= CASE_LIMIT && shownCount > ordered.length
   // The pastor holds 'followup.write' and the prototype let them open manual
   // cases church-wide; only this page's own flag was stopping them.
   const canCreate = true
@@ -178,7 +207,8 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
 
   const caseCard = (c: (typeof cases)[number]) => {
               const ageDays = daysBetween(formatDateOnly(c.createdAt), today)
-              const urgent = !showDone && ageDays >= 14
+              const excuse = excuseFor(c.student.id)
+              const urgent = !showDone && ageDays >= 14 && !excusedNow(c)
               return (
                 <Card
                   key={c.id}
@@ -208,6 +238,17 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                   bodyClassName="p-0"
                 >
                   <p className="border-b border-[#F5F2ED] px-[18px] py-2.5 text-[12.5px] text-parch-700">{c.title}</p>
+                  {/* The family's numbers on the card itself, and the child's
+                      excuse when they have one (2026-10-19). */}
+                  <div className="space-y-2 border-b border-[#F5F2ED] px-[18px] py-2.5">
+                    <KidPhones
+                      name={studentName(c.student)}
+                      fatherPhone={c.student.fatherPhone}
+                      motherPhone={c.student.motherPhone}
+                      ownPhone={c.student.account.phone}
+                    />
+                    {excuse && <ExcuseNote excuse={excuse} today={today} />}
+                  </div>
                   <dl className="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-4">
                     <Detail label="Class" value={c.class.name} />
                     {/* Follow-up groups: whose child this is. */}
@@ -275,13 +316,21 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                     </LinkButton>
                     <CaseQuickActions
                       caseId={c.id}
+                      studentId={c.student.id}
+                      classId={c.classId}
                       studentName={studentName(c.student)}
+                      message={messageFor(c)}
                       emails={emailsFor(c.student)}
                       phones={phonesFor(c.student)}
                       primaryPhone={telFor(c.student)}
                       primaryWa={waFor(c.student)}
                     />
                   </div>
+                  {!showDone && (
+                    <div className="px-[18px] pb-3.5 print:hidden">
+                      <ExcuseControl studentId={c.student.id} studentName={studentName(c.student)} today={today} excuse={excuse} />
+                    </div>
+                  )}
                 </Card>
               )
   }
@@ -335,6 +384,11 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                 All classes
               </LinkButton>
             )}
+            {messageClass && (
+              <LinkButton href={`/portal/classes/${messageClass.id}/message`} variant="secondary">
+                <Send className="h-4 w-4" aria-hidden /> Message families
+              </LinkButton>
+            )}
           </>
         }
       />
@@ -346,7 +400,13 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
           tone={openCount > 0 ? 'warn' : 'good'}
           accent={openCount > 0 ? '#D97706' : '#16A34A'}
           icon={<CircleAlert className="h-6 w-6" />}
-          hint={openCount > 0 ? 'Waiting on a contact' : 'Everyone is accounted for'}
+          hint={
+            excusedCount > 0
+              ? `${excusedCount} more excused for now`
+              : openCount > 0
+                ? 'Waiting on a contact'
+                : 'Everyone is accounted for'
+          }
         />
         <StatCard
           label="Resolved"
@@ -401,7 +461,9 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
             </span>
             <span className="block text-[13px] font-semibold text-parch-800">
               {openCount + doneCount === 0
-                ? 'No cases yet'
+                ? excusedCount > 0
+                  ? `None waiting · ${excusedCount} excused`
+                  : 'No cases yet'
                 : `${openCount} of ${openCount + doneCount} still open`}
             </span>
           </div>
@@ -442,6 +504,10 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
           <Link href="/portal/my-group" className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
             Open My Group
           </Link>
+          {' · '}
+          <Link href="/portal/my-group?tab=class" className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
+            Follow up any child in Class Groups
+          </Link>
         </p>
       ) : null}
 
@@ -471,12 +537,27 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
               </section>
             ))
           )}
+          {/* Follow-up excuses (2026-10-19): still on the list, apart, with the
+              reason and who gave it. When the excuse ends they move back up on
+              their own if they are still missing. */}
+          {excusedCases.length > 0 && (
+            <section className="space-y-3" data-testid="excused-cases">
+              <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#F0EBE3] pb-1.5 pt-1">
+                <h2 className="font-serif text-[13.5px] font-bold text-brand-800">Excused for now</h2>
+                <Badge tone="info">{excusedCases.length}</Badge>
+              </header>
+              <p className="text-[12px] text-parch-600">
+                Away for a while, for the reason a servant gave. Nobody needs to follow them up until the excuse ends.
+              </p>
+              {excusedCases.map((c) => caseCard(c))}
+            </section>
+          )}
           {/* F0121 — the tiles above count every case; the list stops at 200.
               Without saying so, a church with 250 open cases reads "250" over a
               list of 200 and has no way to know 50 children are not on it. */}
           {truncated && (
             <Callout tone="warn">
-              Showing the {cases.length} most pressing of {shownCount}. Narrow by class to see the rest —
+              Showing the {ordered.length} most pressing of {shownCount}. Narrow by class to see the rest —
               the counts above are the true totals.
             </Callout>
           )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { RESOLVE_REASONS, resolveReasonLabel, contactMethodLabel } from '@/lib/portal/followups'
+import { RESOLVE_REASONS, resolveReasonLabel, contactMethodLabel, writtenForGroupOf } from '@/lib/portal/followups'
 
 describe('resolveReasonLabel', () => {
   it('uses the church’s wording, not the database value', () => {
@@ -92,4 +92,24 @@ describe('the note actions check who may change a note first', async () => {
       expect(body).toMatch(/await audit\(/)
     })
   }
+})
+
+// Following up on a colleague's behalf (2026-10-19): any servant of the class
+// may log a call on any child, and the record says whose group it was for.
+describe('writtenForGroupOf', () => {
+  it("names the group when someone else's servant wrote the note", () => {
+    expect(writtenForGroupOf({ groupServantId: 'sv-mariam', groupServantName: 'Mary Servant', byServantId: 'sv-george' })).toBe('Mary Servant')
+  })
+
+  it('says nothing when the child’s own servant wrote it', () => {
+    expect(writtenForGroupOf({ groupServantId: 'sv-mariam', groupServantName: 'Mary Servant', byServantId: 'sv-mariam' })).toBeNull()
+  })
+
+  it('names the group when the admin or the pastor wrote it', () => {
+    expect(writtenForGroupOf({ groupServantId: 'sv-mariam', groupServantName: 'Mary Servant', byServantId: null })).toBe('Mary Servant')
+  })
+
+  it('says nothing when the child had no servant, or the note is older than groups', () => {
+    expect(writtenForGroupOf({ groupServantId: null, groupServantName: null, byServantId: 'sv-george' })).toBeNull()
+  })
 })

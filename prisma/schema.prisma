@@ -205,6 +205,8 @@ model Account {
   failedAttempts Int        @default(0)
   lockedUntil    DateTime?
   lastLoginAt    DateTime?
+  // Servant assignment notices by email (2026-10-19); only while no phone has notifications on.
+  noticeEmails   Boolean    @default(true)
   legacyUid      String?    @unique // Firebase Auth uid from the prototype
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -222,6 +224,11 @@ model Account {
   casesCreated      FollowUpCase[]      @relation("CaseCreatedBy")
   casesResolved     FollowUpCase[]      @relation("CaseResolvedBy")
   caseLogs          FollowUpLog[]       @relation("CaseLogBy")
+  // Follow-up excuses this account set or last changed (2026-10-19).
+  excusesCreated    FollowUpExcuse[]    @relation("ExcuseCreatedBy")
+  excusesUpdated    FollowUpExcuse[]    @relation("ExcuseUpdatedBy")
+  // A class's message to the families of children who missed a meeting (2026-10-19).
+  meetingMessages   MeetingMessage[]    @relation("MeetingMessageUpdatedBy")
   servantMarked     ServantAttendance[] @relation("ServantAttendanceMarkedBy")
   auditEntries      PortalAuditLog[]
 
@@ -235,6 +242,9 @@ model Account {
   qrTokensCreated      QrToken[]          @relation("QrTokenCreatedBy")
   qrRedemptions        QrRedemption[]
   notificationReads    NotificationRead[]
+  // Servant assignment notices (2026-10-19): the phones that asked for them, and what was sent.
+  pushSubscriptions    PushSubscription[]
+  notices              Notice[]
 
   @@index([role])
 }
@@ -256,21 +266,23 @@ model SchoolClass {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  students      Student[]
-  members       ClassMember[]
-  ownSessions   AttendanceSession[]
-  servants      ClassServant[]
-  attendance    AttendanceRecord[]
-  points        PointEntry[]
-  activities    PointActivity[]
-  followUps     FollowUpCase[]
-  exams         Exam[]
-  quizResults   QuizResult[]
-  lessons       Lesson[]
-  agendaWeeks   AgendaWeek[]
-  feedPosts     FeedPost[]
-  announcements Announcement[]
-  events        PortalEventClass[]
+  students        Student[]
+  members         ClassMember[]
+  ownSessions     AttendanceSession[]
+  servants        ClassServant[]
+  attendance      AttendanceRecord[]
+  points          PointEntry[]
+  activities      PointActivity[]
+  followUps       FollowUpCase[]
+  exams           Exam[]
+  quizResults     QuizResult[]
+  lessons         Lesson[]
+  agendaWeeks     AgendaWeek[]
+  feedPosts       FeedPost[]
+  announcements   Announcement[]
+  events          PortalEventClass[]
+  // What the class says to the families of children who missed a meeting (2026-10-19).
+  meetingMessages MeetingMessage[]
 
   @@index([stage])
 }
@@ -312,12 +324,14 @@ model Student {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
-  attendance  AttendanceRecord[]
-  points      PointEntry[]
-  followUps   FollowUpCase[]
-  contactLogs FollowUpLog[]
+  attendance      AttendanceRecord[]
+  points          PointEntry[]
+  followUps       FollowUpCase[]
+  contactLogs     FollowUpLog[]
+  // Away for a while, with a reason: not to be followed up (2026-10-19).
+  followUpExcuses FollowUpExcuse[]
   // Classes joined beyond the home class (`classId`), 2026-09-28.
-  memberships ClassMember[]
+  memberships     ClassMember[]
 
   quizResults   QuizResult[]
   bibleReadings BibleReadingLog[]
@@ -342,7 +356,9 @@ model Servant {
   classes    ClassServant[]
   attendance ServantAttendance[]
 
-  groupStudents Student[] @relation("StudentGroup")
+  groupStudents Student[]     @relation("StudentGroup")
+  // Contact notes written about a child in this servant's group (2026-10-19).
+  groupCaseLogs FollowUpLog[] @relation("CaseLogGroup")
 
   agendaLead   AgendaWeek[] @relation("AgendaLead")
   agendaBackup AgendaWeek[] @relation("AgendaBackup")
@@ -494,20 +510,68 @@ model FollowUpCase {
 // A contact with a child's family. Since 2026-09-26 any child can have one (a
 // check-in); `caseId` is set when it belongs to an open follow-up case.
 model FollowUpLog {
-  id        String        @id @default(cuid())
-  caseId    String?
-  case      FollowUpCase? @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  studentId String
-  student   Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  method    String // call | text | whatsapp | email | visit | other | resolved
-  note      String?
-  result    String?
-  byId      String?
-  by        Account?      @relation("CaseLogBy", fields: [byId], references: [id], onDelete: SetNull)
-  at        DateTime      @default(now())
+  id               String        @id @default(cuid())
+  caseId           String?
+  case             FollowUpCase? @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  method           String // call | text | whatsapp | email | visit | other | resolved
+  note             String?
+  result           String?
+  byId             String?
+  by               Account?      @relation("CaseLogBy", fields: [byId], references: [id], onDelete: SetNull)
+  at               DateTime      @default(now())
+  // Whose group the child was in when this was written (2026-10-19), so the
+  // log can say a servant followed up on a colleague's behalf. Null when the
+  // child had no servant then, and for notes written before this existed.
+  groupServantId   String?
+  groupServant     Servant?      @relation("CaseLogGroup", fields: [groupServantId], references: [id], onDelete: SetNull)
+  // The meeting a message to the family was about (2026-10-19), so Message
+  // families can say whose family has had theirs. Null for everything else.
+  missedSessionKey String?
+  missedOn         DateTime?     @db.Date
 
   @@index([caseId, at(sort: Desc)])
   @@index([studentId, at(sort: Desc)])
+}
+
+/// A child excused from follow-up for a while (2026-10-19): travelling, ill, a
+/// family matter, in the servant's own words. Both dates are included. While
+/// it lasts the child stays on every list, marked excused, and no automatic
+/// case opens for a Sunday inside it (lib/portal/excuses.ts). Per child, not
+/// per class: a trip is a trip.
+model FollowUpExcuse {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  startsOn    DateTime @db.Date
+  endsOn      DateTime @db.Date
+  reason      String
+  createdById String?
+  createdBy   Account? @relation("ExcuseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  // Who changed it last, if anybody has since it was set.
+  updatedById String?
+  updatedBy   Account? @relation("ExcuseUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt
+
+  @@index([studentId, endsOn])
+}
+
+/// What a class sends the families of the children who missed one of its
+/// meetings (2026-10-19): Friday's Bible Study message need not be Sunday's.
+/// One per class and meeting; any servant who follows the class up may change
+/// it. Until then the class uses STANDARD_MESSAGE (lib/portal/family-messages.ts).
+model MeetingMessage {
+  classId     String
+  class       SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sessionKey  String
+  body        String
+  updatedById String?
+  updatedBy   Account?    @relation("MeetingMessageUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime    @updatedAt
+
+  @@id([classId, sessionKey])
 }
 
 // Weekly servant activities (Fri Bible Study, Sat Vespers, Sun Liturgy, ...).
@@ -885,6 +949,43 @@ model NotificationRead {
 
   @@unique([accountId, key])
   @@index([accountId])
+}
+
+/// A phone or computer that turned on notifications (2026-10-19). `live` says
+/// whether the live site saved it, so a dev copy of the database never pushes
+/// to a phone the live site registered. Forgotten when the push service says
+/// it is gone.
+model PushSubscription {
+  id         String    @id @default(cuid())
+  accountId  String
+  account    Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  live       Boolean
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSentAt DateTime?
+
+  @@index([accountId])
+}
+
+/// A notice sent to a servant (2026-10-19): a part of a Sunday given to them or
+/// taken off them, the evening-before reminder, or a test. Shown in the bell,
+/// whose read state is NotificationRead key notice:{id}; pushed or emailed once.
+/// `dedupeKey` keeps a retried reminder job from sending twice.
+model Notice {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind      String // assigned | unassigned | reminder | test
+  title     String
+  body      String
+  href      String
+  dedupeKey String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([accountId, createdAt(sort: Desc)])
 }
 
 // Portal-wide key/value settings (church contact card, end-of-year bookkeeping,

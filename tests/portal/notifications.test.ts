@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildNotifications,
+  noticeNotifications,
   unreadNotifications,
   ANNOUNCEMENT_FRESH_DAYS,
   STREAK_ALERT,
@@ -258,6 +259,12 @@ describe('withNavBadges', () => {
     expect(out.filter((i) => i.badge !== undefined)).toHaveLength(1)
   })
 
+  it('counts a link to a place on a page against that page (2026-10-19)', () => {
+    const withAssignments = [...nav, { href: '/portal/assignments', label: 'My Assignments' }]
+    const out = withNavBadges(withAssignments, [{ href: '/portal/assignments#week-2026-10-19' }, { href: '/portal/assignments#week-2026-10-26' }])
+    expect(out.find((i) => i.href === '/portal/assignments')?.badge).toBe(2)
+  })
+
   it('cannot badge a destination the nav does not have', () => {
     const out = withNavBadges(nav, [{ href: '/portal/nowhere', count: 9 }])
     expect(out.some((i) => i.badge !== undefined)).toBe(false)
@@ -293,5 +300,27 @@ describe('buildNotifications — follow-up groups', () => {
   it('says nothing to a student', () => {
     const items = buildNotifications('STUDENT', { today: '2026-10-05', groupAttention: [{ classId: 'a', name: 'A' }] })
     expect(items.some((i) => i.key.startsWith('groups:attention'))).toBe(false)
+  })
+})
+
+describe('noticeNotifications (servant assignment notices, 2026-10-19)', () => {
+  it('turns stored notices into bell items keyed notice:{id}', () => {
+    expect(
+      noticeNotifications([
+        { id: 'n1', kind: 'assigned', title: 'New assignment', body: 'You’re on Coptic for Sunday, Oct 25 · 5th & 6th Boys', href: '/portal/assignments#week-2026-10-19' },
+      ]),
+    ).toEqual([
+      {
+        key: 'notice:n1',
+        title: 'New assignment',
+        detail: 'You’re on Coptic for Sunday, Oct 25 · 5th & 6th Boys',
+        href: '/portal/assignments#week-2026-10-19',
+        tone: 'info',
+      },
+    ])
+  })
+
+  it('a taken-off notice is a warning', () => {
+    expect(noticeNotifications([{ id: 'n2', kind: 'unassigned', title: 'Assignment changed', body: 'x', href: '/portal/assignments' }])[0]!.tone).toBe('warn')
   })
 })

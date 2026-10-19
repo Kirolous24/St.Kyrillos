@@ -1,35 +1,205 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { UsersRound, Phone, MessageCircle, Cake, HeartHandshake } from 'lucide-react'
+import { UsersRound } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
+import { can } from '@/lib/portal/permissions'
+import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { ensureInitialSplits, loadClassGroups } from '@/lib/portal/data/groups'
+import { loadKidCards, type KidCardData } from '@/lib/portal/data/group-cards'
 import { effectiveServant } from '@/lib/portal/groups'
-import { classTotals } from '@/lib/portal/data/dashboard'
-import { absenceStreakAgainst, type HistoryRow } from '@/lib/portal/attendance-rules'
-import { churchToday, formatDateOnly, daysBetween, daysUntilBirthday, ageOn } from '@/lib/portal/dates'
-import { waLink } from '@/lib/portal/phones'
-import { PageHeader, Card, Badge, EmptyState, Avatar, SectionTitle, buttonClass } from '@/components/portal/ui'
-import { CheckInButton } from '@/components/portal/CheckInButton'
-import { cn } from '@/lib/utils'
+import { compareKidCards } from '@/lib/portal/group-cards'
+import { churchToday } from '@/lib/portal/dates'
+import { PageHeader, EmptyState, SectionTitle, Tabs, TabLink, Badge } from '@/components/portal/ui'
+import { ClassPicker } from '@/components/portal/ClassPicker'
+import { KidCard } from '@/components/portal/KidCard'
+import { FollowUpLogList } from './FollowUpLogList'
 
 export const metadata = { title: 'My Group' }
 
-const RECENT_SUNDAYS = 8
+type Tab = 'mine' | 'class' | 'log'
+
+/** Who needs a call first, the excused last (lib/portal/group-cards.ts). */
+function ordered(cards: KidCardData[]): KidCardData[] {
+  return [...cards].sort((a, b) =>
+    compareKidCards(
+      { name: a.name, excusedNow: a.excusedNow, openCase: !!a.openCase, daysSinceContact: a.lastContact?.daysAgo ?? null },
+      { name: b.name, excusedNow: b.excusedNow, openCase: !!b.openCase, daysSinceContact: b.lastContact?.daysAgo ?? null },
+    ),
+  )
+}
 
 /**
  * Follow-up groups (2026-09-26): the children a servant follows up, and the
- * page that is about them rather than the whole class. Everything a servant
- * needs before a phone call is on one card: the last few Sundays, whether a
- * case is open, when somebody last reached the family, and a way to log it.
- * The whole class stays one click away; nothing here hides anybody.
+ * page that is about them rather than the whole class.
+ *
+ * Class Groups and the Follow-up log (2026-10-19): some servants are not at
+ * home with the portal, so anybody serving the class can open every group and
+ * follow up on a colleague's behalf — the call is logged as theirs, for that
+ * colleague's group — and the log shows who followed up on whom.
  */
-export default async function MyGroupPage() {
+export default async function MyGroupPage({ searchParams }: { searchParams: { tab?: string; class?: string } }) {
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
   await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
+  const today = churchToday()
 
-  const groups = user.servantId ? await loadClassGroups(user.classIds) : []
+  // The classes this person follows up, their own first. Class Groups and the
+  // log are about one of them at a time.
+  const visible = await listVisibleClasses(user)
+  const followable = visible
+    .filter((c) => can(user, 'followup.write', { classId: c.id, classStage: c.stage }))
+    .sort((a, b) => Number(user.classIds.includes(b.id)) - Number(user.classIds.includes(a.id)))
+  const hasGroup = !!user.servantId && user.classIds.length > 0
+  const tab: Tab = searchParams.tab === 'log' ? 'log' : searchParams.tab === 'class' || !hasGroup ? 'class' : 'mine'
+  const chosen = followable.find((c) => c.id === searchParams.class) ?? followable[0] ?? null
+
+  const href = (t: Tab, classId?: string | null) => {
+    const q = new URLSearchParams()
+    if (t !== 'mine') q.set('tab', t)
+    if (t !== 'mine' && classId) q.set('class', classId)
+    const s = q.toString()
+    return s ? `/portal/my-group?${s}` : '/portal/my-group'
+  }
+
+  const header = (subtitle: string) => (
+    <>
+      <PageHeader title="My Group" icon={<UsersRound className="h-5 w-5" aria-hidden />} subtitle={subtitle} />
+      <Tabs>
+        {hasGroup && (
+          <TabLink href={href('mine')} active={tab === 'mine'}>
+            My Group
+          </TabLink>
+        )}
+        <TabLink href={href('class', chosen?.id)} active={tab === 'class'}>
+          Class Groups
+        </TabLink>
+        <TabLink href={href('log', chosen?.id)} active={tab === 'log'}>
+          Follow-up log
+        </TabLink>
+      </Tabs>
+    </>
+  )
+
+  const classPicker =
+    followable.length > 1 && chosen ? (
+      <div className="mb-4">
+        <ClassPicker
+          value={chosen.id}
+          options={followable.map((c) => ({ id: c.id, name: c.name }))}
+          allowAll={false}
+          keep={{ tab }}
+        />
+      </div>
+    ) : null
+
+  /* ── Follow-up log ─────────────────────────────────────────────────────── */
+  if (tab === 'log') {
+    return (
+      <>
+        {header('Who followed up on whom: every call, text and visit, with who made it')}
+        {!chosen ? (
+          <EmptyState title="No class to show" hint="The log belongs to a class; once you serve one, its follow-ups show here." />
+        ) : (
+          <>
+            {classPicker}
+            <FollowUpLogList classId={chosen.id} className={chosen.name} />
+          </>
+        )}
+      </>
+    )
+  }
+
+  /* ── Class Groups ──────────────────────────────────────────────────────── */
+  if (tab === 'class') {
+    if (!chosen) {
+      return (
+        <>
+          {header('Every group in your class')}
+          <EmptyState title="No class to show" hint="Groups belong to the servants of a class. Once you serve one, its groups show here." />
+        </>
+      )
+    }
+    const [g] = await loadClassGroups([chosen.id])
+    const kids = g?.kids ?? []
+    const cards = await loadKidCards(kids.map((k) => ({ id: k.id, name: k.name, classId: chosen.id })), today)
+    const active = new Set((g?.servants ?? []).map((s) => s.id))
+    const byServant = new Map<string, KidCardData[]>()
+    const unassigned: KidCardData[] = []
+    for (const k of kids) {
+      const card = cards.get(k.id)
+      if (!card) continue
+      const owner = effectiveServant(k.groupServantId, active)
+      if (owner) byServant.set(owner, [...(byServant.get(owner) ?? []), card])
+      else unassigned.push(card)
+    }
+    // Their own group first, then everybody else's in name order.
+    const servants = [...(g?.servants ?? [])].sort(
+      (a, b) => Number(b.id === user.servantId) - Number(a.id === user.servantId) || a.name.localeCompare(b.name),
+    )
+    const members = await prisma.classMember.count({ where: { classId: chosen.id } })
+    const excused = Array.from(cards.values()).filter((c) => c.excusedNow).length
+    return (
+      <>
+        {header(`${chosen.name} · every group, so anyone can follow up on a colleague's behalf`)}
+        {classPicker}
+        <p className="mb-4 rounded-[12px] border border-parch-200 bg-parch-50 px-4 py-2.5 text-[12px] text-parch-700">
+          Log a call or text for any child here. It is recorded as yours, for their servant&rsquo;s group, and shows on the{' '}
+          <Link href={href('log', chosen.id)} className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
+            Follow-up log
+          </Link>
+          .{excused > 0 ? ` ${excused} ${excused === 1 ? 'child is' : 'children are'} excused from follow-up for now.` : ''}
+        </p>
+        {kids.length === 0 ? (
+          <EmptyState title={`No children in ${chosen.name} yet`} />
+        ) : (
+          <div className="space-y-6" data-testid="class-groups">
+            {servants.map((s) => {
+              const mine = ordered(byServant.get(s.id) ?? [])
+              return (
+                <section key={s.id} data-testid="class-group" data-servant={s.id}>
+                  <SectionTitle hint={`${mine.length} ${mine.length === 1 ? 'child' : 'children'}`}>
+                    {s.name}
+                    {s.id === user.servantId ? ' (you)' : ''}
+                  </SectionTitle>
+                  {mine.length === 0 ? (
+                    <p className="text-[12px] text-parch-500">No children in this group yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+                      {mine.map((card) => (
+                        <KidCard key={card.id} card={card} today={today} canWrite />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )
+            })}
+            {unassigned.length > 0 && (
+              <section data-testid="class-group-unassigned">
+                <SectionTitle hint={<Badge tone="warn">{unassigned.length}</Badge>}>No servant yet</SectionTitle>
+                <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+                  {ordered(unassigned).map((card) => (
+                    <KidCard key={card.id} card={card} today={today} canWrite />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+        {members > 0 && (
+          <p className="mt-5 text-[12px] text-parch-600">
+            {members} {members === 1 ? 'child joins' : 'children join'} {chosen.name} from their own class; their groups are in that class.{' '}
+            <Link href={`/portal/classes/${chosen.id}`} className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
+              See the roster
+            </Link>
+          </p>
+        )}
+      </>
+    )
+  }
+
+  /* ── My Group ──────────────────────────────────────────────────────────── */
+  const groups = await loadClassGroups(user.classIds)
   const mineByClass = groups.map((g) => {
     const active = new Set(g.servants.map((s) => s.id))
     return {
@@ -38,198 +208,53 @@ export default async function MyGroupPage() {
       unassigned: g.kids.filter((k) => effectiveServant(k.groupServantId, active) === null).length,
     }
   })
-  const kidIds = mineByClass.flatMap((g) => g.mine.map((k) => k.id))
+  const kidCount = mineByClass.reduce((n, g) => n + g.mine.length, 0)
+  const subtitle = kidCount
+    ? `${kidCount} child${kidCount === 1 ? '' : 'ren'} you follow up · call, check in, and keep an eye on the Sundays`
+    : 'The children you follow up'
 
-  const header = (
-    <PageHeader
-      title="My Group"
-      icon={<UsersRound className="h-5 w-5" aria-hidden />}
-      subtitle={
-        kidIds.length
-          ? `${kidIds.length} child${kidIds.length === 1 ? '' : 'ren'} you follow up · call, check in, and keep an eye on the Sundays`
-          : 'The children you follow up'
-      }
-    />
-  )
-
-  if (kidIds.length === 0) {
+  if (kidCount === 0) {
     return (
       <>
-        {header}
+        {header(subtitle)}
         <EmptyState
           title="You don't have a group yet"
-          hint={
-            user.classIds.length === 0
-              ? 'Groups belong to the servants of a class. Once you serve a class, its children are split between its servants.'
-              : 'Your class has not been split yet, or its coordinator has not given you any children. Ask them to use Split evenly on the class page.'
-          }
+          hint="Your class has not been split yet, or its coordinators have not given you any children. You can still follow up any child of your class from Class Groups."
         />
       </>
     )
   }
 
-  const today = churchToday()
-  const classIds = mineByClass.map((g) => g.classId)
-  const [details, sundayRows, heldRows, openCases, lastContacts, points] = await Promise.all([
-    prisma.student.findMany({
-      where: { id: { in: kidIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        dob: true,
-        createdAt: true,
-        fatherPhone: true,
-        motherPhone: true,
-        account: { select: { phone: true, photo: true } },
-      },
-    }),
-    prisma.attendanceRecord.findMany({
-      where: { studentId: { in: kidIds }, sessionKey: 'sunday' },
-      select: { studentId: true, date: true, status: true },
-    }),
-    // Class-wide: a Sunday the class held with no row for a child is a Sunday
-    // they missed, exactly as the follow-up rule scores it.
-    prisma.attendanceRecord.findMany({
-      where: { classId: { in: classIds }, sessionKey: 'sunday' },
-      distinct: ['classId', 'date'],
-      select: { classId: true, date: true },
-    }),
-    prisma.followUpCase.findMany({ where: { studentId: { in: kidIds }, status: 'OPEN' }, select: { id: true, studentId: true, title: true } }),
-    prisma.followUpLog.groupBy({ by: ['studentId'], where: { studentId: { in: kidIds } }, _max: { at: true } }),
-    classTotals(classIds),
-  ])
-
-  const detailById = new Map(details.map((d) => [d.id, d]))
-  const heldByClass = new Map<string, string[]>()
-  for (const r of heldRows) heldByClass.set(r.classId, [...(heldByClass.get(r.classId) ?? []), formatDateOnly(r.date)])
-  const rowsByKid = new Map<string, HistoryRow[]>()
-  for (const r of sundayRows) {
-    rowsByKid.set(r.studentId, [...(rowsByKid.get(r.studentId) ?? []), { date: formatDateOnly(r.date), status: r.status }])
-  }
-  const caseByKid = new Map(openCases.map((c) => [c.studentId, c]))
-  const lastContactByKid = new Map(lastContacts.map((l) => [l.studentId, l._max.at]))
-
+  const cards = await loadKidCards(
+    mineByClass.flatMap((g) => g.mine.map((k) => ({ id: k.id, name: k.name, classId: g.classId }))),
+    today,
+  )
   return (
     <>
-      {header}
+      {header(subtitle)}
       <div className="space-y-6">
         {mineByClass
           .filter((g) => g.mine.length > 0)
-          .map((g) => {
-            const held = (heldByClass.get(g.classId) ?? []).sort()
-            const recent = held.slice(-RECENT_SUNDAYS)
-            const cards = g.mine
-              .map((k) => {
-                const d = detailById.get(k.id)!
-                const rows = rowsByKid.get(k.id) ?? []
-                const since = formatDateOnly(d.createdAt)
-                const streak = absenceStreakAgainst(held, rows, since)
-                const last = lastContactByKid.get(k.id) ?? null
-                const lastDays = last ? daysBetween(churchToday(last), today) : null
-                return { k, d, rows, streak, last, lastDays, openCase: caseByKid.get(k.id) ?? null }
-              })
-              // Who needs a call first: an open case, then nobody has reached
-              // them yet, then the longest since anybody did.
-              .sort(
-                (a, b) =>
-                  Number(!!b.openCase) - Number(!!a.openCase) ||
-                  (a.lastDays === null ? -1 : 0) - (b.lastDays === null ? -1 : 0) ||
-                  (b.lastDays ?? 0) - (a.lastDays ?? 0) ||
-                  a.k.name.localeCompare(b.k.name),
-              )
-            return (
-              <section key={g.classId} data-testid="my-group-class">
-                <SectionTitle hint={`${g.mine.length} of ${g.kids.length} in the class`}>
-                  <Link href={`/portal/classes/${g.classId}`} className="hover:text-brand-800">
-                    {g.name}
-                  </Link>
-                </SectionTitle>
-                {g.unassigned > 0 && (
-                  <p className="mb-3 text-[12px] text-[#D97706]">
-                    {g.unassigned} {g.unassigned === 1 ? 'child in this class has' : 'children in this class have'} no servant
-                    yet; your coordinator places them from the class page.
-                  </p>
-                )}
-                <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-                  {cards.map(({ k, d, rows, streak, lastDays, openCase }) => {
-                    const byDate = new Map(rows.map((r) => [r.date, r.status]))
-                    const phone = d.fatherPhone || d.motherPhone || d.account.phone
-                    const wa = waLink(phone)
-                    const dob = d.dob ? formatDateOnly(d.dob) : null
-                    const birthdayIn = dob ? daysUntilBirthday(dob, today) : null
-                    return (
-                      <Card key={k.id}>
-                        <div className="flex items-start gap-3" data-testid="my-group-kid" data-student={k.id}>
-                          <Avatar name={k.name} photo={d.account.photo} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <Link href={`/portal/students/${k.id}`} className="font-serif text-[14px] font-bold text-parch-900 hover:text-brand-800">
-                                {k.name}
-                              </Link>
-                              {dob && <span className="text-[11.5px] text-parch-500">· {ageOn(dob, today)}</span>}
-                              {openCase && (
-                                <Link href={`/portal/follow-ups/${openCase.id}`}>
-                                  <Badge tone="warn">
-                                    <HeartHandshake className="h-3 w-3" aria-hidden /> Open case
-                                  </Badge>
-                                </Link>
-                              )}
-                              {birthdayIn !== null && birthdayIn <= 7 && (
-                                <Badge tone="gold">
-                                  <Cake className="h-3 w-3" aria-hidden /> {birthdayIn === 0 ? 'Birthday today' : `Birthday in ${birthdayIn}d`}
-                                </Badge>
-                              )}
-                            </div>
-                            {/* The last few Sundays the class held, oldest first. */}
-                            <div className="mt-1.5 flex items-center gap-1" aria-label="Recent Sundays">
-                              {recent.map((date) => {
-                                const st = date < formatDateOnly(d.createdAt) ? null : byDate.get(date) ?? 'ABSENT'
-                                return (
-                                  <span
-                                    key={date}
-                                    title={`${date}: ${st === null ? 'before they joined' : st.toLowerCase()}`}
-                                    className={cn(
-                                      'inline-block h-2.5 w-2.5 rounded-full',
-                                      st === 'PRESENT' && 'bg-[#16A34A]',
-                                      st === 'EXCUSED' && 'bg-parch-300',
-                                      st === 'ABSENT' && 'border-[1.5px] border-[#DC2626]',
-                                      st === null && 'bg-parch-100',
-                                    )}
-                                  />
-                                )
-                              })}
-                              <span className="ml-1.5 text-[11.5px] text-parch-600">
-                                {recent.length === 0 ? 'No Sundays recorded yet' : streak === 0 ? 'Came last Sunday' : `Missed ${streak} in a row`}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-[11.5px] text-parch-600" data-testid="last-contacted">
-                              {lastDays === null ? 'Not contacted yet' : lastDays === 0 ? 'Contacted today' : `Last contacted ${lastDays} day${lastDays === 1 ? '' : 's'} ago`}
-                              {' · '}
-                              {(points.get(k.id) ?? 0).toLocaleString()} pts
-                            </p>
-                          </div>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                          {phone && (
-                            <a href={`tel:${phone}`} className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px] px-2.5')} aria-label={`Call ${k.name}'s family`}>
-                              <Phone className="h-3.5 w-3.5 text-[#DC2626]" aria-hidden />
-                            </a>
-                          )}
-                          {wa && (
-                            <a href={wa} target="_blank" rel="noopener noreferrer" className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px] px-2.5')} aria-label={`WhatsApp ${k.name}'s family`}>
-                              <MessageCircle className="h-3.5 w-3.5 text-[#16A34A]" aria-hidden />
-                            </a>
-                          )}
-                          <CheckInButton studentId={k.id} studentName={k.name} />
-                        </div>
-                      </Card>
-                    )
-                  })}
-                </div>
-              </section>
-            )
-          })}
+          .map((g) => (
+            <section key={g.classId} data-testid="my-group-class">
+              <SectionTitle hint={`${g.mine.length} of ${g.kids.length} in the class`}>
+                <Link href={`/portal/classes/${g.classId}`} className="hover:text-brand-800">
+                  {g.name}
+                </Link>
+              </SectionTitle>
+              {g.unassigned > 0 && (
+                <p className="mb-3 text-[12px] text-[#D97706]">
+                  {g.unassigned} {g.unassigned === 1 ? 'child in this class has' : 'children in this class have'} no servant
+                  yet; your coordinators place them from the class page.
+                </p>
+              )}
+              <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+                {ordered(g.mine.map((k) => cards.get(k.id)).filter((c): c is KidCardData => !!c)).map((card) => (
+                  <KidCard key={card.id} card={card} today={today} canWrite />
+                ))}
+              </div>
+            </section>
+          ))}
       </div>
     </>
   )

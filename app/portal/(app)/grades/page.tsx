@@ -1,6 +1,7 @@
 import { Star, Sparkles, ClipboardList, Trophy } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
+import { seesClassmatesPoints } from '@/lib/portal/permissions'
 import { requireStudentRead, studentName } from '@/lib/portal/data/students'
 import { classTotals } from '@/lib/portal/data/dashboard'
 import { rankStudents } from '@/lib/portal/points-math'
@@ -68,8 +69,11 @@ export default async function GradesPage({ searchParams }: { searchParams: { stu
   // A rank is only meaningful once someone in the class has scored. With every
   // total at zero rankStudents ties the whole class at #1, and telling a child
   // who has earned nothing that they are first is worse than saying nothing.
+  // Only staff see it: kids see their own points, not where they stand among
+  // the others (2026-10-19).
+  const showRank = seesClassmatesPoints(user)
   let rank: number | undefined
-  if (me?.classId && total > 0) {
+  if (showRank && me?.classId && total > 0) {
     const [classmates, totals] = await Promise.all([
       prisma.student.findMany({ where: { classId: me.classId }, select: { id: true, firstName: true, lastName: true } }),
       classTotals([me.classId]),
@@ -134,11 +138,11 @@ export default async function GradesPage({ searchParams }: { searchParams: { stu
         icon={<Star className="h-5 w-5" />}
       />
 
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className={`mb-5 grid grid-cols-2 gap-3 ${showRank ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
         <StatCard label="Total points" value={total} icon={<Star className="h-4 w-4" />} />
         <StatCard label="Quizzes taken" value={quizzes.length} icon={<ClipboardList className="h-4 w-4" />} />
         <StatCard label="Average score" value={avg === null ? '—' : `${avg}%`} tone={avg === null ? undefined : SCORE_BAND_TONE[scoreBand(avg)]} icon={<Sparkles className="h-4 w-4" />} />
-        <StatCard label="Class rank" value={rank ? `#${rank}` : '—'} icon={<Trophy className="h-4 w-4" />} />
+        {showRank && <StatCard label="Class rank" value={rank ? `#${rank}` : '—'} icon={<Trophy className="h-4 w-4" />} />}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">

@@ -224,6 +224,23 @@ export function buildNotifications(role: Role, facts: NotificationFacts): Portal
     .map(({ item }) => item)
 }
 
+/**
+ * Servant assignment notices (2026-10-19) as bell items. Unlike the rest of the
+ * bell these are stored (Notice), and they go out by phone or email too; the
+ * bell reads them with everything else and dismisses them the same way, by key.
+ */
+export function noticeNotifications(
+  rows: readonly { id: string; kind: string; title: string; body: string; href: string }[],
+): PortalNotification[] {
+  return rows.map((n) => ({
+    key: `notice:${n.id}`,
+    title: n.title,
+    detail: n.body,
+    href: n.href,
+    tone: n.kind === 'unassigned' ? 'warn' : 'info',
+  }))
+}
+
 /** Drop the ones this person has already dismissed. */
 export function unreadNotifications(
   items: readonly PortalNotification[],

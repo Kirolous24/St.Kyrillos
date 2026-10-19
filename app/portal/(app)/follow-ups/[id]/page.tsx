@@ -1,15 +1,19 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { ClipboardList, History, Phone, Mail, Users, MessageCircle } from 'lucide-react'
+import { ClipboardList, History, Phone, Mail, Users, MessageCircle, CalendarOff } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
-import { resolveReasonLabel, contactMethodLabel, mayChangeContactNote } from '@/lib/portal/followups'
+import { resolveReasonLabel, contactMethodLabel, mayChangeContactNote, writtenForGroupOf } from '@/lib/portal/followups'
 import { rosterWhere } from '@/lib/portal/class-members'
 import { ContactNoteActions } from '@/components/portal/ContactNoteActions'
 import { requireClassAccess } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
 import { can } from '@/lib/portal/permissions'
-import { formatDateOnly } from '@/lib/portal/dates'
+import { churchToday, formatDateOnly } from '@/lib/portal/dates'
+import { excusesByStudent } from '@/lib/portal/data/excuses'
+import { currentExcuse } from '@/lib/portal/excuses'
+import { ExcuseNote } from '@/components/portal/ExcuseNote'
+import { ExcuseControl } from '@/components/portal/ExcuseControl'
 import { formatDateTime, formatLongDate } from '@/lib/portal/format'
 import { formatPhone, waLink } from '@/lib/portal/phones'
 import { PageHeader, Card, Badge, Callout, EmptyState } from '@/components/portal/ui'
@@ -25,7 +29,15 @@ export default async function CasePage({ params }: { params: { id: string } }) {
       resolvedBy: { select: { displayName: true } }, createdBy: { select: { displayName: true } },
       student: { select: { id: true, firstName: true, lastName: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true, parentEmails: true } },
       class: { select: { name: true } },
-      logs: { orderBy: { at: 'desc' }, select: { id: true, method: true, note: true, result: true, at: true, byId: true, by: { select: { displayName: true } } } },
+      logs: {
+        orderBy: { at: 'desc' },
+        select: {
+          id: true, method: true, note: true, result: true, at: true, byId: true,
+          by: { select: { displayName: true, servant: { select: { id: true } } } },
+          // Whose group the child was in, for "on a colleague's behalf" (2026-10-19).
+          groupServantId: true, groupServant: { select: { account: { select: { displayName: true } } } },
+        },
+      },
     },
   })
   if (!c) notFound()
@@ -50,6 +62,9 @@ export default async function CasePage({ params }: { params: { id: string } }) {
       : []
   const s = c.student
   const hasContacts = Boolean(s.fatherPhone || s.motherPhone || s.fatherName || s.motherName) || s.parentEmails.length > 0
+  // Follow-up excuse (2026-10-19): on now, or the next one coming.
+  const today = churchToday()
+  const excuse = currentExcuse((await excusesByStudent([s.id], { endingFrom: today })).get(s.id) ?? [], today)
 
   return (
     <>
@@ -121,6 +136,14 @@ export default async function CasePage({ params }: { params: { id: string } }) {
                     <p className="mt-1 text-[11px] text-parch-500">
                       {formatDateTime(l.at)}
                       {l.by ? ` · ${l.by.displayName}` : ''}
+                      {(() => {
+                        const forGroup = writtenForGroupOf({
+                          groupServantId: l.groupServantId,
+                          groupServantName: l.groupServant?.account.displayName ?? null,
+                          byServantId: l.by?.servant?.id ?? null,
+                        })
+                        return forGroup ? ` · for ${forGroup}’s group` : ''
+                      })()}
                     </p>
                     {changeable.has(l.id) && (
                       <ContactNoteActions note={{ id: l.id, method: l.method, result: l.result, note: l.note }} childName={studentName(s)} moveTo={moveTo} />
@@ -133,6 +156,19 @@ export default async function CasePage({ params }: { params: { id: string } }) {
         </div>
 
         <div className="space-y-5">
+          {/* Follow-up excuse (2026-10-19): whoever opens the case sees it. */}
+          {(excuse || canWrite) && (
+            <Card title="Excused from follow-up" icon={<CalendarOff className="h-4 w-4" />}>
+              <div className="space-y-2" data-testid="excuse-card">
+                {excuse ? (
+                  <ExcuseNote excuse={excuse} today={today} />
+                ) : (
+                  <p className="text-[12px] text-parch-500">Not excused. If they are away for a while, excuse them here.</p>
+                )}
+                {canWrite && <ExcuseControl studentId={s.id} studentName={studentName(s)} today={today} excuse={excuse} />}
+              </div>
+            </Card>
+          )}
           <Card title="Family contacts" icon={<Users className="h-4 w-4" />} bodyClassName="p-0">
             {!hasContacts ? (
               <p className="px-[18px] py-4 text-[12.5px] text-parch-500">No contact details on file.</p>

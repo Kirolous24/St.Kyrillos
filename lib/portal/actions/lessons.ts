@@ -10,6 +10,8 @@ import { parseDateOnly, toUTCDate, formatDateOnly } from '../dates'
 import { safeUrl, TEACHING_WRITE } from '../agenda'
 import { loadLessonForAction } from '../data/lessons'
 import { audit } from '../audit'
+import { lessonDuties } from '../data/duties'
+import { withDutyNotices } from '../with-duty-notices'
 
 const LinkSchema = z.object({
   label: z.string().trim().max(80).optional(),
@@ -80,14 +82,29 @@ export async function saveLesson(raw: SaveLessonInput): Promise<ActionResult<{ i
       if (!existing) throw new PortalError('Lesson not found.')
       // Moving a lesson between classes is not an edit; block it outright.
       if (existing.classId !== cls.id) throw new PortalError('That lesson belongs to another class.')
-      const updated = await prisma.lesson.update({ where: { id: existing.id }, data, select: { id: true } })
+      // Whoever gains or loses the lesson is told (2026-10-19).
+      const updated = await withDutyNotices(
+        () => lessonDuties([existing.id]),
+        user.servantId ?? null,
+        () => prisma.lesson.update({ where: { id: existing.id }, data, select: { id: true } }),
+      )
       id = updated.id
       await audit(user, 'lesson.update', 'lesson', id, `${cls.name}: "${input.title}"`)
     } else {
-      const created = await prisma.lesson.create({
-        data: { ...data, classId: cls.id, createdById: user.accountId },
-        select: { id: true },
-      })
+      // A new lesson had nobody before it; its teacher is told (2026-10-19).
+      let newId: string | null = null
+      const created = await withDutyNotices(
+        () => (newId ? lessonDuties([newId]) : Promise.resolve([])),
+        user.servantId ?? null,
+        async () => {
+          const row = await prisma.lesson.create({
+            data: { ...data, classId: cls.id, createdById: user.accountId },
+            select: { id: true },
+          })
+          newId = row.id
+          return row
+        },
+      )
       id = created.id
       await audit(user, 'lesson.create', 'lesson', id, `${cls.name}: "${input.title}"${date ? ` on ${date}` : ''}`)
     }
@@ -134,7 +151,11 @@ export async function deleteLesson(id: string): Promise<ActionResult> {
     if (!lesson) throw new PortalError('Lesson not found.')
     const cls = await assertClassAction(user, lesson.classId, TEACHING_WRITE)
 
-    await prisma.lesson.delete({ where: { id: lesson.id } })
+    await withDutyNotices(
+      () => lessonDuties([lesson.id]),
+      user.servantId ?? null,
+      () => prisma.lesson.delete({ where: { id: lesson.id } }),
+    )
     await audit(user, 'lesson.delete', 'lesson', lesson.id, `${cls.name}: deleted "${lesson.title}"`)
     revalidatePath('/portal/lessons')
     revalidatePath('/portal/assignments')

@@ -88,9 +88,26 @@ export const CONTACT_RESULTS = [
 ] as const
 
 /**
+ * Following up on a colleague's behalf (2026-10-19): any servant of the class
+ * may log a call on any child, so a note says whose group the child was in when
+ * someone other than that group's servant wrote it — "for Mary Servant's
+ * group". Null when their own servant wrote it, or the child had no servant.
+ */
+export function writtenForGroupOf(log: {
+  groupServantId: string | null
+  groupServantName: string | null
+  /** The writer's servant id; null for the admin and the pastor. */
+  byServantId: string | null
+}): string | null {
+  if (!log.groupServantId || !log.groupServantName) return null
+  return log.byServantId === log.groupServantId ? null : log.groupServantName
+}
+
+/**
  * Who may change, move or delete a contact note after it is saved
- * (2026-09-28): the servant who wrote it, and the class's coordinator, the
- * stage overseer and the admin (`group.manage`). Nobody else rewrites another
+ * (2026-09-28): the servant who wrote it, and the class's Coordinator (and
+ * Assistant Coordinator, since 2026-10-19), the stage overseer and the admin
+ * (`group.manage`). Nobody else rewrites another
  * servant's record. The "Case resolved" entry belongs to the case: it changes
  * by reopening the case.
  */

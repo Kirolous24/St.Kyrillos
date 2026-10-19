@@ -26,6 +26,8 @@ import { applyCurriculumLink, unlinkCurriculumPair } from '../data/curriculum-li
 import { areLinked } from '../lesson-links'
 import { can, type PortalUser } from '../permissions'
 import { audit } from '../audit'
+import { weekDuties } from '../data/duties'
+import { withDutyNotices } from '../with-duty-notices'
 
 const ItemSchema = z.object({
   activityKey: z.string().min(1).max(40),
@@ -145,7 +147,12 @@ export async function saveAgendaWeek(raw: SaveAgendaWeekInput): Promise<ActionRe
       (a) => byKey.get(a.key) ?? { activityKey: a.key, topic: null, servantId: null },
     )
 
-    await writeWeek(cls.id, monday, { slideLink, notes: input.notes || null, leadServantId: lead, backupServantId: backup }, items)
+    // Whoever gains or loses a part of that Sunday is told (2026-10-19).
+    await withDutyNotices(
+      () => weekDuties(cls.id, [monday]),
+      user.servantId ?? null,
+      () => writeWeek(cls.id, monday, { slideLink, notes: input.notes || null, leadServantId: lead, backupServantId: backup }, items),
+    )
 
     const filled = items.filter((i) => i.topic || i.servantId).length
     await audit(user, 'agenda.save', 'class', cls.id, `${cls.name}: agenda for ${weekLabel(monday)} (${filled}/10 filled)`)
@@ -232,16 +239,21 @@ export async function shareAgendaWeek(
       (a) => byKey.get(a.key) ?? { activityKey: a.key, topic: null, servantId: null },
     )
 
-    await writeWeek(
-      target.id,
-      monday,
-      {
-        slideLink: week.slideLink,
-        notes: week.notes,
-        leadServantId: keep(week.leadServantId),
-        backupServantId: keep(week.backupServantId),
-      },
-      items,
+    await withDutyNotices(
+      () => weekDuties(target.id, [monday]),
+      user.servantId ?? null,
+      () =>
+        writeWeek(
+          target.id,
+          monday,
+          {
+            slideLink: week.slideLink,
+            notes: week.notes,
+            leadServantId: keep(week.leadServantId),
+            backupServantId: keep(week.backupServantId),
+          },
+          items,
+        ),
     )
 
     await audit(user, 'agenda.share', 'class', target.id, `Copied ${source.name}'s agenda for ${weekLabel(monday)} into ${target.name}`)
@@ -415,23 +427,30 @@ export async function importAgendaCsv(raw: z.infer<typeof ImportSchema>): Promis
       }
     }
 
-    for (const week of weeks) {
-      await writeWeek(
-        cls.id,
-        week.weekStart,
-        {
-          slideLink: week.slideLink ? safeUrl(week.slideLink) : null,
-          notes: week.notes,
-          leadServantId: match(week.leadServantName),
-          backupServantId: match(week.backupServantName),
-        },
-        week.items.map((i) => ({
-          activityKey: i.activityKey,
-          topic: i.topic,
-          servantId: match(i.servantName),
-        })),
-      )
-    }
+    // One notice per servant for the whole file, not one per week (2026-10-19).
+    await withDutyNotices(
+      () => weekDuties(cls.id, weeks.map((w) => w.weekStart)),
+      user.servantId ?? null,
+      async () => {
+        for (const week of weeks) {
+          await writeWeek(
+            cls.id,
+            week.weekStart,
+            {
+              slideLink: week.slideLink ? safeUrl(week.slideLink) : null,
+              notes: week.notes,
+              leadServantId: match(week.leadServantName),
+              backupServantId: match(week.backupServantName),
+            },
+            week.items.map((i) => ({
+              activityKey: i.activityKey,
+              topic: i.topic,
+              servantId: match(i.servantName),
+            })),
+          )
+        }
+      },
+    )
 
     const overwritten = plan.reduce((n, w) => n + w.willOverwrite + w.willBlank, 0)
     await audit(
@@ -470,7 +489,11 @@ export async function clearAgendaWeek(raw: z.infer<typeof ClearSchema>): Promise
     })
     if (!week) throw new PortalError('There is nothing saved for that week.')
 
-    await prisma.agendaWeek.delete({ where: { id: week.id } })
+    await withDutyNotices(
+      () => weekDuties(cls.id, [monday]),
+      user.servantId ?? null,
+      () => prisma.agendaWeek.delete({ where: { id: week.id } }),
+    )
     await audit(user, 'agenda.clear', 'class', cls.id, `${cls.name}: cleared the agenda for ${weekLabel(monday)}`)
     revalidateAgenda(cls.id)
     return undefined
@@ -514,7 +537,11 @@ export async function clearAgendaWeeks(raw: z.infer<typeof ClearManySchema>): Pr
     })
     if (weeks.length === 0) throw new PortalError('None of those weeks has anything saved.')
 
-    await prisma.agendaWeek.deleteMany({ where: { id: { in: weeks.map((w) => w.id) } } })
+    await withDutyNotices(
+      () => weekDuties(cls.id, weeks.map((w) => formatDateOnly(w.weekStart))),
+      user.servantId ?? null,
+      () => prisma.agendaWeek.deleteMany({ where: { id: { in: weeks.map((w) => w.id) } } }),
+    )
     const labels = weeks
       .map((w) => weekLabel(formatDateOnly(w.weekStart)))
       .slice(0, 12)

@@ -590,9 +590,11 @@ async function StudentHome() {
           Pending (OG L11755-11778); the port had swapped Quiz Avg and Pending
           out for a bare birthday count, pushing the two numbers a student
           actually asks about onto other pages. Sunday attendance is kept as a
-          fifth tile — it was a bar in the OG's My Progress card, which is
-          restored below, but it is worth a glance too. */}
-      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          fourth tile — it was a bar in the OG's My Progress card, which is
+          restored below, but it is worth a glance too. Rank went on
+          2026-10-19: a child sees their own points, not where they stand
+          among the others. */}
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Quiz average"
           value={data.quizAverage === null ? '—' : `${data.quizAverage}%`}
@@ -620,14 +622,6 @@ async function StudentHome() {
           hint={data.pointsThisMonth > 0 ? `+${data.pointsThisMonth} this month` : undefined}
           icon={<Sparkles className="h-6 w-6" />}
           accent="#CA8A04"
-        />
-        <StatCard
-          label="My rank"
-          value={data.rank ? `#${data.rank}` : '—'}
-          hint={data.rank === 1 ? 'Top of the class' : `of ${data.classSize} in class`}
-          tone={data.rank === 1 ? 'good' : 'default'}
-          icon={<Trophy className="h-6 w-6" />}
-          accent="#7C3AED"
         />
         <StatCard
           label="Pending"
@@ -732,11 +726,7 @@ async function StudentHome() {
         {/* F0710 — nothing on a student's home page reached Grades & Points,
             the one page that answers "where did my points actually come from?".
             This card shows the last few entries and then stops, so it is the
-            card the question is asked from. The prototype hung that link off
-            the leaderboard card's "View all" (OG :11798); here "View all" on a
-            leaderboard already means /portal/leaderboard, which is what "all"
-            means on a leaderboard — so the route is restored where it reads
-            true rather than where the prototype happened to put it. */}
+            card the question is asked from. */}
         <Card
           title="Recent points"
           icon={<Sparkles className="h-4 w-4" />}
@@ -767,80 +757,16 @@ async function StudentHome() {
         </Card>
 
         <div className="space-y-5">
-          <Card
-            title="Class leaderboard"
-            icon={<Trophy className="h-4 w-4" />}
-            /* F0679 — the prototype's header button. */
-            action={
-              <Link href="/portal/leaderboard" className="text-[11px] font-bold text-brand-800 hover:underline">
-                View all
-              </Link>
-            }
-          >
-            {/* F0080 — medals, avatar and a bar against the leader, as the
-                standalone leaderboard page already does. A bare ranked list
-                gave no sense of the gap between first and third. */}
-            <ol className="space-y-1.5 text-[12.5px]">
-              {data.top3.map((r, i) => (
-                <li
-                  key={r.studentId}
-                  className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 ${r.studentId === data.me.id ? 'bg-brand-wash font-semibold' : ''}`}
-                >
-                  <span aria-hidden className="w-5 shrink-0 text-center text-[15px]">
-                    {['🥇', '🥈', '🥉'][i]}
-                  </span>
-                  <Avatar name={r.name} size="sm" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">
-                      {r.name}
-                      {r.studentId === data.me.id ? ' (you)' : ''}
-                    </span>
-                    <ProgressBar
-                      value={data.leaderPoints > 0 ? Math.round((r.total / data.leaderPoints) * 100) : 0}
-                      tone={r.studentId === data.me.id ? 'brand' : 'good'}
-                      label={`${r.name}'s points against the leader`}
-                    />
-                  </span>
-                  <span className="shrink-0 font-bold tabular-nums">{r.total}</span>
-                </li>
-              ))}
-            </ol>
-            {/* F0681 — a student outside the podium saw three names and no
-                sign of where they stood. The prototype appended their own row
-                below a divider. */}
-            {data.rank !== null && data.rank > 3 && (
-              <div className="mt-2 border-t border-parch-200 pt-2">
-                <div className="flex justify-between gap-2 rounded-lg bg-brand-wash px-2 py-1.5 text-[12.5px] font-semibold">
-                  <span className="truncate">
-                    #{data.rank} {data.me.firstName} (you)
-                  </span>
-                  <span className="shrink-0 font-bold tabular-nums">{data.total}</span>
-                </div>
-              </div>
-            )}
-          </Card>
-
-          {/* F0084 / F0682 — "My Progress". The three numbers a student is
-              measured by were scattered across three pages; the prototype
-              showed them together, each against what it is measured out of. */}
+          {/* F0084 / F0682 — "My Progress". The numbers a student is measured
+              by were scattered across pages; the prototype showed them
+              together, each against what it is measured out of. Its "points vs
+              the leader" bar and the class leaderboard card above it went on
+              2026-10-19: a child sees their own points, not anybody else's. */}
           <Card title="My progress" icon={<BarChart2 className="h-4 w-4" />}>
             <div className="space-y-4">
-              <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2 text-[12px]">
-                  <span className="text-parch-800">Points vs leader</span>
-                  <span className="font-semibold text-brand-gold-dark tabular-nums">
-                    {data.total} / {data.leaderPoints}
-                  </span>
-                </div>
-                <ProgressBar
-                  value={data.leaderPoints > 0 ? Math.min(100, Math.round((data.total / data.leaderPoints) * 100)) : 0}
-                  tone="brand"
-                  label="Points against the class leader"
-                />
-                <p className="mt-1 text-[11px] text-parch-500">
-                  {data.rank ? `Rank #${data.rank} of ${data.classSize}` : 'Not ranked yet'}
-                </p>
-              </div>
+              {data.quizAverage === null && data.rate.rate === null && (
+                <p className="text-[12.5px] text-parch-500">Your quiz average and Sunday attendance show here once you have some.</p>
+              )}
               {data.quizAverage !== null && (
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-2 text-[12px]">

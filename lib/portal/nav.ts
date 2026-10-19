@@ -7,6 +7,8 @@ import { STAGE_LABEL } from './format'
 
 const PROFILE: NavItem = { href: '/portal/profile', label: 'My Profile', icon: 'profile', section: 'Account' }
 const SETTINGS: NavItem = { href: '/portal/settings', label: 'My PIN', icon: 'settings', section: 'Account' }
+/** Staff find their notifications there too (2026-10-19), so it is more than a PIN. */
+const MY_SETTINGS: NavItem = { ...SETTINGS, label: 'My Settings' }
 const HELP: NavItem = { href: '/portal/help', label: 'Help & Guide', icon: 'help', section: 'Account' }
 
 /**
@@ -215,7 +217,7 @@ export function navForUser(user: PortalUser): NavItem[] {
         { href: '/portal/admin/sessions', label: 'Sessions & Points', icon: 'points', section: 'Settings' },
         { href: '/portal/admin/data', label: 'Data & Backup', icon: 'settings', section: 'Settings' },
         { href: '/portal/admin/audit', label: 'Activity Log', icon: 'audit', section: 'Settings' },
-        { ...SETTINGS, section: 'Settings' },
+        { ...MY_SETTINGS, section: 'Settings' },
         PROFILE,
         HELP,
       ]
@@ -245,7 +247,7 @@ export function navForUser(user: PortalUser): NavItem[] {
         // at the altar could not.
         { href: '/portal/readings', label: 'Daily Readings', icon: 'readings', section: 'Community' },
         PROFILE,
-        SETTINGS,
+        MY_SETTINGS,
         HELP,
       ]
 
@@ -280,8 +282,9 @@ export function navForUser(user: PortalUser): NavItem[] {
           ? { href: `/portal/classes/${user.classIds[0]}`, label: 'Class Profile', icon: 'classes', section: 'Overview' }
           : { href: '/portal/classes', label: 'My Classes', icon: 'classes', section: 'Overview' },
         // Follow-up groups (2026-09-26): the children this servant follows up.
-        // Only for a servant who serves a class, since a group belongs to one.
-        ...(user.classIds.length > 0
+        // For a servant who serves a class, since a group belongs to one, and
+        // for a stage overseer, who follows up in Class Groups (2026-10-19).
+        ...(user.classIds.length > 0 || user.stageOversight
           ? [{ href: '/portal/my-group', label: 'My Group', icon: 'group', section: 'Overview' } as NavItem]
           : []),
         { href: '/portal/students', label: 'Students', icon: 'students', section: 'Attendance & Rewards' },
@@ -309,7 +312,7 @@ export function navForUser(user: PortalUser): NavItem[] {
         { href: '/portal/readings', label: 'Daily Readings', icon: 'readings', section: 'Teaching' },
         { href: '/portal/lessons', label: 'Lessons', icon: 'lessons', section: 'Teaching' },
         { ...PROFILE, section: 'Support' },
-        { ...SETTINGS, section: 'Support' },
+        { ...MY_SETTINGS, section: 'Support' },
         { ...HELP, section: 'Support' },
       ]
 
@@ -328,7 +331,7 @@ export function navForUser(user: PortalUser): NavItem[] {
         { href: '/portal/quizzes', label: 'Daily Quiz', icon: 'exams', section: 'Learning' },
         { href: '/portal/grades', label: 'Grades & Points', icon: 'points', section: 'Learning' },
         { href: '/portal/achievements', label: 'Achievements', icon: 'achievements', section: 'Learning' },
-        { href: '/portal/leaderboard', label: 'Leaderboard', icon: 'leaderboard', section: 'Learning' },
+        // No Leaderboard: kids see only their own points (2026-10-19).
         { href: '/portal/readings', label: "Today's Reading", icon: 'readings', section: 'Faith' },
         { href: '/portal/hymns', label: 'Hymns', icon: 'hymns', section: 'Faith' },
         { href: '/portal/my-attendance', label: 'My Attendance', icon: 'attendance', section: 'Class' },
@@ -392,7 +395,9 @@ export function withNavBadges(
 ): NavItem[] {
   const byHref = new Map<string, number>()
   for (const n of notifications) {
-    byHref.set(n.href, (byHref.get(n.href) ?? 0) + (n.count ?? 1))
+    // A link to a place on a page counts against the page (My Assignments#week-…).
+    const href = n.href.split('#')[0]!
+    byHref.set(href, (byHref.get(href) ?? 0) + (n.count ?? 1))
   }
   if (byHref.size === 0) return items
   return items.map((item) => {

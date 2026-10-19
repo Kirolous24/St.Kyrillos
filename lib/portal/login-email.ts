@@ -30,9 +30,18 @@ const PRODUCTION_DB = 'ep-dark-term-ai3c2hag'
  * system variables at runtime.
  */
 export function emailRouting(env: { VERCEL_ENV?: string; DATABASE_URL?: string; PORTAL_EMAIL_REDIRECT?: string }): EmailRouting {
-  if (env.VERCEL_ENV === 'production' || (env.DATABASE_URL ?? '').includes(PRODUCTION_DB)) return { mode: 'live' }
+  if (isLiveSite(env)) return { mode: 'live' }
   const to = env.PORTAL_EMAIL_REDIRECT?.trim()
   return to ? { mode: 'redirect', to } : { mode: 'off' }
+}
+
+/**
+ * The live site: VERCEL_ENV=production, or connected to the production
+ * database. Phone notifications use the same line (2026-10-19): a phone is
+ * only ever notified by the kind of site that registered it.
+ */
+export function isLiveSite(env: Record<string, string | undefined>): boolean {
+  return env.VERCEL_ENV === 'production' || (env.DATABASE_URL ?? '').includes(PRODUCTION_DB)
 }
 
 export function buildLoginEmails(items: readonly LoginEmailItem[], routing: Exclude<EmailRouting, { mode: 'off' }>) {

@@ -11,6 +11,7 @@ import { audit } from '../audit'
 import { contactMethodLabel, mayChangeContactNote, RESOLVE_REASON_KEYS, resolveReasonLabel } from '../followups'
 import { can } from '../permissions'
 import { studentName } from '../data/students'
+import { groupServantOf } from '../data/groups'
 import { parseDateOnly, toUTCDate, churchToday, churchDayStart, daysBetween } from '../dates'
 
 async function loadCase(id: string) {
@@ -37,8 +38,10 @@ export async function logContact(raw: z.infer<typeof LogSchema>): Promise<Action
     const c = await loadCase(input.caseId)
     await assertClassAction(user, c.classId, 'followup.write')
     const next = input.nextFollowUp ? parseDateOnly(input.nextFollowUp) : null
+    // Whose group the child is in: the record of who followed up on whom (2026-10-19).
+    const groupServantId = await groupServantOf(c.studentId)
     await prisma.$transaction([
-      prisma.followUpLog.create({ data: { caseId: c.id, studentId: c.studentId, method: input.method, note: input.note || null, result: input.result ?? null, byId: user.accountId } }),
+      prisma.followUpLog.create({ data: { caseId: c.id, studentId: c.studentId, method: input.method, note: input.note || null, result: input.result ?? null, byId: user.accountId, groupServantId } }),
       // `undefined` means "don't touch" to Prisma, so clearing the date was a no-op.
       prisma.followUpCase.update({ where: { id: c.id }, data: { nextFollowUp: next ? toUTCDate(next) : null } }),
     ])
@@ -70,6 +73,7 @@ export async function resolveCase(raw: z.infer<typeof ResolveSchema>): Promise<A
     const c = await loadCase(input.caseId)
     await assertClassAction(user, c.classId, 'followup.write')
     if (c.status === 'DONE') throw new PortalError('This case is already resolved.')
+    const groupServantId = await groupServantOf(c.studentId)
     // F0109 — resolving wrote the reason onto the case but left no entry on the
     // timeline, so the conversation that actually closed the case was missing
     // from the case's own history. Written together with the status change:
@@ -88,6 +92,7 @@ export async function resolveCase(raw: z.infer<typeof ResolveSchema>): Promise<A
           note: input.note || null,
           result: resolveReasonLabel(input.reason),
           byId: user.accountId,
+          groupServantId,
         },
       }),
     ])
@@ -344,6 +349,9 @@ export async function logCheckIn(raw: z.infer<typeof CheckInSchema>): Promise<Ac
     if (!s || !s.classId) throw new PortalError('Student not found or has no class.')
     await assertClassAction(user, s.classId, 'followup.write')
     const open = await prisma.followUpCase.findFirst({ where: { studentId: s.id, status: 'OPEN' }, select: { id: true } })
+    // Any servant of the class may check in on any child in it, on a
+    // colleague's behalf too; the note keeps whose group it was (2026-10-19).
+    const groupServantId = await groupServantOf(s.id)
     await prisma.followUpLog.create({
       data: {
         studentId: s.id,
@@ -352,6 +360,7 @@ export async function logCheckIn(raw: z.infer<typeof CheckInSchema>): Promise<Ac
         note: input.note || null,
         result: input.result ?? null,
         byId: user.accountId,
+        groupServantId,
       },
     })
     await audit(
@@ -402,7 +411,7 @@ async function loadNoteToChange(logId: string) {
     throw new PortalError(
       log.method === 'resolved'
         ? 'This entry is the case being resolved. Reopen the case to change it.'
-        : 'Only the servant who wrote this note, or the class coordinator, can change it.',
+        : 'Only the servant who wrote this note, or the class Coordinator or Assistant Coordinator, can change it.',
     )
   }
   return { user, log, cls }
@@ -478,7 +487,10 @@ export async function moveContactNote(raw: z.infer<typeof MoveNoteSchema>): Prom
     if (!classId) throw new PortalError('You do not follow up that child.')
     await assertClassAction(user, classId, 'followup.write')
     const open = await prisma.followUpCase.findFirst({ where: { studentId: target.id, classId, status: 'OPEN' }, select: { id: true } })
-    await prisma.followUpLog.update({ where: { id: log.id }, data: { studentId: target.id, caseId: open?.id ?? null } })
+    await prisma.followUpLog.update({
+      where: { id: log.id },
+      data: { studentId: target.id, caseId: open?.id ?? null, groupServantId: await groupServantOf(target.id) },
+    })
     await audit(
       user,
       'followup.note.move',

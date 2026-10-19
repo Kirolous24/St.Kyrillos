@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Phone, MessageCircle, Send, Trash2, X } from 'lucide-react'
 import { deleteCase } from '@/lib/portal/actions/followups'
+import { recordFamilyMessage } from '@/lib/portal/actions/family-messages'
+import { smsHref, whatsAppHref } from '@/lib/portal/family-messages'
 import { buttonClass, inputClass, Callout } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -18,14 +20,23 @@ export interface Contact { label: string; value: string }
  *
  * The composer mirrors `openSendMessageModal` (OG L17340): pick a channel, pick
  * which of the family's contacts to use, edit the pastoral template, send. It
- * opens the user's own mail client or WhatsApp — the portal never sends anything
- * itself, exactly as before.
+ * opens the user's own mail client, WhatsApp or Messages — the portal never
+ * sends anything itself, exactly as before.
+ *
+ * Since 2026-10-19 the message starts from the class's own (Message families),
+ * not one fixed text for every class; a text message joined email and WhatsApp;
+ * WhatsApp gets the US country code the stored numbers lack; and every message
+ * sent is noted on the case, like a logged call.
  */
 export function CaseQuickActions({
-  caseId, studentName, emails, phones, primaryPhone, primaryWa,
+  caseId, studentId, classId, studentName, message, emails, phones, primaryPhone, primaryWa,
 }: {
   caseId: string
+  studentId: string
+  classId: string
   studentName: string
+  /** The class's message for this child, filled in. */
+  message: string
   emails: Contact[]
   phones: Contact[]
   /** tel: href for the first number on file, if any. */
@@ -39,24 +50,41 @@ export function CaseQuickActions({
   useEffect(() => setMounted(true), [])
   const [pending, startTransition] = useTransition()
   const [open, setOpen] = useState(false)
-  const [channel, setChannel] = useState<'email' | 'msg' | null>(null)
+  const [channel, setChannel] = useState<'email' | 'whatsapp' | 'text' | null>(null)
   const [contact, setContact] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [text, setText] = useState(
-    `Hi ${studentName},\nI just wanted to check on you and say we really missed seeing you at church and in class! I hope you're doing well.\nYou are always in our prayers, and it would be so nice to see you again soon. Your presence means a lot to us.\nGod bless you always!`,
-  )
+  const [noted, setNoted] = useState<string | null>(null)
+  const [text, setText] = useState(message)
 
-  const list = channel === 'email' ? emails : channel === 'msg' ? phones : []
+  const list = channel === 'email' ? emails : channel ? phones : []
 
   function send() {
     if (!channel) return setErr('Choose a channel first.')
     if (!contact) return setErr('Choose who to send it to.')
-    const href =
-      channel === 'email'
-        ? `mailto:${contact}?subject=${encodeURIComponent(`Checking in on ${studentName}`)}&body=${encodeURIComponent(text)}`
-        : `https://wa.me/${contact.replace(/\D+/g, '')}?text=${encodeURIComponent(text)}`
-    window.open(href, '_blank', 'noopener')
+    if (!text.trim()) return setErr('Write the message first.')
+    const digits = contact.replace(/\D+/g, '')
+    if (channel === 'email') {
+      window.open(`mailto:${contact}?subject=${encodeURIComponent(`Checking in on ${studentName}`)}&body=${encodeURIComponent(text)}`, '_blank', 'noopener')
+    } else if (channel === 'whatsapp') {
+      window.open(whatsAppHref(digits, text), '_blank', 'noopener')
+    } else {
+      // Messages opens over the page; nothing to leave behind in a tab.
+      window.location.href = smsHref(digits, text)
+    }
     setOpen(false)
+    // "Father's phone" is noted as "To Father".
+    const to = (list.find((c) => c.value === contact)?.label ?? 'Family').replace(/['’]s phone$/, '')
+    // The phone may leave for the app before the note is saved: a failure is
+    // said plainly rather than left to break the page.
+    startTransition(async () => {
+      try {
+        const r = await recordFamilyMessage({ studentId, classId, caseId, channel, to, text })
+        setNoted(r.ok ? 'Noted on the case.' : `${r.error} Log it on the case if it went.`)
+        if (r.ok) router.refresh()
+      } catch {
+        setNoted('The connection dropped before it was noted. Log it on the case if it went.')
+      }
+    })
   }
 
   function remove() {
@@ -80,9 +108,10 @@ export function CaseQuickActions({
           <MessageCircle className="h-3.5 w-3.5 text-[#16A34A]" aria-hidden />
         </a>
       )}
-      <button type="button" onClick={() => { setErr(null); setOpen(true) }} className={buttonClass('secondary', 'sm')}>
+      <button type="button" onClick={() => { setErr(null); setNoted(null); setOpen(true) }} className={buttonClass('secondary', 'sm')}>
         <Send className="h-3.5 w-3.5" aria-hidden /> Send
       </button>
+      {noted && <span className="text-[11.5px] font-semibold text-parch-600" role="status">{noted}</span>}
       <button
         type="button"
         onClick={remove}
@@ -117,8 +146,8 @@ export function CaseQuickActions({
             </div>
 
             <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">How</p>
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              {([['email', 'Email'], ['msg', 'WhatsApp']] as const).map(([k, label]) => (
+            <div className="mb-3 grid grid-cols-3 gap-2">
+              {([['email', 'Email'], ['whatsapp', 'WhatsApp'], ['text', 'Text']] as const).map(([k, label]) => (
                 <button
                   key={k}
                   type="button"
@@ -187,7 +216,7 @@ export function CaseQuickActions({
               <button type="button" onClick={() => setOpen(false)} className={buttonClass('secondary')}>Cancel</button>
               <button type="button" onClick={send} disabled={!channel || !contact} className={buttonClass('primary')}>
                 <Send className="h-3.5 w-3.5" aria-hidden />{' '}
-                {channel === 'email' ? 'Open in email' : channel === 'msg' ? 'Open in WhatsApp' : 'Send'}
+                {channel === 'email' ? 'Open in email' : channel === 'whatsapp' ? 'Open in WhatsApp' : channel === 'text' ? 'Open in Messages' : 'Send'}
               </button>
             </div>
           </div>

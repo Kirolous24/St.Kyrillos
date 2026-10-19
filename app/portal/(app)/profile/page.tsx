@@ -2,6 +2,7 @@ import Link from '@/components/portal/Link'
 import { User, Camera, Star, Trophy, ClipboardList, CalendarCheck } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
+import { seesClassmatesPoints } from '@/lib/portal/permissions'
 import { studentName } from '@/lib/portal/data/students'
 import { classTotals } from '@/lib/portal/data/dashboard'
 import { rankStudents } from '@/lib/portal/points-math'
@@ -58,18 +59,23 @@ export default async function MyProfilePage() {
   if (!account) return null
 
   const st = account.student
+  // A child sees their own points, not where they stand among the others
+  // (2026-10-19), so their classmates' totals are never even loaded here.
+  const showRank = seesClassmatesPoints(user)
   let stats: { points: number; quizzes: number; present: number; rank?: number } | null = null
   if (st) {
     const [points, quizzes, present, classmates, totals] = await Promise.all([
       prisma.pointEntry.aggregate({ where: { studentId: st.id }, _sum: { points: true } }),
       prisma.quizResult.count({ where: { studentId: st.id } }),
       prisma.attendanceRecord.count({ where: { studentId: st.id, status: 'PRESENT' } }),
-      prisma.student.findMany({ where: { classId: st.classId }, select: { id: true, firstName: true, lastName: true } }),
-      classTotals(st.classId ? [st.classId] : []),
+      showRank ? prisma.student.findMany({ where: { classId: st.classId }, select: { id: true, firstName: true, lastName: true } }) : Promise.resolve([]),
+      showRank ? classTotals(st.classId ? [st.classId] : []) : Promise.resolve(new Map<string, number>()),
     ])
-    const rank = rankStudents(
-      classmates.map((c) => ({ studentId: c.id, name: studentName(c), total: totals.get(c.id) ?? 0 })),
-    ).find((r) => r.studentId === st.id)?.rank
+    const rank = showRank
+      ? rankStudents(
+          classmates.map((c) => ({ studentId: c.id, name: studentName(c), total: totals.get(c.id) ?? 0 })),
+        ).find((r) => r.studentId === st.id)?.rank
+      : undefined
     stats = { points: points._sum.points ?? 0, quizzes, present, rank }
   }
 
@@ -139,11 +145,11 @@ export default async function MyProfilePage() {
       </Card>
 
       {stats && (
-        <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className={`mb-4 grid grid-cols-2 gap-3 ${showRank ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
           <StatCard label="Points" value={stats.points} icon={<Star className="h-4 w-4" />} />
           <StatCard label="Quizzes taken" value={stats.quizzes} icon={<ClipboardList className="h-4 w-4" />} />
           <StatCard label="Sessions present" value={stats.present} icon={<CalendarCheck className="h-4 w-4" />} />
-          <StatCard label="Class rank" value={stats.rank ? `#${stats.rank}` : '—'} icon={<Trophy className="h-4 w-4" />} />
+          {showRank && <StatCard label="Class rank" value={stats.rank ? `#${stats.rank}` : '—'} icon={<Trophy className="h-4 w-4" />} />}
         </div>
       )}
 

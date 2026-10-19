@@ -1,7 +1,9 @@
 import Link from '@/components/portal/Link'
+import { notFound } from 'next/navigation'
 import { Trophy } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
+import { seesClassmatesPoints } from '@/lib/portal/permissions'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
 import { classTotals } from '@/lib/portal/data/dashboard'
 import { studentName } from '@/lib/portal/data/students'
@@ -16,11 +18,14 @@ const MEDALS = ['\u{1F947}', '\u{1F948}', '\u{1F949}']
 
 export default async function LeaderboardPage({ searchParams }: { searchParams: { class?: string; sort?: string } }) {
   const user = await requirePortalUser()
+  // Kids see only their own points (2026-10-19). The middleware already turns
+  // them away; this is the second lock.
+  if (!seesClassmatesPoints(user)) notFound()
   const classes = await listVisibleClasses(user)
   const selectable = classes
   const classId = selectable.some((c) => c.id === searchParams.class)
     ? searchParams.class!
-    : user.role === 'STUDENT' || user.role === 'SERVANT'
+    : user.role === 'SERVANT'
       ? selectable[0]?.id ?? 'all'
       : 'all'
   const scopeIds = classId === 'all' ? selectable.map((c) => c.id) : [classId]
@@ -40,7 +45,6 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
   ])
   const ranked = rankStudents(students.map((s) => ({ studentId: s.id, name: studentName(s), total: totals.get(s.id) ?? 0 })))
   const byId = new Map(students.map((s) => [s.id, s]))
-  const canOpenProfiles = user.role !== 'STUDENT'
   const ordered =
     sort === 'az'
       ? [...ranked].sort((a, b) => a.name.localeCompare(b.name))
@@ -59,7 +63,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
         subtitle={classId === 'all' ? 'All students ranked by points' : classes.find((c) => c.id === classId)?.name}
         icon={<Trophy className="h-5 w-5" />}
       />
-      {user.role !== 'STUDENT' && selectable.length > 1 && (
+      {selectable.length > 1 && (
         <div className="mb-4">
           <ClassPicker value={classId} options={selectable.map((c) => ({ id: c.id, name: c.name }))} allowAll={user.role !== 'SERVANT'} />
         </div>
@@ -96,7 +100,6 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
           <ol>
             {rows.map((r) => {
               const s = byId.get(r.studentId)!
-              const isMe = user.studentId === r.studentId
               const isFirst = r.rank === 1
               const isPodium = r.rank <= 3
               const pct = Math.round((r.total / topTotal) * 100)
@@ -107,11 +110,9 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                     'flex items-center gap-3 border-b border-[#F5F2ED] px-[18px] py-[11px] transition-colors last:border-0',
                     isFirst
                       ? 'bg-[linear-gradient(90deg,#FDF5E4,#FBEFD8_60%,#FFFDF8)]'
-                      : isMe
-                        ? 'bg-brand-wash'
-                        : isPodium
-                          ? 'bg-parch-100/60'
-                          : 'hover:bg-brand-hover',
+                      : isPodium
+                        ? 'bg-parch-100/60'
+                        : 'hover:bg-brand-hover',
                   ].join(' ')}
                 >
                   <span
@@ -123,19 +124,12 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                   {isPodium && <span className="sr-only">Rank {r.rank}</span>}
                   <Avatar name={r.name} photo={s.account.photo} size="sm" />
                   <div className="min-w-0 flex-1">
-                    {canOpenProfiles ? (
-                      <Link
-                        href={`/portal/students/${r.studentId}`}
-                        className="block truncate text-[12.5px] font-semibold text-parch-900 transition-colors hover:text-brand-800"
-                      >
-                        {r.name}
-                      </Link>
-                    ) : (
-                      <span className={`block truncate text-[12.5px] font-semibold ${isMe ? 'text-brand-800' : 'text-parch-900'}`}>
-                        {r.name}
-                        {isMe ? ' (you)' : ''}
-                      </span>
-                    )}
+                    <Link
+                      href={`/portal/students/${r.studentId}`}
+                      className="block truncate text-[12.5px] font-semibold text-parch-900 transition-colors hover:text-brand-800"
+                    >
+                      {r.name}
+                    </Link>
                     {classId === 'all' && <p className="truncate text-[11px] text-parch-500">{s.class?.name}</p>}
                     <div className="mt-1.5">
                       <ProgressBar value={pct} tone="brand" label={`${r.total} points`} />

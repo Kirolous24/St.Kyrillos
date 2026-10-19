@@ -9,8 +9,6 @@ import { formatLongDate } from '@/lib/portal/format'
 import { attendanceBand, BAND_LABEL, prettyBadge, type Band, schoolYearMonths, RANK_MEDAL } from '@/lib/portal/reports'
 import {
   PageHeader,
-  Tabs,
-  TabLink,
   Card,
   Badge,
   EmptyState,
@@ -21,6 +19,7 @@ import {
 } from '@/components/portal/ui'
 import { PrintButton } from '@/components/portal/PrintButton'
 import { ReportFilters, CsvExportButton } from '../ReportFilters'
+import { ReportsTabs } from '../ReportsTabs'
 
 export const metadata = { title: 'Report cards' }
 
@@ -98,21 +97,7 @@ export default async function ReportCardsPage({ searchParams }: { searchParams: 
     churchReportScope(user),
   ])
 
-  const tabs = (
-    <Tabs>
-      <TabLink href="/portal/reports" active={false}>
-        Attendance
-      </TabLink>
-      {churchScope && (
-        <TabLink href="/portal/reports?tab=church" active={false}>
-          Church reports
-        </TabLink>
-      )}
-      <TabLink href="/portal/reports/cards" active>
-        Report cards
-      </TabLink>
-    </Tabs>
-  )
+  const tabs = <ReportsTabs active="cards" church={!!churchScope} />
 
   if (classes.length === 0) {
     return (

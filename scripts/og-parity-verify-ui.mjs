@@ -269,6 +269,8 @@ try {
       const dlg = page.locator('[role="dialog"]')
       check('Send opens the composer', await dlg.count() === 1)
       check('composer offers Email and WhatsApp', await dlg.getByRole('button', { name: 'Email', exact: true }).count() === 1 && await dlg.getByRole('button', { name: 'WhatsApp', exact: true }).count() === 1)
+      // 2026-10-19 — and a text message, which is how most families are reached.
+      check('composer offers a text message too', await dlg.getByRole('button', { name: 'Text', exact: true }).count() === 1)
       const submit = dlg.getByRole('button', { name: /^(Send|Open in .*)$/ }).last()
       check('send is disabled before a channel is chosen', await submit.isDisabled())
       check('send reads neutrally before a channel is chosen', (await submit.innerText()).trim() === 'Send', (await submit.innerText()).trim())
@@ -303,8 +305,11 @@ try {
         }),
       )
       const body = await dlg.locator('textarea').inputValue()
-      check('composer prefills the pastoral template', body.includes('we really missed seeing you'), body.slice(0, 40))
-      check('template greets the student by name', body.startsWith(`Hi ${withPhone.firstName}`), body.slice(0, 30))
+      // 2026-10-19 — no longer one fixed text for every class: the class's own
+      // message for its meeting (Message families), or the standard one, with
+      // this child's name filled in.
+      check('composer prefills the class’s message', body.trim().length > 20, body.slice(0, 40))
+      check('the message names the student, every placeholder filled', body.includes(withPhone.firstName) && !/\{(name|meeting|day|date)\}/i.test(body), body.slice(0, 60))
       check('send is enabled once a contact is chosen', !(await submit.isDisabled()))
       check('send names the chosen channel', (await submit.innerText()).includes('WhatsApp'), (await submit.innerText()).trim())
       await shot('11-followup-send-composer')
@@ -1649,6 +1654,10 @@ try {
     console.log('        (no servant account with a class in the backup — skipped the servant dashboard checks)')
   } else {
     await signInAs(svUser)
+    // Servant assignment notices (2026-10-19): a servant chooses where they reach them.
+    await go('/portal/settings')
+    check('a servant’s settings carry the Notifications card', (await page.locator('[data-testid="notification-settings"]').count()) === 1)
+    check('…with a test button', (await page.getByRole('button', { name: /Send me a test/ }).count()) === 1)
     await go('/portal')
     const sv = await textOf(page.locator('main'))
     const svTiles = await statRowLabels()
@@ -1683,12 +1692,16 @@ try {
     // the Quizzes widget, so this has to be the tile's label, not page text.
     check('student sees a Pending tile', stTiles.includes('pending'), stTiles.join(' | '))
     check('student sees the My progress card', st.includes('my progress'))
-    check('and it measures points against the leader', st.includes('points vs leader'))
+    // Kids see only their own points (2026-10-19): the prototype's rank tile,
+    // class leaderboard card and "points vs leader" bar are gone.
+    check('and it does not measure them against anybody else', !st.includes('points vs leader'))
     check('student sees a current streak', st.includes('current streak'))
-    check('the leaderboard offers View all', st.includes('view all'))
-    const viewAll = page.locator('main a[href="/portal/leaderboard"]')
-    check('and View all goes to a page that exists', await viewAll.count() >= 1)
+    check('there is no leaderboard and no rank on it', !st.includes('class leaderboard') && !stTiles.includes('my rank'), stTiles.join(' | '))
+    check('and nothing links a child to the leaderboard', await page.locator('a[href^="/portal/leaderboard"]').count() === 0)
     await shot('34-student-dashboard')
+    await go('/portal/leaderboard')
+    check('a child who types in the leaderboard address is sent away', !page.url().includes('/portal/leaderboard'), page.url())
+    await go('/portal')
 
     // Every progress bar must be labelled: three unlabelled bars in a row is
     // a card that reads as decoration to a screen reader.
@@ -1699,7 +1712,9 @@ try {
       const l = await bars.nth(i).getAttribute('aria-label')
       if (l && l.trim()) labelled++
     }
-    check('every progress bar is labelled', barCount > 0 && labelled === barCount, `${labelled}/${barCount}`)
+    // No "> 0": the leaderboard card's bars are gone (2026-10-19), and a child
+    // with no quizzes and no Sundays yet has none left on this page.
+    check('every progress bar is labelled', labelled === barCount, `${labelled}/${barCount}`)
   }
 
   await signInAs(admin)
@@ -1977,6 +1992,14 @@ try {
   // Checked as the admin first (they SHOULD see it), then as a servant below.
   await go('/portal/reports/cards')
   check('an admin sees the Church reports tab', (await textOf(page.locator('main'))).includes('church reports'))
+
+  // 2026-10-19 — the children's weekly attendance report, beside the others,
+  // in the servants' report's shape.
+  await go('/portal/reports/weekly')
+  const weekly = await textOf(page.locator('main'))
+  check('the Weekly report tab opens the children’s weekly report', weekly.includes('weekly attendance report'), weekly.slice(0, 80))
+  check('…with the servants’ report’s ranges and months', weekly.includes('last 8 weeks') && weekly.includes('last 26 weeks') && weekly.includes('sep'))
+  check('…and the Weekly report tab marked as the one open', (await page.locator('main a[href="/portal/reports/weekly"]').first().getAttribute('aria-current')) === 'page')
 
   // F0139 — the twelve month pills.
   await go('/portal/reports')
@@ -2883,8 +2906,12 @@ try {
       await signInAs(w31Servant.user)
       await go(`/portal/students/${w31Child.id}`)
       const w31Profile = await textOf(page.locator('main'))
-      check('a servant is told who removes a child rather than finding nothing',
-        w31Profile.includes('done by the office'), w31Profile.slice(0, 160))
+      // Since e86d2e6 (2026-09-26) the explanation is an action: a servant
+      // unassigns the child with a reason and a coordinator decides. The old
+      // "done by the office" wording went with that change and this check
+      // kept asking for it.
+      check('a servant is offered Unassign rather than finding nothing',
+        (await page.getByRole('button', { name: 'Unassign from class' }).count()) === 1, w31Profile.slice(0, 160))
       check('and is not offered the delete itself',
         (await page.locator('button:has-text("Delete student")').count()) === 0)
       await signInAs(admin)
@@ -2928,8 +2955,10 @@ try {
     console.log('        (no class with students — roster layout not checked)')
   } else {
     await go(`/portal/classes/${rosterClass.id}`)
+    // The roster's cards only: the Groups card above it (2026-09-26) lists
+    // every child as a small name link, which is meant to be small.
     const cards = await page.$$eval('a[href^="/portal/students/"]', (els) =>
-      els.map((e) => {
+      els.filter((e) => !e.closest('#groups')).map((e) => {
         const r = e.getBoundingClientRect()
         return { w: Math.round(r.width), h: Math.round(r.height), display: getComputedStyle(e).display }
       }),

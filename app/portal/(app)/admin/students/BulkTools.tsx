@@ -15,6 +15,7 @@ import { BULK_FIELDS } from '@/lib/portal/student-fields'
 import { Avatar, Badge, buttonClass, inputClass, selectClass, checkboxClass } from '@/components/portal/ui'
 import { formatFullName } from '@/lib/portal/names'
 import { MoveStudentSelect } from './MoveStudentSelect'
+import { KidPhones } from '@/components/portal/KidPhones'
 import { cn } from '@/lib/utils'
 
 export interface BulkStudent {
@@ -24,7 +25,10 @@ export interface BulkStudent {
   grade: string | null
   classId: string | null
   importNotes: string | null
-  account: { loginId: string; photo: string | null }
+  // The family's numbers on the card (2026-10-19).
+  fatherPhone: string | null
+  motherPhone: string | null
+  account: { loginId: string; photo: string | null; phone: string | null }
 }
 
 interface SelectionApi {
@@ -136,6 +140,14 @@ export function StudentCard({
           {student.grade ? ` · ${student.grade}` : ''}
         </span>
       </Link>
+      <KidPhones
+        name={name}
+        fatherPhone={student.fatherPhone}
+        motherPhone={student.motherPhone}
+        ownPhone={student.account.phone}
+        center
+        className="mb-2"
+      />
       {student.importNotes && (
         <span className="mb-2 block">
           <Badge tone="warn">Review</Badge>

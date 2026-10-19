@@ -30,3 +30,35 @@ export function waLink(raw: string | null | undefined): string | null {
   return `https://wa.me/${digits}`
 }
 
+
+export interface KidPhone {
+  /** Father, Mother, Parents (one number they share) or Student. */
+  label: 'Father' | 'Mother' | 'Parents' | 'Student'
+  digits: string
+  display: string
+  tel: string
+}
+
+/**
+ * A child's numbers for the cards a servant sees (2026-10-19): the family's
+ * first, as the servant usually rings a parent, then the child's own. A number
+ * the parents share is shown once, and the child's own is left out when it is
+ * one of theirs.
+ */
+export function kidPhoneList(s: {
+  fatherPhone?: string | null
+  motherPhone?: string | null
+  ownPhone?: string | null
+}): KidPhone[] {
+  const father = normalizePhone(s.fatherPhone)
+  const mother = normalizePhone(s.motherPhone)
+  const own = normalizePhone(s.ownPhone)
+  const out: Array<{ label: KidPhone['label']; digits: string }> = []
+  if (father && father === mother) out.push({ label: 'Parents', digits: father })
+  else {
+    if (father) out.push({ label: 'Father', digits: father })
+    if (mother) out.push({ label: 'Mother', digits: mother })
+  }
+  if (own && own !== father && own !== mother) out.push({ label: 'Student', digits: own })
+  return out.map((p) => ({ ...p, display: formatPhone(p.digits), tel: `tel:${p.digits}` }))
+}

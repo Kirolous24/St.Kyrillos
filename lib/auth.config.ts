@@ -27,6 +27,8 @@ const STAFF_ONLY = [
   '/portal/curriculum',
   '/portal/my-stage',
   '/portal/help',
+  // Kids see only their own points (2026-10-19): the ranking is the staff's.
+  '/portal/leaderboard',
 ]
 
 /** The activity log is the one /portal/admin area the pastor may browse freely. */

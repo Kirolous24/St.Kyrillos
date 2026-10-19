@@ -7,6 +7,10 @@
     {
       "path": "/api/youtube-webhook/cron",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/portal-reminders/cron",
+      "schedule": "0 23 * * *"
     }
   ]
 }

@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { loadClassStudentRows } from './reports'
 import { monthLabel, monthRange } from '../reports'
-import { churchDayStart, addDays } from '../dates'
+import { churchDayStart, addDays, churchToday } from '../dates'
+import { dueCaseWhere } from './excuses'
 import type { PortalUser } from '../permissions'
 
 export interface ClassMonthDigest {
@@ -56,7 +57,7 @@ export async function classMonthDigest(
       _count: { _all: true },
     }),
     prisma.student.count({ where: { classId, createdAt: stamped } }),
-    prisma.followUpCase.count({ where: { classId, status: 'OPEN' } }),
+    prisma.followUpCase.count({ where: { classId, status: 'OPEN', ...dueCaseWhere(churchToday()) } }),
   ])
 
   const attended = rows.reduce((n, r) => n + r.attended, 0)

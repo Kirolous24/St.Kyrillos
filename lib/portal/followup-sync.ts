@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { absenceStreakAgainst, decideFollowUp, latestHeldStatus } from './attendance-rules'
 import { formatDateOnly, toUTCDate } from './dates'
 import { missedTitle } from './class-members'
+import { withExcusedDates, type ExcuseWindow } from './excuses'
 
 /**
  * Open, update and close the automatic Sunday-School follow-up cases for a set
@@ -30,7 +31,7 @@ export async function syncAutoFollowUps(input: {
   const session = input.session ?? { key: 'sunday', label: 'Sunday School' }
   if (studentIds.length === 0) return { opened: 0, closed: 0 }
 
-  const [history, heldDates, openCases, students] = await Promise.all([
+  const [history, heldDates, openCases, students, excuses] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { studentId: { in: studentIds }, sessionKey: session.key },
       select: { studentId: true, date: true, status: true },
@@ -52,7 +53,20 @@ export async function syncAutoFollowUps(input: {
       select: { id: true, studentId: true, origin: true },
     }),
     prisma.student.findMany({ where: { id: { in: studentIds } }, select: { id: true, createdAt: true } }),
+    // Follow-up excuses (2026-10-19): a Sunday inside one is excused, so it
+    // neither opens a case nor counts toward a streak afterwards.
+    prisma.followUpExcuse.findMany({
+      where: { studentId: { in: studentIds } },
+      select: { studentId: true, startsOn: true, endsOn: true },
+    }),
   ])
+  const excusesById = new Map<string, ExcuseWindow[]>()
+  for (const e of excuses) {
+    excusesById.set(e.studentId, [
+      ...(excusesById.get(e.studentId) ?? []),
+      { startsOn: formatDateOnly(e.startsOn), endsOn: formatDateOnly(e.endsOn) },
+    ])
+  }
 
   // Any open case blocks a new automatic one; only an automatic one may be
   // closed or updated by this rule — a manual case is someone's own record and
@@ -71,11 +85,14 @@ export async function syncAutoFollowUps(input: {
       .filter((h) => h.studentId === id)
       .map((h) => ({ date: formatDateOnly(h.date), status: h.status }))
     const since = sinceById.get(id)
-    const streak = absenceStreakAgainst(held, rows, since)
+    // Scored with the excused Sundays; `rows` stays the real register for
+    // lastSeen and "Back on", which must only ever name a day they came.
+    const scored = withExcusedDates(held, rows, excusesById.get(id) ?? [], since)
+    const streak = absenceStreakAgainst(held, scored, since)
     // F0462 — a zero streak is satisfied by an EXCUSED mark, which means the
     // child was *not* there. Closing needs their most recent Sunday to say
     // PRESENT, or the case closes with a "Back on …" note that is not true.
-    const latestHeld = latestHeldStatus(held, rows, since)
+    const latestHeld = latestHeldStatus(held, scored, since)
     const autoId = autoByStudent.get(id)
     const decision = decideFollowUp({ streak, threshold, hasOpenAutoCase: !!openByStudent.get(id), latestHeld })
 

@@ -1,11 +1,11 @@
 import Link from '@/components/portal/Link'
-import { Star, CalendarCheck, Trophy, AlertTriangle, History, User, HeartHandshake, Camera, Award, GraduationCap, BookMarked, Flame } from 'lucide-react'
+import { Star, CalendarCheck, Trophy, AlertTriangle, History, User, HeartHandshake, Camera, Award, GraduationCap, BookMarked, Flame, CalendarOff } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { membershipsOf } from '@/lib/portal/data/class-members'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireStudentRead, studentName } from '@/lib/portal/data/students'
 import { classTotals } from '@/lib/portal/data/dashboard'
-import { can } from '@/lib/portal/permissions'
+import { can, seesClassmatesPoints } from '@/lib/portal/permissions'
 import { rankStudents, canUndo } from '@/lib/portal/points-math'
 import { absenceStreakAgainst } from '@/lib/portal/attendance-rules'
 import { presentStreak, readingStreak } from '@/lib/portal/achievements'
@@ -21,10 +21,14 @@ import { onFileAccountIds } from '@/lib/portal/data/logins'
 import { pinVaultEnabled } from '@/lib/portal/pin-vault'
 import { loadClassGroups } from '@/lib/portal/data/groups'
 import { effectiveServant } from '@/lib/portal/groups'
-import { contactMethodLabel, contactResultLabel, mayChangeContactNote } from '@/lib/portal/followups'
+import { contactMethodLabel, contactResultLabel, mayChangeContactNote, writtenForGroupOf } from '@/lib/portal/followups'
 import { rosterWhere } from '@/lib/portal/class-members'
 import { ContactNoteActions } from '@/components/portal/ContactNoteActions'
 import { CheckInButton } from '@/components/portal/CheckInButton'
+import { ExcuseNote } from '@/components/portal/ExcuseNote'
+import { ExcuseControl } from '@/components/portal/ExcuseControl'
+import { excusesByStudent } from '@/lib/portal/data/excuses'
+import { excuseState, withExcusedDates, type ExcuseView } from '@/lib/portal/excuses'
 import { GroupPicker } from './GroupPicker'
 import { UndoEntryButton } from './PointsLedgerRow'
 import { cn } from '@/lib/utils'
@@ -52,10 +56,15 @@ export default async function StudentPage({ params }: { params: { id: string } }
   const showLogin = isAdmin || (canWrite && childLogin)
   const onFile = showLogin ? (await onFileAccountIds([s.account.id])).has(s.account.id) : false
   const isSelf = user.studentId === s.id
+  // A child opening their own page sees their points, not their place among
+  // the others (2026-10-19).
+  const showRank = seesClassmatesPoints(user)
   const today = churchToday()
   // Follow-up groups and contact history are the staff's pastoral record,
   // never shown to the child.
   const staff = user.role !== 'STUDENT'
+  // Follow-up excuses (2026-10-19): the staff's record, like the contacts.
+  const excusesLoading = staff ? excusesByStudent([s.id]) : Promise.resolve(new Map<string, ExcuseView[]>())
   const [classGroups, contactLog] = staff
     ? await Promise.all([
         s.classId ? loadClassGroups([s.classId]) : Promise.resolve([]),
@@ -65,11 +74,14 @@ export default async function StudentPage({ params }: { params: { id: string } }
           take: 10,
           select: {
             id: true, method: true, result: true, note: true, at: true, caseId: true, byId: true,
-            case: { select: { classId: true } }, by: { select: { displayName: true } },
+            case: { select: { classId: true } }, by: { select: { displayName: true, servant: { select: { id: true } } } },
+            groupServantId: true, groupServant: { select: { account: { select: { displayName: true } } } },
           },
         }),
       ])
     : [[], []]
+  const excuses = (await excusesLoading).get(s.id) ?? []
+  const excuseOn = excuses.find((e) => excuseState(e, today) === 'active') ?? null
 
   // Notes this user may still fix (2026-09-28): their own, or any as the
   // class's coordinator, overseer or admin. A note belongs to its case's class,
@@ -141,7 +153,7 @@ export default async function StudentPage({ params }: { params: { id: string } }
       take: 10,
       select: { id: true, score: true, total: true, percentage: true, submittedAt: true, exam: { select: { id: true, title: true } } },
     }),
-    s.classId ? prisma.student.findMany({ where: { classId: s.classId }, select: { id: true, firstName: true, lastName: true } }) : Promise.resolve([]),
+    showRank && s.classId ? prisma.student.findMany({ where: { classId: s.classId }, select: { id: true, firstName: true, lastName: true } }) : Promise.resolve([]),
     // Class-wide, not student-scoped: a Sunday the class held but this
     // student has no row for (e.g. everyone else checked in by group QR)
     // still has to count against them.
@@ -182,9 +194,11 @@ export default async function StudentPage({ params }: { params: { id: string } }
   const visibleEntries = isSelf ? entries.filter((e) => !correctedIds.has(e.id)) : entries
   const correctedHidden = entries.length - visibleEntries.length
 
-  const totals = await classTotals(s.classId ? [s.classId] : [])
+  const totals = showRank ? await classTotals(s.classId ? [s.classId] : []) : new Map<string, number>()
   const total = entries.length ? (await prisma.pointEntry.aggregate({ where: { studentId: s.id }, _sum: { points: true } }))._sum.points ?? 0 : 0
-  const rank = rankStudents(classmates.map((c) => ({ studentId: c.id, name: studentName(c), total: totals.get(c.id) ?? 0 }))).find((r) => r.studentId === s.id)?.rank
+  const rank = showRank
+    ? rankStudents(classmates.map((c) => ({ studentId: c.id, name: studentName(c), total: totals.get(c.id) ?? 0 }))).find((r) => r.studentId === s.id)?.rank
+    : undefined
   const allRows = sundayRows.map((a) => ({
     studentId: s.id,
     sessionKey: a.sessionKey,
@@ -208,7 +222,11 @@ export default async function StudentPage({ params }: { params: { id: string } }
   // here would quietly change who gets a case.
   const sundayDates = heldAll.filter((h) => h.sessionKey === 'sunday').map((h) => h.date)
   const sunday = allRows.filter((r) => r.sessionKey === 'sunday').map((r) => ({ date: r.date, status: r.status }))
-  const streak = absenceStreakAgainst(sundayDates, sunday)
+  // A Sunday inside a follow-up excuse is excused, as the follow-up rule scores
+  // it (2026-10-19). Anchored on their first mark, so a child never marked
+  // still reads 0 here, as before.
+  const firstSunday = sunday.map((r) => r.date).sort()[0] ?? '9999-12-31'
+  const streak = absenceStreakAgainst(sundayDates, withExcusedDates(sundayDates, sunday, excuses, firstSunday))
   // The prototype's Avg Score stat (F0393). `exams` is already loaded for the
   // card below, so this is arithmetic rather than another query. It is the
   // last ten, which is what the card shows — a stat that averaged everything
@@ -225,6 +243,17 @@ export default async function StudentPage({ params }: { params: { id: string } }
 
   // Classes the child joined beyond their own, such as Pre-Servants (2026-09-28).
   const alsoIn = (await membershipsOf([s.id])).get(s.id) ?? []
+  // Follow-up excuses (2026-10-19): anyone who follows the child up in their
+  // own class or one they joined may set, change or remove one.
+  const joinedStages = staff && alsoIn.length
+    ? await prisma.schoolClass.findMany({ where: { id: { in: alsoIn.map((c) => c.id) } }, select: { id: true, stage: true } })
+    : []
+  const canExcuse =
+    staff &&
+    !isSelf &&
+    (can(user, 'followup.write', ctx) || joinedStages.some((c) => can(user, 'followup.write', { classId: c.id, classStage: c.stage })))
+  const excusesToShow = excuses.filter((e) => excuseState(e, today) !== 'past')
+  const pastExcuses = excuses.filter((e) => excuseState(e, today) === 'past')
 
   return (
     <>
@@ -286,6 +315,14 @@ export default async function StudentPage({ params }: { params: { id: string } }
         </div>
       )}
 
+      {/* Follow-up excuse (2026-10-19): the first thing anyone opening this
+          child sees while it is on — the dates, the reason and who set it. */}
+      {staff && !isSelf && excuseOn && (
+        <div className="mb-3.5" data-testid="excuse-banner">
+          <ExcuseNote excuse={excuseOn} today={today} />
+        </div>
+      )}
+
       {/* UNASSIGNED (2026-09-26): only the admin can open a child with no class,
           so this is the admin's reminder that someone is waiting on a decision. */}
       {!s.classId && s.unassignedAt && (
@@ -325,7 +362,7 @@ export default async function StudentPage({ params }: { params: { id: string } }
 
       {/* F0141 / F0206 / F0394 — three findings, one tile. Six across now, so
           the row wraps 2/3/6 rather than five plus an orphan. */}
-      <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+      <div className={`mb-5 grid grid-cols-2 gap-4 sm:grid-cols-3 ${showRank ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
         <StatCard label="Points" value={total} icon={<Star className="h-6 w-6" />} accent="#D97706" />
         {/* The profile named only what a child had missed. A servant ringing a
             family that has turned a corner had nothing on the page to open with,
@@ -368,13 +405,15 @@ export default async function StudentPage({ params }: { params: { id: string } }
           icon={<GraduationCap className="h-6 w-6" />}
           accent={quizAverage === null ? '#7C7A7A' : quizAverage >= 70 ? '#16A34A' : '#D97706'}
         />
-        <StatCard
-          label="Class rank"
-          value={rank ? `#${rank}` : '—'}
-          hint={classmates.length ? `of ${classmates.length}` : undefined}
-          icon={<Trophy className="h-6 w-6" />}
-          accent="#4F46E5"
-        />
+        {showRank && (
+          <StatCard
+            label="Class rank"
+            value={rank ? `#${rank}` : '—'}
+            hint={classmates.length ? `of ${classmates.length}` : undefined}
+            icon={<Trophy className="h-6 w-6" />}
+            accent="#4F46E5"
+          />
+        )}
         <StatCard
           label="Missed in a row"
           value={streak}
@@ -577,6 +616,44 @@ export default async function StudentPage({ params }: { params: { id: string } }
             </Card>
           )}
 
+          {/* Follow-up excuses (2026-10-19): any servant of the child's class
+              may excuse them for a while, in their own words. */}
+          {staff && !isSelf && (canExcuse || excuses.length > 0) && (
+            <Card title="Excused from follow-up" icon={<CalendarOff className="h-[15px] w-[15px]" />}>
+              <div className="space-y-2.5" data-testid="excuse-card">
+                {excusesToShow.length === 0 && (
+                  <p className="text-[12px] text-parch-500">
+                    Not excused. If they are away for a while — travelling, ill, a family matter — excuse them and nobody
+                    has to follow them up until they are back.
+                  </p>
+                )}
+                {excusesToShow.map((e) => (
+                  <div key={e.id} className="space-y-1.5">
+                    <ExcuseNote excuse={e} today={today} />
+                    {canExcuse && <ExcuseControl studentId={s.id} studentName={studentName(s)} today={today} excuse={e} />}
+                  </div>
+                ))}
+                {canExcuse && (
+                  <div className={excusesToShow.length > 0 ? 'border-t border-[#F5F2ED] pt-2.5' : undefined}>
+                    <ExcuseControl studentId={s.id} studentName={studentName(s)} today={today} />
+                  </div>
+                )}
+                {pastExcuses.length > 0 && (
+                  <details className="group border-t border-[#F5F2ED] pt-2">
+                    <summary className="cursor-pointer list-none text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500 [&::-webkit-details-marker]:hidden">
+                      Past excuses ({pastExcuses.length})
+                    </summary>
+                    <div className="mt-2 space-y-1.5">
+                      {pastExcuses.map((e) => (
+                        <ExcuseNote key={e.id} excuse={e} today={today} />
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            </Card>
+          )}
+
           {staff && !isSelf && s.classId && (
             <Card title="Group & contacts" icon={<HeartHandshake className="h-[15px] w-[15px]" />}>
               <p className="text-[12.5px] text-parch-800" data-testid="student-group">
@@ -610,6 +687,15 @@ export default async function StudentPage({ params }: { params: { id: string } }
                           {' '}
                           · {formatMonthDay(churchToday(l.at))}
                           {l.by ? ` · ${l.by.displayName}` : ''}
+                          {(() => {
+                            // On a colleague's behalf (2026-10-19).
+                            const forGroup = writtenForGroupOf({
+                              groupServantId: l.groupServantId,
+                              groupServantName: l.groupServant?.account.displayName ?? null,
+                              byServantId: l.by?.servant?.id ?? null,
+                            })
+                            return forGroup ? ` · for ${forGroup}’s group` : ''
+                          })()}
                         </span>
                         {l.caseId && (
                           <Link href={`/portal/follow-ups/${l.caseId}`} className="ml-1 text-[11px] font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">

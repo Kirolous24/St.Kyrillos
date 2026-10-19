@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizePhone, formatPhone, waLink } from '@/lib/portal/phones'
+import { normalizePhone, formatPhone, waLink, kidPhoneList } from '@/lib/portal/phones'
 
 describe('normalizePhone', () => {
   it('reduces US numbers to 10 digits', () => {
@@ -58,3 +58,32 @@ describe('waLink', () => {
   })
 })
 
+
+// A child's numbers on every card a servant sees (2026-10-19): the family's
+// first, labelled, each once.
+describe('kidPhoneList', () => {
+  it('lists the father, the mother and the child’s own, in that order', () => {
+    expect(kidPhoneList({ fatherPhone: '615-555-0101', motherPhone: '(615) 555-0102', ownPhone: '6155550103' })).toEqual([
+      { label: 'Father', digits: '6155550101', display: '(615) 555-0101', tel: 'tel:6155550101' },
+      { label: 'Mother', digits: '6155550102', display: '(615) 555-0102', tel: 'tel:6155550102' },
+      { label: 'Student', digits: '6155550103', display: '(615) 555-0103', tel: 'tel:6155550103' },
+    ])
+  })
+
+  it('shows a number the parents share once', () => {
+    expect(kidPhoneList({ fatherPhone: '615-555-0101', motherPhone: '+1 615 555 0101' }).map((p) => p.label)).toEqual(['Parents'])
+  })
+
+  it('leaves out the child’s own when it is a parent’s', () => {
+    expect(kidPhoneList({ motherPhone: '615-555-0102', ownPhone: '615.555.0102' }).map((p) => p.label)).toEqual(['Mother'])
+  })
+
+  it('skips blanks and says nothing when there is no number', () => {
+    expect(kidPhoneList({ fatherPhone: '', motherPhone: null, ownPhone: '  ' })).toEqual([])
+    expect(kidPhoneList({})).toEqual([])
+  })
+
+  it('keeps a number it cannot format as it was typed, digits only', () => {
+    expect(kidPhoneList({ fatherPhone: '20 100 555 0101' })[0]).toMatchObject({ display: '201005550101', tel: 'tel:201005550101' })
+  })
+})

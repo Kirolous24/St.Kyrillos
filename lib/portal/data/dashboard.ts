@@ -3,12 +3,12 @@ import { rostersWhere } from '../class-members'
 import { prisma } from '@/lib/prisma'
 import { churchToday, addDays, formatDateOnly, toUTCDate, mondayOf, churchDayStart, sundayOnOrBefore } from '../dates'
 import { upcomingBirthdays, birthdaysInWeek } from '../birthdays'
-import { rankStudents } from '../points-math'
 import { presentStreak } from '../achievements'
 import { attendanceRate, headlineRows, heldOccasions, topQuizPerformers, attendanceDelta, registerStatus, type RegisterStatus } from '../reports'
 import type { PortalUser } from '../permissions'
 import { listVisibleClasses } from './classes'
 import { followUpCaseWhere } from './groups'
+import { dueCaseWhere } from './excuses'
 import { examScopeWhere, studentExams } from './exams'
 import { examStatusFor } from '../exams'
 import { studentName } from './students'
@@ -34,7 +34,8 @@ export async function staffOverview(user: PortalUser) {
   const [openCases, takenToday, students, recentSundays] = await Promise.all([
     prisma.followUpCase.groupBy({
       by: ['classId'],
-      where: { AND: [caseScope, { status: 'OPEN' }] },
+      // An excused child is not a call anybody owes (2026-10-19).
+      where: { AND: [caseScope, { status: 'OPEN' }, dueCaseWhere(today)] },
       _count: { _all: true },
     }),
     prisma.attendanceRecord.groupBy({
@@ -294,14 +295,14 @@ export async function studentOverview(user: PortalUser) {
   })
   if (!me) return null
 
+  // Names and birthdays only. A child sees their own points and nothing that
+  // ranks them against the others (2026-10-19), so no classmate's total is
+  // loaded here at all.
   const classmates = me.classId
     ? await prisma.student.findMany({ where: { classId: me.classId }, select: { id: true, firstName: true, lastName: true, dob: true } })
     : [me]
-  const totals = await classTotals(me.classId ? [me.classId] : [])
-  const ranked = rankStudents(classmates.map((s) => ({ studentId: s.id, name: studentName(s), total: totals.get(s.id) ?? 0 })))
-  const mine = ranked.find((r) => r.studentId === me.id)
 
-  const [entries, sunday, heldSundays, myResults, examRows, monthPoints] = await Promise.all([
+  const [entries, sunday, heldSundays, myResults, examRows, monthPoints, myTotal] = await Promise.all([
     prisma.pointEntry.findMany({
       where: { studentId: me.id },
       orderBy: { createdAt: 'desc' },
@@ -344,6 +345,9 @@ export async function studentOverview(user: PortalUser) {
       where: { studentId: me.id, undone: false, createdAt: { gte: churchDayStart(`${today.slice(0, 7)}-01`) } },
       _sum: { points: true },
     }),
+    // Every entry, as the class totals sum them: an undo and the row it
+    // cancels net to nothing.
+    prisma.pointEntry.aggregate({ where: { studentId: me.id }, _sum: { points: true } }),
   ])
 
   const birthdays = upcomingBirthdays(
@@ -400,14 +404,7 @@ export async function studentOverview(user: PortalUser) {
     // already powers the attendance badges, so the dashboard and the
     // achievements page cannot report different numbers.
     streak: presentStreak(sunday.map((r) => ({ date: formatDateOnly(r.date), status: r.status }))),
-    total: mine?.total ?? 0,
-    rank: mine?.rank ?? null,
-    classSize: ranked.length,
-    top3: ranked.slice(0, 3),
-    // The leader's total, for the prototype's "Points vs leader" bar. It is
-    // the top of the ranking, which is 0 when nobody has scored yet — the bar
-    // guards against that rather than dividing by it.
-    leaderPoints: ranked[0]?.total ?? 0,
+    total: myTotal._sum.points ?? 0,
     entries,
     sunday: sunday.map((r) => ({ date: formatDateOnly(r.date), status: r.status })),
     rate: attendanceRate(

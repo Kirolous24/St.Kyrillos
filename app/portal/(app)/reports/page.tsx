@@ -42,6 +42,7 @@ import { ChurchClassGrid, type ReportMode } from './ChurchClassGrid'
 import { ReportLetterhead } from './ReportLetterhead'
 import { PortalChart } from '@/components/portal/PortalChart'
 import { ReportFilters, CsvExportButton } from './ReportFilters'
+import { ReportsTabs } from './ReportsTabs'
 
 export const metadata = { title: 'Reports' }
 
@@ -95,21 +96,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
   ])
   const tab = searchParams.tab === 'church' && churchScope ? 'church' : 'attendance'
 
-  const tabs = (
-    <Tabs>
-      <TabLink href="/portal/reports" active={tab === 'attendance'}>
-        Attendance
-      </TabLink>
-      {churchScope && (
-        <TabLink href="/portal/reports?tab=church" active={tab === 'church'}>
-          Church reports
-        </TabLink>
-      )}
-      <TabLink href="/portal/reports/cards" active={false}>
-        Report cards
-      </TabLink>
-    </Tabs>
-  )
+  const tabs = <ReportsTabs active={tab} church={!!churchScope} />
 
   /* ── Church reports ─────────────────────────────────────────────────────── */
   if (tab === 'church') {

@@ -12,10 +12,14 @@ import { loadNotifications } from '@/lib/portal/data/reports'
 import { withNavBadges, withUnassignedFlag } from '@/lib/portal/nav'
 import { countUnassigned } from '@/lib/portal/data/unassigned'
 import { churchToday } from '@/lib/portal/dates'
+import { dueCaseWhere } from '@/lib/portal/data/excuses'
+import { PORTAL_APP_METADATA } from '@/lib/portal/app-metadata'
 
 export const metadata: Metadata = {
   title: { default: 'Sunday School Portal', template: '%s | Sunday School' },
   robots: { index: false, follow: false },
+  // A Home Screen app, so an iPhone can get notifications (2026-10-19).
+  ...PORTAL_APP_METADATA,
 }
 
 export const dynamic = 'force-dynamic'
@@ -38,7 +42,8 @@ export default async function PortalAppLayout({ children }: { children: React.Re
   // would promise cases they cannot open.
   const openCases =
     user.role === 'ADMIN' || user.role === 'PASTOR'
-      ? await prisma.followUpCase.count({ where: { status: 'OPEN' } })
+      ? // An excused child is not a call anybody owes (2026-10-19).
+        await prisma.followUpCase.count({ where: { status: 'OPEN', ...dueCaseWhere(today) } })
       : 0
   // UNASSIGNED (2026-09-26): the red item under Dashboard, only while a child
   // this user handles is waiting. Zero, with no query, for everyone else.

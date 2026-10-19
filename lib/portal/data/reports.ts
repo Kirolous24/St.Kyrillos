@@ -12,6 +12,8 @@ import { can, visibleClassIds } from '../permissions'
 import { requireClassAccess, listVisibleClasses } from './classes'
 import { studentName } from './students'
 import { followUpCaseWhere, groupSummaries } from './groups'
+import { dueCaseWhere } from './excuses'
+import { NOTICE_DAYS } from '../assignment-notices'
 import { rankStudents } from '../points-math'
 import { churchToday, toUTCDate, churchDayStart, formatDateOnly, addDays } from '../dates'
 import {
@@ -37,6 +39,7 @@ import {
 } from '../reports'
 import {
   buildNotifications,
+  noticeNotifications,
   unreadNotifications,
   type PortalNotification,
 } from '../notifications'
@@ -78,12 +81,22 @@ export async function listSessions(): Promise<SessionOption[]> {
  */
 export const loadNotifications = cache(async (user: PortalUser): Promise<PortalNotification[]> => {
   const today = churchToday()
-  const [items, read] = await Promise.all([
+  const [items, read, notices] = await Promise.all([
     buildFacts(user, today),
     prisma.notificationRead.findMany({ where: { accountId: user.accountId }, select: { key: true } }),
+    // Servant assignment notices (2026-10-19): the last 60 days, newest first.
+    user.role === 'STUDENT'
+      ? Promise.resolve([])
+      : prisma.notice.findMany({
+          where: { accountId: user.accountId, createdAt: { gte: new Date(Date.now() - NOTICE_DAYS * 86_400_000) } },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          select: { id: true, kind: true, title: true, body: true, href: true },
+        }),
   ])
-  return unreadNotifications(items, read.map((r) => r.key))
+  return unreadNotifications([...noticeNotifications(notices), ...items], read.map((r) => r.key))
 })
+
 
 async function buildFacts(user: PortalUser, today: string): Promise<PortalNotification[]> {
   if (user.role === 'STUDENT') {
@@ -154,9 +167,11 @@ async function buildFacts(user: PortalUser, today: string): Promise<PortalNotifi
         where: { classId: { in: classIds }, dob: { not: null } },
         select: { id: true, firstName: true, lastName: true, dob: true },
       }),
-      prisma.followUpCase.count({ where: { AND: [scopeWhere, { status: 'OPEN' }] } }),
+      // An excused child is not a call anybody owes (2026-10-19), so they are
+      // neither counted nor named.
+      prisma.followUpCase.count({ where: { AND: [scopeWhere, { status: 'OPEN' }, dueCaseWhere(today)] } }),
       prisma.followUpCase.findMany({
-        where: { AND: [scopeWhere, { status: 'OPEN', origin: 'AUTO', consecutiveAbsences: { gte: 3 } }] },
+        where: { AND: [scopeWhere, { status: 'OPEN', origin: 'AUTO', consecutiveAbsences: { gte: 3 } }, dueCaseWhere(today)] },
         orderBy: { consecutiveAbsences: 'desc' },
         take: 10,
         select: { studentId: true, consecutiveAbsences: true, student: { select: { firstName: true, lastName: true } } },
@@ -192,7 +207,7 @@ async function buildFacts(user: PortalUser, today: string): Promise<PortalNotifi
         orderBy: { sortOrder: 'asc' },
         select: { id: true, name: true },
       }),
-      prisma.followUpCase.count({ where: { status: 'OPEN' } }),
+      prisma.followUpCase.count({ where: { status: 'OPEN', ...dueCaseWhere(today) } }),
       groupSummaries(active.map((c) => c.id)),
     ])
     const flagged = summaries.filter((g) => g.health.flagged)
@@ -205,7 +220,7 @@ async function buildFacts(user: PortalUser, today: string): Promise<PortalNotifi
     })
   }
 
-  const openCases = await prisma.followUpCase.count({ where: { status: 'OPEN' } })
+  const openCases = await prisma.followUpCase.count({ where: { status: 'OPEN', ...dueCaseWhere(today) } })
   return buildNotifications('PASTOR', { today, openCases })
 }
 

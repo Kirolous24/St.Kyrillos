@@ -88,7 +88,15 @@ async function signIn(account) {
 // ok  = expect 200
 // gone = expect 404 or a redirect away (role must not reach it)
 const ROUTES = {
-  common: ['/portal', '/portal/settings', '/portal/leaderboard', '/portal/birthdays', '/portal/hymns', '/portal/events', '/portal/feed'],
+  common: ['/portal', '/portal/settings', '/portal/birthdays', '/portal/hymns', '/portal/events', '/portal/feed'],
+  // Kids see only their own points (2026-10-19): the ranking is the staff's.
+  staffOnly: [
+    '/portal/leaderboard', '/portal/leaderboard?class=kg',
+    // Class Groups and the follow-up log (2026-10-19).
+    '/portal/my-group?tab=class', '/portal/my-group?tab=log',
+    // The children's weekly attendance report (2026-10-19).
+    '/portal/reports/weekly', '/portal/reports/weekly?class=all&weeks=4', '/portal/reports/weekly?from=2026-09-01&to=2026-09-30',
+  ],
   admin: {
     notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123', '/portal/exams/nope123'],
     ok: [
@@ -101,6 +109,8 @@ const ROUTES = {
       '/portal/reports?tab=church&mode=exams', '/portal/reports?tab=church&mode=points',
       '/portal/readings', '/portal/photo', '/portal/admin/servants/logins', '/portal/my-group',
       '/portal/unassigned', '/portal/classes/kg/import',
+      // Message families (2026-10-19).
+      '/portal/classes/kg/message', '/portal/classes/kg/message?session=bible', '/portal/classes/kg/message?session=sunday&date=2026-09-20',
     ],
     gone: [],
   },
@@ -108,6 +118,7 @@ const ROUTES = {
     ok: [
       '/portal/classes', '/portal/follow-ups', '/portal/lessons', '/portal/exams', '/portal/announcements',
       '/portal/reports', '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/readings', '/portal/my-group',
+      '/portal/classes/kg/message',
     ],
     // /portal/admin/audit is deliberately open to the pastor as well as the admin
     // (see app/portal/(app)/admin/audit/page.tsx), so it is not listed here.
@@ -138,6 +149,8 @@ const ROUTES = {
       '/portal/classes/high-school-girls',
       // Another class's children's IDs and PINs (2026-10-04): never.
       '/portal/classes/high-school-girls/credentials',
+      // …nor its families to message (2026-10-19).
+      '/portal/classes/high-school-girls/message',
       '/portal/students/nope123',
       '/portal/exams/nope123',
       '/portal/follow-ups/nope123',
@@ -149,6 +162,9 @@ const ROUTES = {
       '/portal/admin/data', '/portal/admin/students', '/portal/admin/servants', '/portal/admin/servants/logins', '/portal/admin/audit',
       '/portal/exams', '/portal/exams/new', '/portal/qr', '/portal/reports', '/portal/servant-attendance',
       '/portal/agenda', '/portal/lessons', '/portal/assignments', '/portal/my-group', '/portal/unassigned',
+      '/portal/leaderboard', '/portal/leaderboard?class=kg',
+      '/portal/my-group?tab=class', '/portal/my-group?tab=log',
+      '/portal/reports/weekly', '/portal/classes/kg/message',
     ],
   },
 }
@@ -196,6 +212,14 @@ async function main() {
   }
   const loginRes = await get(anon, '/portal/login')
   record(loginRes.status === 200, 'anon GET /portal/login', `status ${loginRes.status}`)
+  // Servant reminders (2026-10-19): only the scheduler, with the cron secret, runs the job.
+  const cron = await get(anon, '/api/portal-reminders/cron')
+  record(cron.status === 401, 'anon BLOCKED /api/portal-reminders/cron', `expected 401, got ${cron.status}`)
+  // The Home Screen app's manifest and notification worker are public files.
+  for (const file of ['/portal.webmanifest', '/portal-sw.js', '/portal-apple-touch-icon.png']) {
+    const res = await get(anon, file)
+    record(res.status === 200, `anon GET ${file}`, `status ${res.status}`)
+  }
 
   for (const account of ACCOUNTS) {
     let jar
@@ -209,10 +233,13 @@ async function main() {
     const plan = ROUTES[account.role]
     // A servant opens their own class's IDs and PINs (2026-10-04). The backup
     // keeps the old app's class ids; the import slugged them (slugifyClassId).
-    const own = account.role === 'servant' && account.classId
-      ? [`/portal/classes/${String(account.classId).toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}/credentials`]
-      : []
-    for (const route of [...ROUTES.common, ...plan.ok, ...(plan.ok2 || []), ...own]) await checkOk(jar, account.role, route)
+    const ownClass = account.role === 'servant' && account.classId
+      ? String(account.classId).toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+      : null
+    // …and messages its families (2026-10-19).
+    const own = ownClass ? [`/portal/classes/${ownClass}/credentials`, `/portal/classes/${ownClass}/message`] : []
+    const staff = account.role === 'student' ? [] : ROUTES.staffOnly
+    for (const route of [...ROUTES.common, ...staff, ...plan.ok, ...(plan.ok2 || []), ...own]) await checkOk(jar, account.role, route)
     for (const route of plan.gone) await checkGone(jar, account.role, route)
     for (const route of plan.notFound ?? []) await checkNotFound(jar, account.role, route)
   }

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireClassAccess } from '@/lib/portal/data/classes'
 import { studentName } from '@/lib/portal/data/students'
-import { CalendarCheck } from 'lucide-react'
+import { CalendarCheck, Send } from 'lucide-react'
 import { PageHeader, EmptyState, Card, LinkButton } from '@/components/portal/ui'
 import { parseDateOnly, churchToday, toUTCDate, formatDateOnly } from '@/lib/portal/dates'
 import { formatShortDate } from '@/lib/portal/format'
@@ -12,6 +12,8 @@ import { AttendanceTaker } from './AttendanceTaker'
 import { RemoveRegister } from './RemoveRegister'
 import { registerWhere, sessionsForClass } from '@/lib/portal/class-members'
 import { lastSavedOf } from '@/lib/portal/attendance-rules'
+import { can } from '@/lib/portal/permissions'
+import { missedRegister } from '@/lib/portal/family-messages'
 
 export const metadata = { title: 'Attendance' }
 
@@ -67,7 +69,11 @@ export default async function AttendancePage({
     prisma.student.findMany({
       where: registerWhere(active, cls.id),
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-      select: { id: true, firstName: true, lastName: true, account: { select: { photo: true } } },
+      select: {
+        id: true, firstName: true, lastName: true, classId: true, createdAt: true,
+        account: { select: { photo: true } },
+        memberships: { where: { classId: cls.id }, select: { addedAt: true } },
+      },
     }),
     prisma.attendanceRecord.findMany({
       where: { classId: cls.id, date: toUTCDate(date), sessionKey },
@@ -101,6 +107,19 @@ export default async function AttendancePage({
   )
 
   const lastSaved = lastSavedOf(existing)
+
+  // Message families (2026-10-19): once this register is taken, one message
+  // to every family whose child was not there, written once.
+  const missedCount = can(user, 'followup.write', { classId: cls.id, classStage: cls.stage })
+    ? missedRegister({
+        roster: students.map((s) => ({
+          id: s.id,
+          joinedOn: churchToday(s.classId === cls.id ? s.createdAt : (s.memberships[0]?.addedAt ?? s.createdAt)),
+        })),
+        marks: existing,
+        date,
+      }).length
+    : 0
 
   return (
     <>
@@ -204,6 +223,19 @@ export default async function AttendancePage({
           lastSaved={lastSaved ? { at: lastSaved.at.toISOString(), by: lastSaved.by } : null}
           recentDates={recentDates.map((r) => r.date.toISOString().slice(0, 10))}
         />
+      )}
+      {missedCount > 0 && (
+        <Card className="mt-4 print:hidden" title="Message the families" icon={<Send className="h-4 w-4" aria-hidden />}>
+          <p className="text-[12.5px] text-parch-700" data-testid="message-families-hint">
+            {missedCount === 1 ? '1 child' : `${missedCount} children`} missed {active.label} on {formatShortDate(date)}. Write one
+            message and send it to each family from your phone. Each one gets their own child’s name.
+          </p>
+          <div className="mt-3">
+            <LinkButton href={`/portal/classes/${cls.id}/message?session=${sessionKey}&date=${date}`} size="sm">
+              <Send className="h-3.5 w-3.5" aria-hidden /> Message families
+            </LinkButton>
+          </div>
+        </Card>
       )}
       {students.length > 0 && (
         <RemoveRegister

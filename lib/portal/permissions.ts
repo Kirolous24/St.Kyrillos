@@ -119,11 +119,15 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
           return assigned || stageRead
         case 'group.manage':
           // Arranging who follows whom is the coordinator's job: the stage
-          // overseer for their stage, the class Coordinator for their class.
-          // Plain servants and assistants do not rearrange everyone else's
-          // (follow-up groups, 2026-09-26). Assistants see every group in
-          // their class (2026-10-04, `followUpScope`); seeing is not arranging.
-          return stageRead || (!!ctx.classId && user.coordinatorOf.includes(ctx.classId))
+          // overseer for their stage, the class Coordinator and Assistant
+          // Coordinator for their class. Plain servants do not rearrange
+          // everyone else's (follow-up groups, 2026-09-26). Assistants saw
+          // every group from 2026-10-04 and arrange them from 2026-10-19, at
+          // the user's word: "the same functionality within those groups".
+          return (
+            stageRead ||
+            (!!ctx.classId && (user.coordinatorOf.includes(ctx.classId) || user.assistantOf.includes(ctx.classId)))
+          )
         case 'unassigned.manage':
           // UNASSIGNED (2026-09-26): any servant of the class may take a child
           // off it with a reason (student.write). What happens next is put
@@ -146,6 +150,15 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
       }
   }
   return false
+}
+
+/**
+ * Kids see their own points and scores and nothing that ranks them against
+ * other children (2026-10-19): no leaderboard, no class rank, no "points vs the
+ * leader". Everybody who looks after them still does.
+ */
+export function seesClassmatesPoints(user: Pick<PortalUser, 'role'>): boolean {
+  return user.role !== 'STUDENT'
 }
 
 /**

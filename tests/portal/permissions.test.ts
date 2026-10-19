@@ -12,6 +12,7 @@ const admin: PortalUser = { accountId: 'a', role: 'ADMIN', displayName: 'Admin',
 const pastor: PortalUser = { accountId: 'p', role: 'PASTOR', displayName: 'Fr.', classIds: [], coordinatorOf: [], assistantOf: [], stageOversight: null }
 const servant: PortalUser = { accountId: 's', role: 'SERVANT', displayName: 'S', servantId: 'sv1', classIds: ['kg'], coordinatorOf: [], assistantOf: [], stageOversight: null }
 const coordinator: PortalUser = { ...servant, accountId: 'c', coordinatorOf: ['kg'] }
+const assistant: PortalUser = { ...servant, accountId: 'ac', assistantOf: ['kg'] }
 const stageLead: PortalUser = { ...servant, accountId: 'st', stageOversight: 'ELEMENTARY' }
 const student: PortalUser = { accountId: 'k', role: 'STUDENT', displayName: 'K', studentId: 'stu1', classIds: ['kg'], coordinatorOf: [], assistantOf: [], stageOversight: null }
 
@@ -136,6 +137,15 @@ describe('group.manage', () => {
     expect(can(coordinator, 'group.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
     expect(can(stageLead, 'group.manage', { classId: '5th-6th-boys', classStage: 'MIDDLE_SCHOOL' })).toBe(false)
   })
+  // 2026-10-19, at the user's word: an Assistant Coordinator sees every group
+  // in their class (since 2026-10-04) and now arranges them as the Coordinator
+  // does — Split evenly, Move children, fixing anyone's contact notes.
+  it('an Assistant Coordinator arranges the groups of their own class', () => {
+    expect(can(assistant, 'group.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+  })
+  it("and only their own class's", () => {
+    expect(can(assistant, 'group.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
+  })
 })
 
 // UNASSIGNED (2026-09-26): any servant of the class may take a child off it with
@@ -154,6 +164,9 @@ describe('unassigned.manage', () => {
   it("a Coordinator's reach is their own class, an overseer's their own stage", () => {
     expect(can(coordinator, 'unassigned.manage', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
     expect(can(stageLead, 'unassigned.manage', { classId: '5th-6th-boys', classStage: 'MIDDLE_SCHOOL' })).toBe(false)
+  })
+  it('an Assistant Coordinator does not: deciding on an UNASSIGNED child is not group work', () => {
+    expect(can(assistant, 'unassigned.manage', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
   })
   it('a plain servant can still unassign a child from their own class', () => {
     expect(can(servant, 'student.write', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)

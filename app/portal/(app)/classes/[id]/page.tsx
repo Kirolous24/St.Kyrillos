@@ -1,6 +1,6 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { Users, UserCog, Star, CalendarCheck, QrCode, Printer, KeyRound, MessageSquare, BookOpen, ClipboardList, HeartHandshake, Camera, Trophy, History } from 'lucide-react'
+import { Users, UserCog, Star, CalendarCheck, QrCode, Printer, KeyRound, MessageSquare, BookOpen, ClipboardList, HeartHandshake, Camera, Trophy, History, Send, BarChart3 } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { cn } from '@/lib/utils'
 import { requirePortalUser } from '@/lib/portal/session'
@@ -23,6 +23,9 @@ import { formatDateOnly, churchToday, ageOn } from '@/lib/portal/dates'
 import { ensureInitialSplits, loadClassGroups } from '@/lib/portal/data/groups'
 import { effectiveServant, groupHealth } from '@/lib/portal/groups'
 import { GroupsPanel } from './GroupsPanel'
+import { KidPhones } from '@/components/portal/KidPhones'
+import { excusesByStudent } from '@/lib/portal/data/excuses'
+import { currentExcuse, excuseState, excuseSummary } from '@/lib/portal/excuses'
 import { MembersPanel } from './MembersPanel'
 import { rosterWhere } from '@/lib/portal/class-members'
 
@@ -36,6 +39,7 @@ export default async function ClassPage({ params, searchParams }: { params: { id
   const ctx = { classId: cls.id, classStage: cls.stage }
   const canWrite = can(user, 'attendance.write', ctx)
   const canEditStudents = can(user, 'student.write', ctx)
+  const canFollowUp = can(user, 'followup.write', ctx)
   const canManageGroups = can(user, 'group.manage', ctx)
   // Follow-up groups: split on first use, then read this class's groups.
   await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
@@ -49,7 +53,9 @@ export default async function ClassPage({ params, searchParams }: { params: { id
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       select: {
         id: true, firstName: true, lastName: true, dob: true, grade: true, importNotes: true, classId: true,
-        class: { select: { name: true } }, account: { select: { photo: true, loginId: true } },
+        // The family's numbers on the card (2026-10-19).
+        fatherPhone: true, motherPhone: true,
+        class: { select: { name: true } }, account: { select: { photo: true, loginId: true, phone: true } },
       },
     }),
     prisma.classServant.findMany({
@@ -101,6 +107,14 @@ export default async function ClassPage({ params, searchParams }: { params: { id
   )
   const openSet = new Set(openCases.map((c) => c.studentId))
   const today = churchToday()
+  // Follow-up excuses (2026-10-19): an excused child wears "Excused", not the
+  // red follow-up flag.
+  const excuses = await excusesByStudent(students.map((s) => s.id), { endingFrom: today })
+  const excusedNow = new Map(
+    students
+      .map((s) => [s.id, currentExcuse(excuses.get(s.id) ?? [], today)] as const)
+      .filter((e): e is readonly [string, NonNullable<(typeof e)[1]>] => !!e[1] && excuseState(e[1], today) === 'active'),
+  )
 
   // Scored the same way as the official Reports page: one verdict per (student,
   // week), every student on the roster expected at every Sunday the class held,
@@ -192,6 +206,12 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                 <RosterExportButton classId={cls.id} />
               </>
             )}
+            {/* One message to every family whose child missed a meeting (2026-10-19). */}
+            {canFollowUp && (
+              <LinkButton href={`/portal/classes/${cls.id}/message`} variant="secondary">
+                <Send className="h-4 w-4" aria-hidden /> Message families
+              </LinkButton>
+            )}
             {/* The class's IDs and PINs on file (option B), for whoever can
                 reset a child's PIN: the class's servants, the stage overseer
                 and the admin (2026-10-04). Resetting the whole class is still
@@ -244,6 +264,10 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                 row, one click, no filters to set first. */}
             <LinkButton href={`/portal/reports/class/${cls.id}`} variant="secondary">
               <Printer className="h-4 w-4" aria-hidden /> Print Class Report
+            </LinkButton>
+            {/* The servants' weekly attendance report, for these children (2026-10-19). */}
+            <LinkButton href={`/portal/reports/weekly?class=${cls.id}`} variant="secondary">
+              <BarChart3 className="h-4 w-4" aria-hidden /> Weekly report
             </LinkButton>
           </>
         }
@@ -392,18 +416,22 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                   id: s.id,
                   text: [studentName(s), s.account.loginId, s.grade ?? ''].join(' ').toLowerCase(),
                   node: (
-                  /* `block` is load-bearing: a Next <Link> renders an <a>, which
+                  /* The card is a box, not one big link, since the family's
+                     numbers below are links of their own (2026-10-19) and a
+                     link cannot hold another. The top still opens the child.
+
+                     `block` is load-bearing: a Next <Link> renders an <a>, which
                      is display:inline by default, so an inline box wrapping these
                      block spans fragments across lines — the card came apart into
                      narrow slivers, each carrying its own coloured top border, in
                      between the ones that happened to fit. Tailwind's preflight
                      does not set a display on anchors, so it has to be said. */
-                  <Link
+                  <div
                     key={s.id}
-                    href={`/portal/students/${s.id}`}
-                    className="block rounded-[14px] border border-parch-200 bg-parch-50 px-3.5 py-[18px] text-center shadow-card transition-shadow hover:shadow-panel"
+                    className="rounded-[14px] border border-parch-200 bg-parch-50 px-3.5 pb-3.5 pt-[18px] text-center shadow-card transition-shadow hover:shadow-panel"
                     style={{ borderTop: `3px solid ${accent}` }}
                   >
+                  <Link href={`/portal/students/${s.id}`} className="block">
                     <span className="mx-auto mb-2.5 block w-fit">
                       <Avatar name={studentName(s)} photo={s.account.photo} size="lg" />
                     </span>
@@ -448,10 +476,25 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                           {streakByStudent.get(s.id)}w streak
                         </span>
                       )}
-                      {openSet.has(s.id) && <Badge tone="bad">Follow-up</Badge>}
+                      {excusedNow.has(s.id) ? (
+                        <span title={excusedNow.get(s.id)!.reason}>
+                          <Badge tone="info">{excuseSummary(excusedNow.get(s.id)!, today)}</Badge>
+                        </span>
+                      ) : (
+                        openSet.has(s.id) && <Badge tone="bad">Follow-up</Badge>
+                      )}
                       {s.importNotes && <Badge tone="warn">Review</Badge>}
                     </span>
                   </Link>
+                  <KidPhones
+                    name={studentName(s)}
+                    fatherPhone={s.fatherPhone}
+                    motherPhone={s.motherPhone}
+                    ownPhone={s.account.phone}
+                    center
+                    className="mt-3 border-t border-[#F5F2ED] pt-2.5"
+                  />
+                  </div>
                   ),
                 }
               })}

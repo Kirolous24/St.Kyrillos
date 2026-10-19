@@ -15,7 +15,8 @@ type Kid = { id: string; name: string }
  * Follow-up groups on the class page (2026-09-26): who follows up whom.
  *
  * Everybody in the class can see it. Only the admin, the stage overseer and the
- * class Coordinator can change it (`group.manage`), with Split evenly, which
+ * class Coordinator or Assistant Coordinator (2026-10-19) can change it
+ * (`group.manage`), with Split evenly, which
  * names every move before anything happens, or by moving one child.
  */
 export function GroupsPanel({
@@ -103,12 +104,20 @@ export function GroupsPanel({
         action={flags.length > 0 ? <Badge tone="warn">Needs attention</Badge> : <Badge tone="good">Even</Badge>}
       >
         <p className="mb-3 text-[12px] text-parch-600">
-          Each child has one servant who follows them up. Servants see their own group on My Group and on Follow-ups.
+          Each child has one servant who follows them up. Servants see their own group on My Group and on Follow-ups,
+          and anyone in the class can follow up any child — on a colleague&rsquo;s behalf too — from{' '}
+          <Link
+            href={`/portal/my-group?tab=class&class=${encodeURIComponent(classId)}`}
+            className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2"
+          >
+            Class Groups
+          </Link>
+          .
         </p>
         {flags.length > 0 && (
           <div className="mb-3" data-testid="group-flags">
             <Callout tone="warn" title="Groups need attention">
-              {flags.join(' · ')}.{canManage ? ' Split evenly fixes this with the fewest moves.' : ' The class Coordinator can fix this.'}
+              {flags.join(' · ')}.{canManage ? ' Split evenly fixes this with the fewest moves.' : ' The class Coordinator or Assistant Coordinator can fix this.'}
             </Callout>
           </div>
         )}

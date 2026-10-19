@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { effectiveServant, followUpScope, groupHealth, planSplit, type GroupHealth, type GroupKid, type GroupMove, type GroupServant } from '../groups'
 import type { PortalUser, StageKey } from '../permissions'
 import { studentName } from './students'
+import { dueCaseWhere } from './excuses'
+import { churchToday } from '../dates'
 
 type Db = Prisma.TransactionClient | typeof prisma
 
@@ -49,6 +51,22 @@ export async function loadClassGroups(classIds: readonly string[], db: Db = pris
       phones: [s.fatherPhone, s.motherPhone].filter((p): p is string => !!p),
     })),
   }))
+}
+
+/**
+ * The servant whose group this child is in now, or null: no class, no servant,
+ * or that servant no longer serves the class. A contact note keeps it
+ * (2026-10-19), so the log can say a servant followed up on a colleague's
+ * behalf even after the child changes groups.
+ */
+export async function groupServantOf(studentId: string): Promise<string | null> {
+  const s = await prisma.student.findUnique({ where: { id: studentId }, select: { classId: true, groupServantId: true } })
+  if (!s?.classId || !s.groupServantId) return null
+  const serves = await prisma.classServant.findFirst({
+    where: { classId: s.classId, servantId: s.groupServantId, servant: { account: { isActive: true } } },
+    select: { servantId: true },
+  })
+  return serves ? s.groupServantId : null
 }
 
 /** Write a plan: one update per destination servant. */
@@ -173,7 +191,8 @@ export async function groupSummaries(classIds: readonly string[], sinceDays = 30
   const kidIds = groups.flatMap((g) => g.kids.map((k) => k.id))
   const since = new Date(Date.now() - sinceDays * 86_400_000)
   const [open, contacted] = await Promise.all([
-    prisma.followUpCase.findMany({ where: { status: 'OPEN', studentId: { in: kidIds } }, select: { studentId: true } }),
+    // "Open" is the calls still owed: an excused child is not one (2026-10-19).
+    prisma.followUpCase.findMany({ where: { status: 'OPEN', studentId: { in: kidIds }, ...dueCaseWhere(churchToday()) }, select: { studentId: true } }),
     prisma.followUpLog.groupBy({ by: ['studentId'], where: { studentId: { in: kidIds }, at: { gte: since } } }),
   ])
   const openSet = new Set(open.map((o) => o.studentId))

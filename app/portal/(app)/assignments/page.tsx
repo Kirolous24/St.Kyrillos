@@ -8,6 +8,8 @@ import { mondayOf, churchToday } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import { PageHeader, Card, Badge, EmptyState, StatCard, LinkButton, IconTile } from '@/components/portal/ui'
+import { prisma } from '@/lib/prisma'
+import { isLiveSite } from '@/lib/portal/login-email'
 
 export const metadata = { title: 'My Assignments' }
 
@@ -49,7 +51,14 @@ export default async function AssignmentsPage() {
   }
 
   const today = churchToday()
-  const all = await assignmentsForServant(user.servantId, today)
+  const [all, account, phones] = await Promise.all([
+    assignmentsForServant(user.servantId, today),
+    prisma.account.findUnique({ where: { id: user.accountId }, select: { email: true } }),
+    // Servant assignment notices (2026-10-19): somebody with no phone turned on
+    // and no email only ever sees them in the bell.
+    prisma.pushSubscription.count({ where: { accountId: user.accountId, live: isLiveSite(process.env) } }),
+  ])
+  const unreachable = phones === 0 && !account?.email?.trim()
   const { upcoming, past, undated } = groupAssignmentsByWeek(all, today)
   // `upcoming` holds this week AND every future week, so upcoming[0] is only
   // this week when this week has something in it. Match the Monday explicitly.
@@ -98,6 +107,15 @@ export default async function AssignmentsPage() {
         />
       </div>
 
+      {unreachable && (
+        <p className="mb-5 rounded-[12px] border border-parch-200 bg-parch-50 px-4 py-2.5 text-[12px] text-parch-700" data-testid="notices-hint">
+          Want to hear when you are given something, and the evening before?{' '}
+          <Link href="/portal/settings" className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
+            Turn on phone notifications in Settings
+          </Link>
+        </p>
+      )}
+
       {upcoming.length === 0 ? (
         <EmptyState title="Nothing coming up" hint="Your past assignments are below." />
       ) : (
@@ -111,8 +129,11 @@ export default async function AssignmentsPage() {
             <GroupTitle>Upcoming ({upcomingCount})</GroupTitle>
           </p>
           <div className="space-y-4">
+            {/* A notice opens the page at its week (2026-10-19). */}
             {upcoming.map((week) => (
-              <WeekCard key={week.weekStart} week={week} today={today} />
+              <div key={week.weekStart} id={`week-${week.weekStart}`} className="scroll-mt-24">
+                <WeekCard week={week} today={today} />
+              </div>
             ))}
           </div>
         </>
@@ -142,7 +163,7 @@ export default async function AssignmentsPage() {
           </summary>
           <div className="border-t border-[#F0EEE8]">
             {past.map((week) => (
-              <div key={week.weekStart}>
+              <div key={week.weekStart} id={`week-${week.weekStart}`} className="scroll-mt-24">
                 <p className="border-b border-[#F0EEE8] bg-parch-100/60 px-[18px] py-2.5 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">
                   {week.label} · {weekDistanceLabel(week.weekStart, today)}
                 </p>
