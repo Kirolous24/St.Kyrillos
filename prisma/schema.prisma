@@ -207,6 +207,8 @@ model Account {
   lastLoginAt    DateTime?
   // Servant assignment notices by email (2026-10-19); only while no phone has notifications on.
   noticeEmails   Boolean    @default(true)
+  // The secret in this account's birthday calendar link (2026-10-19); null until first asked for.
+  calendarToken  String?    @unique
   legacyUid      String?    @unique // Firebase Auth uid from the prototype
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt

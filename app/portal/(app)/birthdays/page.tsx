@@ -9,6 +9,7 @@ import { upcomingBirthdays, birthdaysInWeek } from '@/lib/portal/birthdays'
 import { churchToday, formatDateOnly, toUTCDate, mondayOf, addDays } from '@/lib/portal/dates'
 import { formatShortDate, formatMonthDay, formatLongDate } from '@/lib/portal/format'
 import { PageHeader, Card, Badge, Avatar, EmptyState, LinkButton } from '@/components/portal/ui'
+import { BirthdayCalendar } from '@/components/portal/BirthdayCalendar'
 
 export const metadata = { title: 'Birthdays' }
 
@@ -215,6 +216,9 @@ export default async function BirthdaysPage({ searchParams }: { searchParams: { 
           </LinkButton>
         }
       />
+
+      {/* A servant asked for the birthdays in their phone's calendar (2026-10-19). */}
+      {canOpen && <BirthdayCalendar />}
 
       <div className="mb-4">
         <Card

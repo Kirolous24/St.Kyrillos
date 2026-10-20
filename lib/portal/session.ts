@@ -2,8 +2,8 @@ import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { portalSessionExpired } from '@/lib/auth.config'
-import { prisma } from '@/lib/prisma'
 import type { PortalUser } from './permissions'
+import { loadPortalUser } from './portal-user'
 
 /**
  * The signed-in portal user with their class scope, loaded once per request.
@@ -18,52 +18,7 @@ export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
   // in the middleware because server actions are not routed through it.
   if (portalSessionExpired(session?.user?.role, session?.user?.signedInAt)) return null
 
-  const account = await prisma.account.findUnique({
-    where: { id: accountId },
-    select: {
-      id: true,
-      role: true,
-      displayName: true,
-      photo: true,
-      isActive: true,
-      student: { select: { id: true, classId: true } },
-      servant: {
-        select: {
-          id: true,
-          stageOversight: true,
-          classes: { select: { classId: true, title: true } },
-        },
-      },
-    },
-  })
-  if (!account || !account.isActive) return null
-
-  const classIds = account.servant
-    ? account.servant.classes.map((c) => c.classId)
-    : account.student?.classId
-      ? [account.student.classId]
-      : []
-
-  return {
-    accountId: account.id,
-    role: account.role,
-    displayName: account.displayName,
-    photo: account.photo,
-    servantId: account.servant?.id,
-    // F0850 — a servant who grew up here keeps their Student row so their years
-    // as a child stay readable, but they are not a child any more: the
-    // child-only pages (their own badges, their own QR card) key off this, and
-    // a servant holding a student QR could scan themselves points.
-    studentId: account.role === 'STUDENT' ? account.student?.id : undefined,
-    classIds,
-    coordinatorOf: account.servant
-      ? account.servant.classes.filter((c) => c.title === 'COORDINATOR').map((c) => c.classId)
-      : [],
-    assistantOf: account.servant
-      ? account.servant.classes.filter((c) => c.title === 'ASSISTANT_COORDINATOR').map((c) => c.classId)
-      : [],
-    stageOversight: account.servant?.stageOversight ?? null,
-  }
+  return loadPortalUser({ id: accountId })
 })
 
 /** Use at the top of every portal page: redirects to sign-in when absent. */
