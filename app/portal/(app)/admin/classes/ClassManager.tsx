@@ -70,6 +70,8 @@ export function ClassManager({ classes }: { classes: Row[] }) {
   const [form, setForm] = useState<ClassForm>(EMPTY)
 
   function startEdit(c: Row) {
+    setNotice('')
+    setError('')
     setEditing(c)
     setOpen(true)
     setForm({ name: c.name, stage: c.stage, visitationThreshold: c.visitationThreshold, description: c.description ?? '', takesOtherClasses: c.takesOtherClasses })
@@ -126,6 +128,16 @@ export function ClassManager({ classes }: { classes: Row[] }) {
     startTransition(async () => {
       const r = editing ? await updateClass(editing.id, payload) : await createClass(payload)
       if (!r.ok) return setError(r.error)
+      // 2026-10-24 — say so. The form used to shut without a word and the new
+      // card landed at the foot of a long grid, so a class that had been made
+      // looked like a button that did nothing.
+      setNotice(
+        editing
+          ? `Saved ${payload.name}.`
+          : isFellowship(payload.stage)
+            ? `${payload.name} added. Next, tick it on each of its servants’ pages under Servants.`
+            : `${payload.name} added.`,
+      )
       reset()
       setOpen(false)
       router.refresh()
@@ -162,36 +174,48 @@ export function ClassManager({ classes }: { classes: Row[] }) {
 
   return (
     <div className="space-y-3.5">
-      {/* The prototype's collapsible "+ Add New Class" card */}
+      {/* 2026-10-24 — the add button is a button that says so. It was a small
+          "Open" toggle on the end of an "Add new class" heading; on a phone the
+          heading shrank to "A.", tapping it did nothing, and the biggest button
+          left, standard grades, cannot make a meeting. */}
+      {!open && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setNotice(''); setError(''); setOpen(true) }}
+            aria-expanded={false}
+            className={cn(buttonClass('primary'), 'min-h-[44px]')}
+          >
+            <Plus className="h-[14px] w-[14px]" /> Add a class
+          </button>
+          {/* Never only inside the form: a brand new church needs this one
+              button, and it was invisible until you went looking for the form. */}
+          <button
+            type="button"
+            disabled={pending}
+            onClick={seedStandard}
+            className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}
+          >
+            <Layers className="h-[13px] w-[13px]" /> Add standard grade classes
+          </button>
+        </div>
+      )}
+      {/* The prototype's "+ Add New Class" card, shown once asked for. It stays
+          in the page while shut so the form keeps its place. */}
       <Card
+        className={open ? undefined : 'hidden'}
         title={editing ? `Edit ${editing.name}` : 'Add new class'}
         icon={<Plus className="h-[15px] w-[15px]" />}
         action={
-          <>
-            {/* Outside the form on purpose. It first sat inside, which is a Card
-                whose body is `hidden` until opened — so the one button a brand
-                new church needs was invisible until you went looking for the
-                add-a-class form. */}
-            <button
-              type="button"
-              disabled={pending}
-              onClick={seedStandard}
-              className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}
-            >
-              <Layers className="h-[13px] w-[13px]" /> Add standard grade classes
-            </button>
           <button
             type="button"
-            onClick={() => { if (open && editing) reset(); setOpen((v) => !v) }}
+            onClick={() => { if (editing) reset(); setOpen(false) }}
             aria-expanded={open}
             className={cn(buttonClass('secondary', 'sm'), 'min-h-[40px]')}
           >
-            {open ? 'Close' : 'Open'}
-            {open ? <ChevronUp className="h-[13px] w-[13px]" /> : <ChevronDown className="h-[13px] w-[13px]" />}
+            Close <ChevronUp className="h-[13px] w-[13px]" />
           </button>
-          </>
         }
-        bodyClassName={open ? 'p-[18px]' : 'hidden'}
       >
         <form onSubmit={submit}>
           <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
@@ -262,8 +286,10 @@ export function ClassManager({ classes }: { classes: Row[] }) {
             </span>
           </label>
           )}
-          {error && <div role="alert" className="mb-3"><Callout tone="bad">{error}</Callout></div>}
-          {notice && <div role="status" className="mb-3"><Callout tone="good">{notice}</Callout></div>}
+          {/* Only while open: the shut form stays in the page, and a second,
+              hidden copy of a message is a second message to a screen reader. */}
+          {open && error && <div role="alert" className="mb-3"><Callout tone="bad">{error}</Callout></div>}
+          {open && notice && <div role="status" className="mb-3"><Callout tone="good">{notice}</Callout></div>}
           <div className="flex flex-wrap gap-2">
             <button type="submit" disabled={pending} className={cn(buttonClass('primary'), 'min-h-[40px]')}>
               <Plus className="h-[13px] w-[13px]" /> {pending ? 'Saving…' : editing ? 'Save changes' : 'Create class'}

@@ -140,7 +140,14 @@ async function cleanup() {
     await prisma.feedReaction.deleteMany({ where: { postId: p.id } }).catch(() => {})
     await prisma.feedPost.delete({ where: { id: p.id } }).catch(() => {})
   }
-  return accounts.length + students.length + posts.length
+  // The phone check below makes a meeting; its register goes with it.
+  const classes = await prisma.schoolClass.findMany({ where: { name: { startsWith: TAG } }, select: { id: true } })
+  for (const c of classes) {
+    await prisma.attendanceSession.deleteMany({ where: { classId: c.id } }).catch(() => {})
+    await prisma.portalAuditLog.deleteMany({ where: { entityId: c.id } }).catch(() => {})
+    await prisma.schoolClass.delete({ where: { id: c.id } }).catch(() => {})
+  }
+  return accounts.length + students.length + posts.length + classes.length
 }
 
 /* ── scenarios ──────────────────────────────────────────────────────────── */
@@ -352,7 +359,16 @@ try {
       check("the second servant's own marks are saved", second.every((n) => row(n)?.status === 'PRESENT'),
         second.map((n) => row(n)?.status ?? 'no row').join(','))
       check('every other child is recorded, as before', rows.length === names.length, `${rows.length}/${names.length}`)
-      const secondSees = await shown(servantPage, first)
+      // They arrive with the refresh that follows "Saved", which can land a
+      // moment after it on a slow database reply; reading once, 1.5s in,
+      // failed two runs in five on 2026-10-24 with nothing wrong on screen.
+      let secondSees = []
+      const secondBy = Date.now() + 10000
+      do {
+        secondSees = await shown(servantPage, first)
+        if (secondSees.every(Boolean)) break
+        await servantPage.waitForTimeout(500)
+      } while (Date.now() < secondBy)
       check("the second screen shows the first servant's marks after saving", secondSees.every(Boolean), secondSees.join(','))
       let firstSees = []
       const deadline = Date.now() + 25000
@@ -364,6 +380,42 @@ try {
       check("the first screen takes in the second servant's marks, no reload", firstSees.every(Boolean), firstSees.join(','))
       await servantPage.context().close()
     }
+  }
+
+  // 2026-10-24 — on a phone the add form hid behind a small "Open" toggle, the
+  // "Add new class" title shrank to "A." and did nothing when tapped, and the
+  // biggest button left, "Add standard grade classes", cannot make a meeting.
+  // A class that was made said nothing either: the form shut, and the new card
+  // landed at the bottom of a long grid.
+  console.log('\nclasses: a meeting added from a phone')
+  {
+    const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await page.context().storageState() })).newPage()
+    phone.on('response', (r) => { if (r.status() >= 500) serverErrors.push(`${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}`) })
+    await phone.goto(BASE + '/portal/admin/classes', { waitUntil: 'networkidle' })
+    await phone.waitForTimeout(800)
+    const add = phone.getByRole('button', { name: /^Add a class$/ })
+    const addShown = (await add.count()) === 1 && (await add.isVisible())
+    const addWhole = addShown && (await add.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().right <= window.innerWidth))
+    check('the add button reads in full on a phone', addShown && addWhole, addShown ? 'cut off' : 'no "Add a class" button')
+    if (addShown) await add.click()
+    check('tapping it opens the form', await phone.locator('#cls-name').isVisible())
+    const name = `${TAG} Meeting`
+    // Only so a failing run still reaches the checks after this one.
+    if (!(await phone.locator('#cls-name').isVisible())) await phone.getByRole('button', { name: /^Open/ }).click()
+    await phone.locator('#cls-name').fill(name)
+    await phone.locator('#cls-stage').selectOption('FELLOWSHIP')
+    await phone.locator('button[type="submit"]', { hasText: 'Create class' }).click()
+    const made = async () => prisma.schoolClass.findFirst({ where: { name }, select: { id: true, stage: true, takesOtherClasses: true, visitationThreshold: true } })
+    const deadline = Date.now() + 30000
+    // eslint-disable-next-line no-await-in-loop
+    while (Date.now() < deadline && !(await made())) await phone.waitForTimeout(500)
+    const cls = await made()
+    check('the meeting is made, taking members from anywhere, following up after two', cls?.stage === 'FELLOWSHIP' && cls.takesOtherClasses && cls.visitationThreshold === 2, JSON.stringify(cls))
+    check('with its own register worth no points',
+      !!cls && (await prisma.attendanceSession.count({ where: { key: `fellowship-${cls.id}`, classId: cls.id, points: 0 } })) === 1)
+    const said = await phone.locator('[role="status"]', { hasText: name }).waitFor({ timeout: 15000 }).then(() => true, () => false)
+    check('and the page says it was added', said)
+    await phone.context().close()
   }
 
   check('no 5xx responses during writes', serverErrors.length === 0, serverErrors.join(', '))
