@@ -60,7 +60,7 @@ vi.mock('@/lib/prisma', () => {
     world.order.push('write')
     return value
   }
-  const tx = { agendaWeek: { upsert: async () => ({ id: 'w1' }) }, agendaItem: { upsert: async () => ({}) } }
+  const tx = { agendaWeek: { upsert: async () => ({ id: 'w1' }) }, agendaItem: { findMany: async () => [], upsert: async () => ({}) } }
   return {
     prisma: {
       $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => {

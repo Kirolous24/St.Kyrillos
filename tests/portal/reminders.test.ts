@@ -12,6 +12,8 @@ const world = vi.hoisted(() => ({
   duties: [] as unknown[],
   delivered: [] as Array<Record<string, unknown>>,
   deleted: { notices: null as null | Record<string, unknown>, reads: null as null | Record<string, unknown> },
+  coordinators: [] as Array<{ classId: string; servantId: string }>,
+  names: [] as Array<{ id: string; account: { displayName: string } }>,
 }))
 vi.mock('@/lib/portal/data/duties', () => ({
   dutiesDueOn: async (date: string) => {
@@ -33,6 +35,8 @@ vi.mock('@/lib/prisma', () => ({
         return { count: 3 }
       },
     },
+    classServant: { findMany: async () => world.coordinators },
+    servant: { findMany: async () => world.names },
     notificationRead: {
       deleteMany: async (args: Record<string, unknown>) => {
         world.deleted.reads = args
@@ -45,15 +49,18 @@ vi.mock('@/lib/prisma', () => ({
 import { sendTomorrowReminders } from '@/lib/portal/data/reminders'
 
 const SATURDAY_6_30_PM_CDT = new Date('2026-10-24T23:30:00Z')
-const duty = (servantId: string, label: string, topic: string | null = null): Duty => ({
+const duty = (servantId: string, label: string, topic: string | null = null, extra: Partial<Duty> = {}): Duty => ({
   slot: `item:5th-6th-boys:2026-10-19:${label}`,
   kind: 'activity',
   servantId,
   label,
   topic,
   className: '5th & 6th Boys',
+  classId: 'boys',
   due: '2026-10-25',
   href: '/portal/assignments#week-2026-10-19',
+  done: false,
+  ...extra,
 })
 
 beforeEach(() => {
@@ -61,6 +68,8 @@ beforeEach(() => {
   world.duties = []
   world.delivered = []
   world.deleted = { notices: null, reads: null }
+  world.coordinators = []
+  world.names = []
 })
 
 describe('sendTomorrowReminders', () => {
@@ -106,5 +115,53 @@ describe('sendTomorrowReminders', () => {
     expect(world.deleted.notices).toEqual({ where: { createdAt: { lt: cutoff } } })
     expect(world.deleted.reads).toEqual({ where: { key: { startsWith: 'notice:' }, readAt: { lt: cutoff } } })
     expect(r.pruned).toBe(3)
+  })
+})
+
+describe('marked done (2026-10-19)', () => {
+  it('a part already marked done is left out of the reminder', async () => {
+    world.duties = [duty('A', 'Coptic', null, { done: true }), duty('A', 'Memorization')]
+    await sendTomorrowReminders(SATURDAY_6_30_PM_CDT)
+    expect(world.delivered.filter((n) => n.kind === 'reminder' && String(n.dedupeKey).startsWith('reminder:'))).toEqual([
+      expect.objectContaining({ servantId: 'A', body: 'Memorization · 5th & 6th Boys' }),
+    ])
+  })
+
+  it('a servant with every part done is not reminded', async () => {
+    world.duties = [duty('A', 'Coptic', null, { done: true })]
+    await sendTomorrowReminders(SATURDAY_6_30_PM_CDT)
+    expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('reminder:'))).toEqual([])
+  })
+
+  it('the class’s coordinators get one list of the parts not marked done', async () => {
+    world.duties = [
+      duty('A', 'Coptic'),
+      duty('B', 'Verse'),
+      duty('A', 'Memorization', null, { done: true }),
+      duty('L', 'Lead', null, { kind: 'lead', slot: 'lead:boys:2026-10-19' }),
+    ]
+    world.coordinators = [{ classId: 'boys', servantId: 'C' }, { classId: 'boys', servantId: 'D' }]
+    world.names = [{ id: 'A', account: { displayName: 'Mina S' } }, { id: 'B', account: { displayName: 'George S' } }]
+    const r = await sendTomorrowReminders(SATURDAY_6_30_PM_CDT)
+    const lists = world.delivered.filter((n) => String(n.dedupeKey).startsWith('notdone:'))
+    expect(lists).toEqual([
+      {
+        servantId: 'C',
+        kind: 'reminder',
+        title: 'Not marked done yet',
+        body: 'For tomorrow: Coptic (Mina S) and Verse (George S) · 5th & 6th Boys',
+        href: '/portal/agenda?class=boys&week=2026-10-19',
+        dedupeKey: 'notdone:C:2026-10-25',
+      },
+      expect.objectContaining({ servantId: 'D', dedupeKey: 'notdone:D:2026-10-25' }),
+    ])
+    expect(r).toMatchObject({ coordinators: 2 })
+  })
+
+  it('nothing outstanding sends the coordinators nothing', async () => {
+    world.duties = [duty('A', 'Coptic', null, { done: true })]
+    world.coordinators = [{ classId: 'boys', servantId: 'C' }]
+    await sendTomorrowReminders(SATURDAY_6_30_PM_CDT)
+    expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('notdone:'))).toEqual([])
   })
 })

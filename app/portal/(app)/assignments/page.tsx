@@ -1,6 +1,7 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { BookOpen, CalendarClock, CalendarDays, ClipboardList, History, Star, UserCheck } from 'lucide-react'
+import { BookOpen, CalendarClock, CalendarDays, Check, ClipboardList, ExternalLink, History, Star, UserCheck } from 'lucide-react'
+import { AgendaDoneButton } from '@/components/portal/AgendaDoneButton'
 import { requirePortalUser } from '@/lib/portal/session'
 import { assignmentsForServant } from '@/lib/portal/data/agenda'
 import { groupAssignmentsByWeek, weekDistanceLabel, type Assignment, type AssignmentWeek } from '@/lib/portal/agenda'
@@ -227,6 +228,29 @@ function AssignmentList({ items, muted }: { items: Assignment[]; muted?: boolean
               </p>
               {item.detail && (
                 <p className="mt-0.5 whitespace-pre-line text-[12.5px] text-parch-700">{item.detail}</p>
+              )}
+              {/* A Schedule part: mark it done once it is ready, e.g. the slides updated (2026-10-19). */}
+              {item.kind === 'agenda' && item.agendaItemId && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-2" data-testid="agenda-done-row">
+                  {item.doneLabel ? (
+                    <Badge tone="good">
+                      <Check className="h-3 w-3" aria-hidden /> {item.doneLabel}
+                    </Badge>
+                  ) : (
+                    !muted && <span className="text-[11.5px] text-parch-500">Not marked done yet</span>
+                  )}
+                  {!muted && item.slideLink && (
+                    <a
+                      href={item.slideLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[12px] font-bold text-brand-800 underline decoration-brand-gold underline-offset-2"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Open slides
+                    </a>
+                  )}
+                  {!muted && <AgendaDoneButton itemId={item.agendaItemId} done={!!item.doneLabel} part={item.title} />}
+                </div>
               )}
             </div>
           </li>

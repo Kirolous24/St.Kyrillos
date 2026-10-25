@@ -3,8 +3,8 @@
 // unit-tested in tests/portal/agenda.test.ts.
 
 import type { Action } from './permissions'
-import { addDays, mondayOf, parseDateOnly } from './dates'
-import { formatLongDate, formatMonthDay } from './format'
+import { addDays, churchToday, mondayOf, parseDateOnly } from './dates'
+import { formatLongDate, formatMonthDay, formatShortDate } from './format'
 
 /**
  * Teaching plans (lessons, agenda weeks) are written by the servants assigned
@@ -142,16 +142,27 @@ export function weekDistanceLabel(mondayKey: string, todayKey: string): string {
 /* ── The week grid ────────────────────────────────────────────────────────── */
 
 export interface AgendaItemInput {
+  /** The stored row, when there is one. */
+  id?: string | null
   activityKey: string
   topic?: string | null
   servantId?: string | null
   servantName?: string | null
+  /** "Done · Mina S · Thu, Oct 22" once its servant marked it ready (2026-10-19). */
+  doneLabel?: string | null
+}
+
+/** "Done · Mina S · Thu, Oct 22": who marked a part ready, and the church day they did. */
+export function doneLabel(doneAt: Date, byName: string | null): string {
+  return ['Done', byName, formatShortDate(churchToday(doneAt))].filter(Boolean).join(' · ')
 }
 
 export interface AgendaGridRow extends AgendaActivity {
   topic: string | null
   servantId: string | null
   servantName: string | null
+  itemId: string | null
+  doneLabel: string | null
 }
 
 export interface AgendaGrid {
@@ -188,6 +199,9 @@ export function buildWeekGrid(weekStart: string, items: readonly AgendaItemInput
         topic: blank(found?.topic),
         servantId: blank(found?.servantId),
         servantName: blank(found?.servantName),
+        itemId: found?.id ?? null,
+        // Only a part someone is on can be done.
+        doneLabel: found?.servantId ? (found.doneLabel ?? null) : null,
       }
     }),
   }
@@ -549,6 +563,10 @@ export interface Assignment {
   date: string | null
   href: string
   sortHint?: number
+  /** A Schedule part (2026-10-19): its row, whether it is marked done, and the week's slides. */
+  agendaItemId?: string
+  doneLabel?: string | null
+  slideLink?: string | null
 }
 
 export interface AssignmentWeek {

@@ -7,6 +7,7 @@ import { clearAgendaWeek, saveAgendaWeek } from '@/lib/portal/actions/agenda'
 import type { ServantOption } from '@/lib/portal/data/agenda'
 import { AGPEYA_HOURS } from '@/lib/portal/agenda'
 import { Card, Callout, Field, buttonClass, inputClass, selectClass, textareaClass } from '@/components/portal/ui'
+import { AgendaDoneButton } from '@/components/portal/AgendaDoneButton'
 import { formatDateTime } from '@/lib/portal/format'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +16,14 @@ interface Row {
   label: string
   topic: string
   servantId: string
+}
+
+/** What is stored for a part (2026-10-19): its row, who it is saved to, and whether they marked it done. */
+interface SavedPart {
+  key: string
+  itemId: string | null
+  servantId: string
+  doneLabel: string | null
 }
 
 interface Props {
@@ -33,9 +42,18 @@ interface Props {
     rows: Row[]
   }
   savedAt: string | null
+  /** The parts as saved, read fresh on every refresh so a done mark shows at once. */
+  saved?: SavedPart[]
+  /** The signed-in servant, who may mark their own parts done. */
+  viewerServantId?: string | null
+  /** Coordinators, assistants, the stage overseer and the admin may mark anyone's. */
+  canMarkAny?: boolean
 }
 
-export function AgendaEditor({ classId, className, weekStart, weekLabel, servants, otherServants = [], initial, savedAt }: Props) {
+export function AgendaEditor({
+  classId, className, weekStart, weekLabel, servants, otherServants = [], initial, savedAt,
+  saved = [], viewerServantId = null, canMarkAny = false,
+}: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   // Keyed on the week so navigating to another week resets the form.
@@ -52,6 +70,8 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
   }
 
   const filled = form.rows.filter((r) => r.topic.trim() || r.servantId).length
+  const savedByKey = new Map(saved.map((p) => [p.key, p]))
+  const doneCount = saved.filter((p) => p.servantId && p.doneLabel).length
 
   function setRow(idx: number, patch: Partial<Row>) {
     const rows = [...form.rows]
@@ -124,7 +144,7 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
             filled > 0 ? 'bg-brand-wash text-brand-gold-dark' : 'bg-parch-100 text-parch-500',
           )}
         >
-          {filled}/10 filled
+          {filled}/10 filled{doneCount > 0 ? ` · ${doneCount} done` : ''}
         </span>
       }
       bodyClassName="p-0"
@@ -239,6 +259,24 @@ export function AgendaEditor({ classId, className, weekStart, weekLabel, servant
                   />
                 )}
                 {servantSelect(row.servantId, (v) => setRow(idx, { servantId: v }), `Servant for ${row.label}`)}
+                {/* Whether the servant on it has marked it done (2026-10-19). Shown for the
+                    servant as saved; a change not yet saved clears it on save. */}
+                {(() => {
+                  const part = savedByKey.get(row.key)
+                  if (!part?.itemId || !part.servantId || part.servantId !== row.servantId) return null
+                  return (
+                    <div className="flex flex-wrap items-center gap-2 text-[11.5px] sm:col-span-3" data-testid="agenda-part-status" data-part={row.key}>
+                      {part.doneLabel ? (
+                        <span className="font-semibold text-[#16A34A]">✓ {part.doneLabel}</span>
+                      ) : (
+                        <span className="text-parch-500">Not marked done yet</span>
+                      )}
+                      {(canMarkAny || (!!viewerServantId && viewerServantId === part.servantId)) && (
+                        <AgendaDoneButton itemId={part.itemId} done={!!part.doneLabel} part={row.label} />
+                      )}
+                    </div>
+                  )
+                })()}
               </li>
             ))}
           </ul>

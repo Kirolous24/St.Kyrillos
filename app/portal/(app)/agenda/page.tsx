@@ -201,6 +201,9 @@ export default async function AgendaPage({
                 })),
               }}
               savedAt={view.updatedAt}
+              saved={view.grid.rows.map((r) => ({ key: r.key, itemId: r.itemId, servantId: r.servantId ?? '', doneLabel: r.doneLabel }))}
+              viewerServantId={user.servantId ?? null}
+              canMarkAny={can(user, 'group.manage', { classId: cls.id, classStage: cls.stage })}
             />
           ) : (
             <ReadOnlyWeek view={view} />
@@ -471,6 +474,8 @@ function ReadOnlyWeek({ view }: { view: Awaited<ReturnType<typeof loadAgendaWeek
                 </td>
                 <td className={cn('whitespace-nowrap border-b border-[#F0EEE8] px-4 py-3 text-center', row.servantName ? 'text-[#374151]' : 'text-parch-500')}>
                   {row.servantName ?? 'Unassigned'}
+                  {/* Marked ready by its servant (2026-10-19). */}
+                  {row.doneLabel && <span className="mt-0.5 block text-[11px] font-semibold text-[#16A34A]">✓ {row.doneLabel}</span>}
                 </td>
               </tr>
             ))}

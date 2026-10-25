@@ -7,9 +7,11 @@ import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { formatDateOnly, toUTCDate } from '../dates'
+import { formatMonthDay } from '../format'
 import { parseCsvRecords } from '../csv'
 import {
   AGENDA_ACTIVITIES,
+  agendaActivityLabel,
   agendaActivityOrder,
   csvRowsToAgenda,
   isLegacyAgendaCsv,
@@ -17,6 +19,7 @@ import {
   normaliseWeekStart,
   resolveActivityKey,
   safeUrl,
+  sundayOfWeek,
   weekLabel,
   TEACHING_WRITE,
   type AgendaActivityKey,
@@ -73,7 +76,9 @@ interface ResolvedItem {
 
 /**
  * Write one week and its ten activities in a single transaction: a half-saved
- * agenda (the prototype's unbatched writes, §7) would silently lose rows.
+ * agenda (the prototype's unbatched writes, §7) would silently lose rows. A
+ * part given to someone else loses its done mark (2026-10-19): the new servant
+ * has not prepared it yet.
  */
 async function writeWeek(
   classId: string,
@@ -94,11 +99,16 @@ async function writeWeek(
       update: week,
       select: { id: true },
     })
+    const before = new Map(
+      (await tx.agendaItem.findMany({ where: { weekId: row.id }, select: { activityKey: true, servantId: true } })).map((i) => [i.activityKey, i.servantId]),
+    )
     for (const item of items) {
+      const handedOver = before.has(item.activityKey) && before.get(item.activityKey) !== item.servantId
       const payload = {
         topic: item.topic,
         servantId: item.servantId,
         sortOrder: agendaActivityOrder(item.activityKey),
+        ...(handedOver ? { doneAt: null, doneById: null } : {}),
       }
       await tx.agendaItem.upsert({
         where: { weekId_activityKey: { weekId: row.id, activityKey: item.activityKey } },
@@ -555,5 +565,50 @@ export async function clearAgendaWeeks(raw: z.infer<typeof ClearManySchema>): Pr
     )
     revalidateAgenda(cls.id)
     return { cleared: weeks.length, skipped: mondays.length - weeks.length }
+  })
+}
+
+const DoneSchema = z.object({ itemId: z.string().min(1).max(100), done: z.boolean() })
+
+/**
+ * Mark a part of a Sunday ready, or take the mark back (2026-10-19): the
+ * servant on the part does it once they have, say, updated the slides, and the
+ * coordinator sees it on the Schedule. The class's Coordinator and Assistant
+ * Coordinator, its stage overseer and the admin may mark it for them.
+ */
+export async function setAgendaItemDone(raw: z.infer<typeof DoneSchema>): Promise<ActionResult<{ doneAt: string | null }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = DoneSchema.parse(raw)
+    const item = await prisma.agendaItem.findUnique({
+      where: { id: input.itemId },
+      select: {
+        id: true,
+        activityKey: true,
+        servantId: true,
+        week: { select: { classId: true, weekStart: true, class: { select: { name: true, stage: true } } } },
+      },
+    })
+    if (!item) throw new PortalError('That part of the Schedule no longer exists.')
+    if (!item.servantId) throw new PortalError('Nobody is on this part yet.')
+    const mine = !!user.servantId && user.servantId === item.servantId
+    if (!mine && !can(user, 'group.manage', { classId: item.week.classId, classStage: item.week.class.stage })) {
+      throw new PortalError('Only the servant on this part, or the class’s coordinators, can mark it done.')
+    }
+    const updated = await prisma.agendaItem.update({
+      where: { id: item.id },
+      data: input.done ? { doneAt: new Date(), doneById: user.accountId } : { doneAt: null, doneById: null },
+      select: { doneAt: true },
+    })
+    const sunday = sundayOfWeek(formatDateOnly(item.week.weekStart))
+    await audit(
+      user,
+      input.done ? 'agenda.done' : 'agenda.undone',
+      'class',
+      item.week.classId,
+      `${item.week.class.name}: ${agendaActivityLabel(item.activityKey)} for Sunday, ${formatMonthDay(sunday)} ${input.done ? 'marked done' : 'no longer marked done'}`,
+    )
+    revalidateAgenda(item.week.classId)
+    return { doneAt: updated.doneAt ? updated.doneAt.toISOString() : null }
   })
 }

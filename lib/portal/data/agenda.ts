@@ -3,6 +3,7 @@ import { addDays, formatDateOnly, mondayOf, churchToday, toUTCDate } from '../da
 import {
   AGENDA_ACTIVITIES,
   agendaActivityLabel,
+  doneLabel,
   agendaActivityOrder,
   agendaToCsvRows,
   buildWeekGrid,
@@ -92,10 +93,13 @@ const weekSelect = {
   backupServant: { select: { account: { select: { displayName: true } } } },
   items: {
     select: {
+      id: true,
       activityKey: true,
       topic: true,
       servantId: true,
       servant: { select: { account: { select: { displayName: true } } } },
+      doneAt: true,
+      doneBy: { select: { displayName: true } },
     },
   },
 } as const
@@ -139,10 +143,12 @@ export async function loadAgendaWeek(classId: string, weekStart: string): Promis
     grid: buildWeekGrid(
       monday,
       week.items.map((i) => ({
+        id: i.id,
         activityKey: i.activityKey,
         topic: i.topic,
         servantId: i.servantId,
         servantName: i.servant?.account.displayName ?? null,
+        doneLabel: i.doneAt ? doneLabel(i.doneAt, i.doneBy?.displayName ?? null) : null,
       })),
     ),
     updatedAt: week.updatedAt.toISOString(),
@@ -275,7 +281,9 @@ export async function assignmentsForServant(
         id: true,
         activityKey: true,
         topic: true,
-        week: { select: { weekStart: true, classId: true, class: { select: { name: true } } } },
+        doneAt: true,
+        doneBy: { select: { displayName: true } },
+        week: { select: { weekStart: true, classId: true, slideLink: true, class: { select: { name: true } } } },
       },
     }),
     prisma.agendaWeek.findMany({
@@ -321,6 +329,9 @@ export async function assignmentsForServant(
       date: null,
       href: `/portal/agenda?class=${encodeURIComponent(i.week.classId)}&week=${monday}`,
       sortHint: agendaActivityOrder(i.activityKey),
+      agendaItemId: i.id,
+      doneLabel: i.doneAt ? doneLabel(i.doneAt, i.doneBy?.displayName ?? null) : null,
+      slideLink: i.week.slideLink,
     })
   }
 

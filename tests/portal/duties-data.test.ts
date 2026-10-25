@@ -36,8 +36,8 @@ const WEEK = {
   backupServantId: null,
   class: { name: '5th & 6th Boys' },
   items: [
-    { activityKey: 'coptic', topic: 'Letters 1–4', servantId: 'sv-mina' },
-    { activityKey: 'verse', topic: null, servantId: null },
+    { activityKey: 'coptic', topic: 'Letters 1–4', servantId: 'sv-mina', doneAt: new Date('2026-10-22T18:00:00Z') },
+    { activityKey: 'verse', topic: null, servantId: null, doneAt: null },
   ],
 }
 
@@ -59,8 +59,10 @@ describe('weekDuties', () => {
         label: 'Coptic',
         topic: 'Letters 1–4',
         className: '5th & 6th Boys',
+        classId: '5th-6th-boys',
         due: '2026-10-25',
         href: '/portal/assignments#week-2026-10-19',
+        done: true,
       },
       {
         slot: 'lead:5th-6th-boys:2026-10-19',
@@ -69,8 +71,10 @@ describe('weekDuties', () => {
         label: 'Lead',
         topic: null,
         className: '5th & 6th Boys',
+        classId: '5th-6th-boys',
         due: '2026-10-25',
         href: '/portal/assignments#week-2026-10-19',
+        done: false,
       },
     ])
     expect(world.weekQueries[0]).toMatchObject({ where: { classId: '5th-6th-boys', weekStart: { in: [new Date('2026-10-19T00:00:00Z')] } } })

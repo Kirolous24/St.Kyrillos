@@ -26,10 +26,13 @@ export interface Duty {
   label: string
   topic: string | null
   className: string
+  classId?: string
   /** The day it is due, YYYY-MM-DD, or null for an undated lesson. */
   due: string | null
   /** Where a tap goes. */
   href: string
+  /** A Schedule part its servant has marked ready (2026-10-19). */
+  done?: boolean
 }
 
 export interface DutyChange {
@@ -159,6 +162,19 @@ export function reminderNotice(due: readonly Duty[]): NoticeText {
     title: 'Reminder for tomorrow',
     body: `${list(duties.map((d) => (d.topic ? `${d.label} (${d.topic})` : d.label)))} · ${classes(duties)}`,
     href: dutyHref(duties[0]?.due ?? null),
+  }
+}
+
+/**
+ * The coordinators' evening list (2026-10-19): tomorrow's parts nobody has
+ * marked done yet, and who is on each.
+ */
+export function notDoneNotice(rows: ReadonlyArray<{ label: string; servantName: string; className: string }>, href: string): NoticeText {
+  const classNames = Array.from(new Set(rows.map((r) => r.className).filter(Boolean))).join(', ')
+  return {
+    title: 'Not marked done yet',
+    body: `For tomorrow: ${list(rows.map((r) => `${r.label} (${r.servantName})`))} · ${classNames}`,
+    href,
   }
 }
 

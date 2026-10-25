@@ -15,10 +15,10 @@ const WEEK_SELECT = {
   leadServantId: true,
   backupServantId: true,
   class: { select: { name: true } },
-  items: { orderBy: { sortOrder: 'asc' as const }, select: { activityKey: true, topic: true, servantId: true } },
+  items: { orderBy: { sortOrder: 'asc' as const }, select: { activityKey: true, topic: true, servantId: true, doneAt: true } },
 }
 
-const LESSON_SELECT = { id: true, title: true, date: true, assignedToId: true, class: { select: { name: true } } }
+const LESSON_SELECT = { id: true, title: true, date: true, assignedToId: true, classId: true, class: { select: { name: true } } }
 
 function weekToDuties(w: {
   weekStart: Date
@@ -26,25 +26,25 @@ function weekToDuties(w: {
   leadServantId: string | null
   backupServantId: string | null
   class: { name: string }
-  items: Array<{ activityKey: string; topic: string | null; servantId: string | null }>
+  items: Array<{ activityKey: string; topic: string | null; servantId: string | null; doneAt: Date | null }>
 }): Duty[] {
   const monday = formatDateOnly(w.weekStart)
   const due = sundayOfWeek(monday)
-  const base = { className: w.class.name, due, href: dutyHref(due) }
+  const base = { className: w.class.name, classId: w.classId, due, href: dutyHref(due) }
   const out: Duty[] = []
   for (const i of w.items) {
     if (!i.servantId) continue
-    out.push({ ...base, slot: `item:${w.classId}:${monday}:${i.activityKey}`, kind: 'activity', servantId: i.servantId, label: agendaActivityLabel(i.activityKey), topic: i.topic })
+    out.push({ ...base, slot: `item:${w.classId}:${monday}:${i.activityKey}`, kind: 'activity', servantId: i.servantId, label: agendaActivityLabel(i.activityKey), topic: i.topic, done: !!i.doneAt })
   }
-  if (w.leadServantId) out.push({ ...base, slot: `lead:${w.classId}:${monday}`, kind: 'lead', servantId: w.leadServantId, label: 'Lead', topic: null })
-  if (w.backupServantId) out.push({ ...base, slot: `backup:${w.classId}:${monday}`, kind: 'backup', servantId: w.backupServantId, label: 'Backup', topic: null })
+  if (w.leadServantId) out.push({ ...base, slot: `lead:${w.classId}:${monday}`, kind: 'lead', servantId: w.leadServantId, label: 'Lead', topic: null, done: false })
+  if (w.backupServantId) out.push({ ...base, slot: `backup:${w.classId}:${monday}`, kind: 'backup', servantId: w.backupServantId, label: 'Backup', topic: null, done: false })
   return out
 }
 
-function lessonToDuties(l: { id: string; title: string; date: Date | null; assignedToId: string | null; class: { name: string } }): Duty[] {
+function lessonToDuties(l: { id: string; title: string; date: Date | null; assignedToId: string | null; classId: string; class: { name: string } }): Duty[] {
   if (!l.assignedToId) return []
   const due = l.date ? formatDateOnly(l.date) : null
-  return [{ slot: `lesson:${l.id}`, kind: 'lesson', servantId: l.assignedToId, label: `Lesson “${l.title}”`, topic: null, className: l.class.name, due, href: dutyHref(due) }]
+  return [{ slot: `lesson:${l.id}`, kind: 'lesson', servantId: l.assignedToId, label: `Lesson “${l.title}”`, topic: null, className: l.class.name, classId: l.classId, due, href: dutyHref(due), done: false }]
 }
 
 /** The held parts of these weeks of one class (Monday keys). */

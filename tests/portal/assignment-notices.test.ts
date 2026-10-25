@@ -4,6 +4,7 @@ import {
   changedNotice,
   dutyChanges,
   dutyHref,
+  notDoneNotice,
   removedNotice,
   reminderNotice,
   shouldEmail,
@@ -160,6 +161,24 @@ describe('reminderNotice', () => {
       title: 'Reminder for tomorrow',
       body: 'Coptic (Lesson 4 letters) and Memorization · 5th & 6th Boys',
       href: '/portal/assignments#week-2026-10-19',
+    })
+  })
+})
+
+describe('notDoneNotice', () => {
+  it('names each part still not marked done, and who is on it', () => {
+    expect(
+      notDoneNotice(
+        [
+          { label: 'Coptic', servantName: 'Mina S', className: '5th & 6th Boys' },
+          { label: 'Verse', servantName: 'George S', className: '5th & 6th Boys' },
+        ],
+        '/portal/agenda?class=boys&week=2026-10-19',
+      ),
+    ).toEqual({
+      title: 'Not marked done yet',
+      body: 'For tomorrow: Coptic (Mina S) and Verse (George S) · 5th & 6th Boys',
+      href: '/portal/agenda?class=boys&week=2026-10-19',
     })
   })
 })

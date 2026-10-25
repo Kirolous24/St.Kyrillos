@@ -253,6 +253,8 @@ model Account {
   // Servant assignment notices (2026-10-19): the phones that asked for them, and what was sent.
   pushSubscriptions    PushSubscription[]
   notices              Notice[]
+  // Schedule parts this account marked done (2026-10-19).
+  agendaItemsDone      AgendaItem[]       @relation("AgendaItemDoneBy")
 
   @@index([role])
 }
@@ -787,6 +789,11 @@ model AgendaItem {
   servantId   String?
   servant     Servant?   @relation("AgendaItemServant", fields: [servantId], references: [id], onDelete: SetNull)
   sortOrder   Int        @default(0)
+  // The servant marked their part ready, e.g. the slides updated (2026-10-19).
+  // Cleared when the part is given to someone else.
+  doneAt      DateTime?
+  doneById    String?
+  doneBy      Account?   @relation("AgendaItemDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
 
   @@unique([weekId, activityKey])
   @@index([servantId])
