@@ -128,6 +128,9 @@ export const authConfig = {
 
       if (pathname.startsWith('/portal')) {
         if (pathname === '/portal/login') return true
+        // A Fellowship member checks in without signing in (2026-10-24): the
+        // five-minute code on the screen is the key, checked by the page.
+        if (startsWithPath(pathname, '/portal/checkin')) return true
         // F0047 — a child past their cap is treated as signed out here, before
         // the page loads, so they meet the login screen rather than a page that
         // half-works.

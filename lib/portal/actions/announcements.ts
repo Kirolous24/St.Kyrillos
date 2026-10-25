@@ -8,7 +8,7 @@ import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseDateOnly, toUTCDate } from '../dates'
 import { canManageAnnouncement, announceableStage } from '../data/community'
 import { audit } from '../audit'
-import type { PortalUser } from '../permissions'
+import type { PortalUser, StageKey } from '../permissions'
 
 const AnnouncementSchema = z.object({
   title: z.string().trim().min(1, 'Give the announcement a title.').max(140),
@@ -25,13 +25,13 @@ const AnnouncementSchema = z.object({
   sortOrder: z.coerce.number().int().min(-999).max(999).optional(),
   /** '' (or missing) means church-wide. */
   classId: z.string().trim().optional(),
-  stage: z.enum(['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL', '']).optional(),
+  stage: z.enum(['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL', 'FELLOWSHIP', '']).optional(),
   isActive: z.boolean().optional(),
 })
 
 export type AnnouncementInput = z.input<typeof AnnouncementSchema>
 
-type Target = { classId: string | null; stage: 'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL' | null }
+type Target = { classId: string | null; stage: StageKey | null }
 
 /**
  * Church-wide and stage-wide announcements belong to admins and pastors;

@@ -13,7 +13,7 @@ import { STAGE_LABEL } from '@/lib/portal/format'
 import { Card, Field, inputClass, selectClass, textareaClass, buttonClass, checkboxClass, InlineNotice } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
-type StageKey = 'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL'
+import type { StageKey } from '@/lib/portal/permissions'
 
 export interface ManagedAnnouncement {
   id: string

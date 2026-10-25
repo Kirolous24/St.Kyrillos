@@ -32,6 +32,8 @@ import { excuseState, withExcusedDates, type ExcuseView } from '@/lib/portal/exc
 import { GroupPicker } from './GroupPicker'
 import { UndoEntryButton } from './PointsLedgerRow'
 import { cn } from '@/lib/utils'
+import { redirect } from 'next/navigation'
+import { isFellowship } from '@/lib/portal/fellowship'
 
 /** PointEntry.source, in the words a servant reads on the ledger. */
 const POINT_SOURCE_LABEL: Record<string, string> = {
@@ -45,6 +47,9 @@ const POINT_SOURCE_LABEL: Record<string, string> = {
 export default async function StudentPage({ params }: { params: { id: string } }) {
   const user = await requirePortalUser()
   const s = await requireStudentRead(user, params.id)
+  // A Fellowship member is an adult with their own page (2026-10-24): every
+  // link that names a student — a follow-up, a group, a birthday — lands there.
+  if (s.account.role === 'MEMBER' || (s.account.role !== 'STUDENT' && isFellowship(s.class?.stage))) redirect(`/portal/members/${s.id}`)
   const ctx = { classId: s.classId ?? undefined, classStage: s.class?.stage, studentId: s.id }
   const canWrite = can(user, 'student.write', ctx)
   const isAdmin = user.role === 'ADMIN'

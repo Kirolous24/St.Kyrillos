@@ -151,12 +151,18 @@ enum PortalRole {
   SERVANT
   ADMIN
   PASTOR
+  // A Fellowship member who does not serve (2026-10-24). The account exists so
+  // their attendance and follow-ups have somewhere to live; it never signs in.
+  MEMBER
 }
 
 enum Stage {
   ELEMENTARY
   MIDDLE_SCHOOL
   HIGH_SCHOOL
+  // The adults' meetings — Women's, Men's, Youth (2026-10-24). Members, not
+  // students: attendance and follow-ups, no points.
+  FELLOWSHIP
 }
 
 enum ClassTitle {
@@ -649,6 +655,9 @@ enum QrTokenKind {
   STUDENT_ATTENDANCE
   STUDENT_POINTS
   SERVANT_MEETING
+  // A Fellowship meeting's check-in (2026-10-24): members tap their own name,
+  // no sign-in needed.
+  MEMBER_CHECKIN
 }
 
 // A quiz/exam. Questions and their answer keys live in ExamQuestion and are
@@ -935,9 +944,14 @@ model QrRedemption {
   account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   name      String
   at        DateTime @default(now())
+  // A member's own phone checking in without signing in (2026-10-24): the
+  // sha256 of that phone's check-in cookie, so one phone checks in one person
+  // per code.
+  device    String?
 
   @@unique([tokenId, accountId])
   @@index([tokenId])
+  @@index([tokenId, device])
 }
 
 // Notifications are computed per request from live data; this records which

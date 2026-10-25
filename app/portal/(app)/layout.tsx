@@ -90,7 +90,7 @@ export default async function PortalAppLayout({ children }: { children: React.Re
         })
       : []
   const classInfo = Object.fromEntries(
-    classRows.map((c) => [c.id, { name: c.name, photo: c.photo, stage: STAGE_LABEL[c.stage] }]),
+    classRows.map((c) => [c.id, { name: c.name, photo: c.photo, stage: STAGE_LABEL[c.stage], fellowship: c.stage === 'FELLOWSHIP' }]),
   )
   return (
     <Shell

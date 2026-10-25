@@ -6,6 +6,8 @@ import { randomInt } from 'node:crypto'
 import { Prisma, PortalRole, type ClassTitle, type Stage } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { importJoinDecision } from '../class-members'
+import { isFellowship, withoutMembers } from '../fellowship'
+import { assertNotMemberOf, syncMemberFromServant } from '../data/fellowship'
 import { requirePortalUser } from '../session'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseBirthDate, toUTCDate, formatDateOnly } from '../dates'
@@ -261,7 +263,8 @@ export async function exportStudentsCsv(classId: string | null): Promise<ActionR
     const user = classId ? await requirePortalUser() : await requireAdmin()
     if (classId && user.role !== 'ADMIN') await requireClassAccess(user, classId, 'student.read')
     const students = await prisma.student.findMany({
-      where: classId ? { classId } : {},
+      // Children only: a meeting's members export from the meeting (2026-10-24).
+      where: withoutMembers(classId ? { classId } : {}),
       orderBy: [{ class: { sortOrder: 'asc' } }, { firstName: 'asc' }, { lastName: 'asc' }],
       select: {
         firstName: true, lastName: true, classId: true, grade: true, gender: true, dob: true,
@@ -480,6 +483,14 @@ export async function importStudentsCsv(
       const cls = await assertClassAction(user, defaultClassId, 'student.write')
       scope = { id: cls.id, name: cls.name, takesOtherClasses: cls.takesOtherClasses }
     }
+    // A Fellowship meeting's members have their own import (2026-10-24): this
+    // one makes children, with children's logins.
+    if (defaultClassId) {
+      const target = await prisma.schoolClass.findUnique({ where: { id: defaultClassId }, select: { stage: true } })
+      if (isFellowship(target?.stage)) {
+        throw new PortalError('That is a Fellowship meeting. Import its members with Import members on the meeting’s own page.')
+      }
+    }
     const preview = options.preview === true
     // The column names may sit under empty rows or a title (2026-09-28). Rows
     // are reported by their number in the sheet, counted from `headerRow`.
@@ -513,7 +524,9 @@ export async function importStudentsCsv(
       account: { email: string | null; phone: string | null }
     }
 
-    const classes = await prisma.schoolClass.findMany({ select: { id: true, name: true } })
+    // The children's classes: a row naming a Fellowship meeting names no class
+    // here (2026-10-24).
+    const classes = await prisma.schoolClass.findMany({ where: { stage: { not: 'FELLOWSHIP' } }, select: { id: true, name: true } })
     const byId = new Map(classes.map((c) => [c.id.toLowerCase(), c.id]))
     const byName = new Map(classes.map((c) => [c.name.trim().toLowerCase(), c.id]))
     const allocated = new Set<string>()
@@ -1151,6 +1164,8 @@ export async function importServantsCsv(
         if (classification.kind === 'update') {
           const existing = classification.account
           await prisma.$transaction(async (tx) => {
+            // A meeting's servant is not also its member (2026-10-24).
+            if (p.memberships.length > 0) await assertNotMemberOf(tx, existing.id, p.memberships.map((m) => m.classId), p.name)
             await tx.account.update({ where: { id: existing.id }, data: p.accountData })
             const servant = existing.linkedId
               ? await tx.servant.update({ where: { id: existing.linkedId }, data: p.servantData, select: { id: true } })
@@ -1161,6 +1176,8 @@ export async function importServantsCsv(
                 data: p.memberships.map((m) => ({ servantId: servant.id, ...m })),
               })
             }
+            // Their Fellowship member side follows the servant profile.
+            await syncMemberFromServant(tx, existing.id)
           })
           results.push({ row: p.rowNumber, name: p.name, loginId: p.loginId, status: 'updated' })
           continue
@@ -1493,11 +1510,15 @@ export async function endOfYearReset(confirm: string): Promise<ActionResult<Dang
         // years as a child. Without the `servant: { is: null }` guard this
         // reset would delete them along with the children every September,
         // which is the loss the conversion exists to prevent.
+        // 2026-10-24 — nor a Fellowship member: an adult in the Women's, Men's or
+        // Youth meeting is not in a school year, and has a Student row only so
+        // their attendance has somewhere to live.
         await tx.account.deleteMany({
           where: {
             AND: [
               { OR: [{ role: PortalRole.STUDENT }, { student: { isNot: null } }] },
               { servant: { is: null } },
+              { role: { not: PortalRole.MEMBER } },
             ],
           },
         })
@@ -1602,7 +1623,9 @@ export async function deleteClassStudents(classId: string, confirm: string): Pro
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true, name: true } })
     if (!cls) throw new PortalError('Class not found.')
 
-    const students = await prisma.student.findMany({ where: { classId: cls.id }, select: { accountId: true } })
+    // Never a servant's account (2026-10-24): a servant who is a member of a
+    // Fellowship meeting keeps their login whatever happens to the meeting.
+    const students = await prisma.student.findMany({ where: { classId: cls.id, account: { servant: { is: null } } }, select: { accountId: true } })
     if (students.length === 0) throw new PortalError(`${cls.name} has no students to delete.`)
 
     const deleted = await prisma.$transaction(async (tx) => {

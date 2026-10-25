@@ -28,6 +28,8 @@ import { excusesByStudent } from '@/lib/portal/data/excuses'
 import { currentExcuse, excuseState, excuseSummary } from '@/lib/portal/excuses'
 import { MembersPanel } from './MembersPanel'
 import { rosterWhere } from '@/lib/portal/class-members'
+import { isFellowship } from '@/lib/portal/fellowship'
+import { MeetingPage } from './MeetingPage'
 
 export default async function ClassPage({ params, searchParams }: { params: { id: string }; searchParams: { q?: string } }) {
   const user = await requirePortalUser()
@@ -36,6 +38,16 @@ export default async function ClassPage({ params, searchParams }: { params: { id
   // attendance rate, follow-up flag and import notes. Staff only.
   if (user.role === 'STUDENT') notFound()
   const cls = await requireClassAccess(user, params.id, 'class.read')
+  // A Fellowship meeting (2026-10-24) has members, not students: its own page.
+  if (isFellowship(cls.stage)) {
+    return (
+      <MeetingPage
+        user={user}
+        cls={{ id: cls.id, name: cls.name, stage: 'FELLOWSHIP', visitationThreshold: cls.visitationThreshold, photo: cls.photo }}
+        q={(searchParams.q ?? '').trim()}
+      />
+    )
+  }
   const ctx = { classId: cls.id, classStage: cls.stage }
   const canWrite = can(user, 'attendance.write', ctx)
   const canEditStudents = can(user, 'student.write', ctx)

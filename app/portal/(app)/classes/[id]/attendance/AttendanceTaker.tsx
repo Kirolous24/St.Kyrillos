@@ -305,7 +305,7 @@ export function AttendanceTaker(props: Props) {
                     : 'border border-parch-200 bg-parch-50 text-parch-600 hover:border-brand-gold/50 hover:text-brand-800',
                 )}
               >
-                {s.label} <span className="font-semibold text-parch-500">+{s.points}</span>
+                {s.label} {s.points > 0 && <span className="font-semibold text-parch-500">+{s.points}</span>}
               </button>
             )
           })}
@@ -330,7 +330,7 @@ export function AttendanceTaker(props: Props) {
               <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Session</span>
               <select value={props.sessionKey} onChange={(e) => navigate(props.date, e.target.value)} className={inputClass}>
                 {props.sessions.map((s) => (
-                  <option key={s.key} value={s.key}>{s.label} (+{s.points})</option>
+                  <option key={s.key} value={s.key}>{s.label}{s.points > 0 ? ` (+${s.points})` : ''}</option>
                 ))}
               </select>
             </label>
@@ -528,14 +528,15 @@ export function AttendanceTaker(props: Props) {
             {diff.createsEmptyRegister && (
               <div className="mb-3 rounded-[10px] border border-[#FCA5A5] bg-[#FEF2F2] p-2.5 text-[12px] text-[#7F1D1D]">
                 <strong>Everyone is marked absent.</strong> This records the day as held and counts against
-                every student. If you have not taken the register yet, cancel.
+                everyone on the list. If you have not taken the register yet, cancel.
               </div>
             )}
 
             {diff.gains.length > 0 && (
               <div className="mb-2.5">
                 <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">
-                  Gaining {session?.points ?? 0} pt{(session?.points ?? 0) === 1 ? '' : 's'}
+                  {/* A session worth nothing (a Fellowship meeting, 2026-10-24) just marks people present. */}
+                  {(session?.points ?? 0) > 0 ? `Gaining ${session!.points} pt${session!.points === 1 ? '' : 's'}` : 'Marked present'}
                 </p>
                 <p className="text-[12.5px] text-[#15803D]">{diff.gains.map((g) => g.name).join(', ')}</p>
               </div>

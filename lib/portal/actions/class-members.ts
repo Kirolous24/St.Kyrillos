@@ -20,6 +20,11 @@ import { studentName } from '../data/students'
 async function openClass(classId: string) {
   const user = await requirePortalUser()
   const cls = await assertClassAction(user, classId, 'student.write')
+  // A Fellowship meeting takes members on its own page (2026-10-24); a child
+  // is never one of them.
+  if (cls.stage === 'FELLOWSHIP') {
+    throw new PortalError('That is a Fellowship meeting. Its members are added with Add member on its page, and children are not members.')
+  }
   if (!cls.takesOtherClasses) {
     throw new PortalError(`${cls.name} only has its own children. The admin can let it take children from other classes in Manage Classes.`)
   }

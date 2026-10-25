@@ -4,6 +4,8 @@ import { requireClassAccess } from '@/lib/portal/data/classes'
 import { pinVaultEnabled } from '@/lib/portal/pin-vault'
 import { PageHeader } from '@/components/portal/ui'
 import { ImportPanel } from '@/components/portal/ImportPanel'
+import { isFellowship } from '@/lib/portal/fellowship'
+import { MemberImport } from './MemberImport'
 
 export const metadata = { title: 'Import students' }
 
@@ -16,6 +18,21 @@ export const metadata = { title: 'Import students' }
 export default async function ClassImportPage({ params }: { params: { id: string } }) {
   const user = await requirePortalUser()
   const cls = await requireClassAccess(user, params.id, 'student.write')
+  // A Fellowship meeting imports members (2026-10-24): servants on the sheet
+  // keep their own login, and nobody is added twice.
+  if (isFellowship(cls.stage)) {
+    return (
+      <>
+        <PageHeader
+          title="Import members"
+          subtitle={`${cls.name} · add the people on your list, servants and everyone else`}
+          icon={<Upload className="h-5 w-5" aria-hidden />}
+          back={{ href: `/portal/classes/${cls.id}`, label: cls.name }}
+        />
+        <MemberImport classId={cls.id} meetingName={cls.name} />
+      </>
+    )
+  }
   return (
     <>
       <PageHeader

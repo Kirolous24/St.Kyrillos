@@ -113,7 +113,8 @@ function PersonTile({
 
 export default async function BirthdaysPage({ searchParams }: { searchParams: { show?: string } }) {
   const user = await requirePortalUser()
-  const classes = await listVisibleClasses(user)
+  // Fellowship meetings keep Birthdays (2026-10-24): their members are listed under the meeting.
+  const classes = await listVisibleClasses(user, { fellowship: 'include' })
   const classIds = classes.map((c) => c.id)
   const today = churchToday()
   // The prototype had a full roster as well as the near-term board; at 60 days
@@ -121,15 +122,19 @@ export default async function BirthdaysPage({ searchParams }: { searchParams: { 
   const showAll = searchParams.show === 'all'
   const windowDays = showAll ? 366 : 60
 
-  const [students, servants] = await Promise.all([
-    prisma.student.findMany({ where: { classId: { in: classIds } }, select: { id: true, firstName: true, lastName: true, dob: true, class: { select: { name: true } } } }),
+  const [everyone, servants] = await Promise.all([
+    prisma.student.findMany({ where: { classId: { in: classIds } }, select: { id: true, accountId: true, firstName: true, lastName: true, dob: true, class: { select: { name: true } } } }),
     user.role === 'STUDENT'
       ? Promise.resolve([])
       : prisma.servant.findMany({
           where: user.role === 'SERVANT' ? { classes: { some: { classId: { in: classIds } } } } : {},
-          select: { id: true, birthday: true, account: { select: { displayName: true } } },
+          select: { id: true, accountId: true, birthday: true, account: { select: { displayName: true } } },
         }),
   ])
+  // A servant who is a Fellowship member (2026-10-24) is listed once, as the
+  // servant, when they are already among the servants here.
+  const listedServants = new Set(servants.map((s) => s.accountId))
+  const students = everyone.filter((s) => !listedServants.has(s.accountId))
 
   const studentRows = upcomingBirthdays(
     students.map((s) => ({ id: s.id, name: studentName(s), dob: s.dob ? formatDateOnly(s.dob) : null, className: s.class?.name ?? '' })),

@@ -9,6 +9,7 @@ import { RepairPanel } from './RepairPanel'
 import { DangerZone } from './DangerZone'
 import { LoginsPanel } from './LoginsPanel'
 import { pinVaultEnabled } from '@/lib/portal/pin-vault'
+import { withoutMembers } from '@/lib/portal/fellowship'
 
 export const metadata = { title: 'Data & backup' }
 
@@ -18,8 +19,10 @@ export default async function AdminDataPage() {
   if (user.role !== 'ADMIN') notFound()
 
   const [classes, studentCount, servantCount, pointCount, attendanceCount] = await Promise.all([
-    prisma.schoolClass.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { id: true, name: true } }),
-    prisma.student.count(),
+    // The children's classes and children (2026-10-24): Fellowship members are
+    // imported and exported on their meetings' own pages.
+    prisma.schoolClass.findMany({ where: { stage: { not: 'FELLOWSHIP' } }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { id: true, name: true } }),
+    prisma.student.count({ where: withoutMembers({}) }),
     prisma.account.count({ where: { role: { in: ['SERVANT', 'ADMIN', 'PASTOR'] } } }),
     prisma.pointEntry.count(),
     prisma.attendanceRecord.count(),

@@ -7,7 +7,8 @@ export const metadata = { title: 'Students' }
 
 export default async function StudentsEntryPage() {
   const user = await requirePortalUser()
-  const classes = await resolveClassEntry(user, '')
+  // A Fellowship meeting's members are listed on its page (2026-10-24).
+  const classes = await resolveClassEntry(user, '', 'class.read', { fellowship: 'include' })
   return (
     <ClassChoice
       title="Students"

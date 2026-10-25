@@ -21,6 +21,8 @@ export default async function ClassCredentialsPage({ params }: { params: { id: s
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') notFound()
   const cls = await requireClassAccess(user, params.id, 'student.write')
+  // A Fellowship meeting's members have no logins (2026-10-24).
+  if (cls.stage === 'FELLOWSHIP') notFound()
   const roster = await prisma.student.findMany({
     // Children's logins only: a grown-up who serves now keeps their Student
     // row (F0850), and their PIN is a servant's.

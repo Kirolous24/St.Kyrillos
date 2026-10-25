@@ -17,6 +17,8 @@ import { applyCurriculumLink } from '../data/curriculum-link'
 import type { PortalUser } from '../permissions'
 import { clearRateLimit } from '@/lib/rate-limit'
 import { isStandardSession, standardSessionLabel } from '../sessions'
+import { isFellowship, meetingSessionKey } from '../fellowship'
+import { assertNotMemberOf, ensureMeetingSession, syncMemberFromServant } from '../data/fellowship'
 
 async function requireAdmin(): Promise<PortalUser> {
   const user = await requirePortalUser()
@@ -36,7 +38,7 @@ const ServantFormSchema = z.object({
   phone: z.string().trim().max(30).optional(),
   birthday: z.string().trim().optional(),
   address: z.string().trim().max(200).optional(),
-  stageOversight: z.enum(['', 'ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL']).optional(),
+  stageOversight: z.enum(['', 'ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL', 'FELLOWSHIP']).optional(),
   classes: z.array(z.object({ classId: z.string().min(1), title: z.enum(['', 'COORDINATOR', 'ASSISTANT_COORDINATOR']) })).max(20),
   isActive: z.boolean().optional(),
 })
@@ -86,10 +88,14 @@ export async function updateServant(accountId: string, raw: ServantFormInput): P
     const input = ServantFormSchema.parse(raw)
     const data = servantData(input)
     const existing = await prisma.account.findUnique({ where: { id: accountId }, select: { id: true, role: true, servant: { select: { id: true } } } })
-    if (!existing || existing.role === 'STUDENT') throw new PortalError('Account not found.')
+    // A Fellowship member who does not serve is not made a servant here: their
+    // account has no four-digit ID, so the servant it became could never sign in.
+    if (!existing || existing.role === 'STUDENT' || existing.role === 'MEMBER') throw new PortalError('Account not found.')
     if (existing.id === user.accountId && (input.role !== 'ADMIN' || input.isActive === false)) {
       throw new PortalError('You cannot remove your own admin access.')
     }
+    // A meeting's servant is not also its member (the user, 2026-10-24).
+    await assertNotMemberOf(prisma, accountId, input.classes.map((c) => c.classId), input.displayName)
     await prisma.$transaction(async (tx) => {
       await tx.account.update({ where: { id: accountId }, data: { role: input.role, ...data.account } })
       const servant = existing.servant
@@ -99,6 +105,8 @@ export async function updateServant(accountId: string, raw: ServantFormInput): P
       if (input.classes.length) {
         await tx.classServant.createMany({ data: input.classes.map((c, i) => ({ servantId: servant.id, classId: c.classId, title: c.title || null, sortOrder: i })) })
       }
+      // Their member side carries the servant profile's name and birthday.
+      await syncMemberFromServant(tx, accountId)
     })
     await audit(user, 'servant.update', 'account', accountId, `Updated ${input.displayName}`)
     revalidatePath('/portal/admin/servants')
@@ -143,7 +151,7 @@ export async function deleteServant(accountId: string): Promise<ActionResult> {
 
 const ClassSchema = z.object({
   name: z.string().trim().min(1).max(60),
-  stage: z.enum(['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL']),
+  stage: z.enum(['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL', 'FELLOWSHIP']),
   visitationThreshold: z.number().int().min(1).max(10),
   description: z.string().trim().max(300).optional(),
   /** Children may join it and stay in their own class (Pre-Servants, 2026-09-28). */
@@ -160,7 +168,11 @@ export async function createClass(raw: ClassInput): Promise<ActionResult<{ id: s
     let id = base
     for (let i = 2; await prisma.schoolClass.findUnique({ where: { id }, select: { id: true } }); i++) id = `${base}-${i}`
     const max = await prisma.schoolClass.aggregate({ _max: { sortOrder: true } })
-    await prisma.schoolClass.create({ data: { id, name: input.name, stage: input.stage, visitationThreshold: input.visitationThreshold, description: input.description || null, takesOtherClasses: input.takesOtherClasses ?? false, sortOrder: (max._max.sortOrder ?? 0) + 1 } })
+    // A Fellowship meeting (2026-10-24) takes its members from anywhere — they
+    // are servants of other classes, or nobody's — and has its own register.
+    const meeting = isFellowship(input.stage)
+    await prisma.schoolClass.create({ data: { id, name: input.name, stage: input.stage, visitationThreshold: input.visitationThreshold, description: input.description || null, takesOtherClasses: meeting || (input.takesOtherClasses ?? false), sortOrder: (max._max.sortOrder ?? 0) + 1 } })
+    if (meeting) await ensureMeetingSession(prisma, { id, name: input.name })
     await audit(user, 'class.create', 'class', id, input.name)
     revalidatePath('/portal/admin/classes')
     revalidatePath('/portal/classes')
@@ -303,9 +315,28 @@ export async function updateClass(id: string, raw: ClassInput & { isActive?: boo
   return runAction(async () => {
     const user = await requireAdmin()
     const input = ClassSchema.parse(raw)
+    const before = await prisma.schoolClass.findUnique({
+      where: { id },
+      select: { stage: true, name: true, _count: { select: { students: true, members: true } } },
+    })
+    if (!before) throw new PortalError('Class not found.')
+    // Children are not members and members are not children (2026-10-24): a
+    // class only crosses into or out of Fellowship while nobody is in it, or
+    // its people would change kind without anyone deciding to.
+    const meeting = isFellowship(input.stage)
+    if (meeting !== isFellowship(before.stage)) {
+      const people = before._count.students + before._count.members
+      if (people > 0) {
+        throw new PortalError(
+          meeting
+            ? `${before.name} still has ${people} student${people === 1 ? '' : 's'}. Only an empty class can become a Fellowship meeting.`
+            : `${before.name} still has ${people} member${people === 1 ? '' : 's'}. Only an empty meeting can become a class.`,
+        )
+      }
+    }
     // Switching it off with children from other classes still in it would drop
     // them from its roster without anyone deciding to.
-    if (input.takesOtherClasses === false) {
+    if (input.takesOtherClasses === false && !meeting) {
       const members = await prisma.classMember.count({ where: { classId: id } })
       if (members > 0) {
         throw new PortalError(`It still has ${members} child${members === 1 ? '' : 'ren'} from other classes. Take them out on the class page first.`)
@@ -315,11 +346,14 @@ export async function updateClass(id: string, raw: ClassInput & { isActive?: boo
       where: { id },
       data: {
         name: input.name, stage: input.stage, visitationThreshold: input.visitationThreshold, description: input.description || null,
-        ...(typeof input.takesOtherClasses === 'boolean' ? { takesOtherClasses: input.takesOtherClasses } : {}),
+        ...(meeting ? { takesOtherClasses: true } : typeof input.takesOtherClasses === 'boolean' ? { takesOtherClasses: input.takesOtherClasses } : {}),
         ...(typeof raw.isActive === 'boolean' ? { isActive: raw.isActive } : {}),
         ...(typeof raw.sortOrder === 'number' ? { sortOrder: raw.sortOrder } : {}),
       },
     })
+    // The meeting's register carries its name, so a renamed meeting is not
+    // followed up as "Missed Men's Meeting" under its old one.
+    if (meeting) await ensureMeetingSession(prisma, { id, name: input.name })
     await audit(user, 'class.update', 'class', id, input.name)
     revalidatePath('/portal/admin/classes')
     revalidatePath('/portal/classes')
@@ -333,10 +367,16 @@ export async function deleteClass(id: string): Promise<ActionResult> {
     const user = await requireAdmin()
     const cls = await prisma.schoolClass.findUnique({
       where: { id },
-      select: { name: true, _count: { select: { students: true, attendance: true, exams: true, points: true, followUps: true } } },
+      select: { name: true, stage: true, _count: { select: { students: true, attendance: true, exams: true, points: true, followUps: true } } },
     })
     if (!cls) throw new PortalError('Class not found.')
-    if (cls._count.students > 0) throw new PortalError('Move the students out of this class before deleting it.')
+    if (cls._count.students > 0) {
+      throw new PortalError(
+        isFellowship(cls.stage)
+          ? 'Remove its members on the meeting’s page before deleting it, or hide it instead.'
+          : 'Move the students out of this class before deleting it.',
+      )
+    }
     // Emptying the roster does not empty the history: attendance, exams and
     // their quiz results cascade away with the class, and the points that
     // describe them are left pointing at nothing. Hide the class instead.
@@ -362,7 +402,8 @@ export async function deleteClass(id: string): Promise<ActionResult> {
 // ── Attendance sessions ───────────────────────────────────────────────────
 
 const SessionSchema = z.object({
-  key: z.string().trim().min(1).max(30).regex(/^[a-z0-9-]+$/, 'Key must be lowercase letters, digits or dashes'),
+  // 80, not 30: a Fellowship meeting's own register is keyed on its class id (2026-10-24).
+  key: z.string().trim().min(1).max(80).regex(/^[a-z0-9-]+$/, 'Key must be lowercase letters, digits or dashes'),
   label: z.string().trim().min(1).max(40),
   points: z.number().int().min(0).max(100),
   isActive: z.boolean(),
@@ -424,6 +465,8 @@ export async function saveServantActivity(raw: z.infer<typeof ServantActivitySch
   })
 }
 
+const NO_MEETING_POINTS = 'A Fellowship meeting carries no points. Set its points to 0.'
+
 export async function saveSession(raw: z.infer<typeof SessionSchema>): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requireAdmin()
@@ -440,12 +483,16 @@ export async function saveSession(raw: z.infer<typeof SessionSchema>): Promise<A
       )
     }
     const count = await prisma.attendanceSession.count()
-    const exists = await prisma.attendanceSession.findUnique({ where: { key: input.key }, select: { key: true } })
+    const exists = await prisma.attendanceSession.findUnique({ where: { key: input.key }, select: { key: true, class: { select: { stage: true } } } })
+    // A Fellowship meeting carries no points (2026-10-24), on its own register
+    // or any other session it holds.
+    if (input.points > 0 && isFellowship(exists?.class?.stage)) throw new PortalError(NO_MEETING_POINTS)
     let ownClassId: string | null = null
     if (!exists && input.classId) {
       if (locked) throw new PortalError(`"${locked}" is held by every class.`)
-      const owner = await prisma.schoolClass.findUnique({ where: { id: input.classId }, select: { id: true, takesOtherClasses: true, name: true } })
+      const owner = await prisma.schoolClass.findUnique({ where: { id: input.classId }, select: { id: true, takesOtherClasses: true, name: true, stage: true } })
       if (!owner) throw new PortalError('Class not found.')
+      if (input.points > 0 && isFellowship(owner.stage)) throw new PortalError(NO_MEETING_POINTS)
       if (!owner.takesOtherClasses) {
         throw new PortalError(`Only a class that takes children from other classes has its own meeting. Tick that for ${owner.name} in Manage Classes first.`)
       }
@@ -490,6 +537,10 @@ export async function deleteSession(key: string): Promise<ActionResult<{ key: st
       select: { key: true, label: true },
     })
     if (!session) throw new PortalError('That session no longer exists.')
+    // A Fellowship meeting's own register goes with the meeting (2026-10-24).
+    if (session.key.startsWith(meetingSessionKey(''))) {
+      throw new PortalError(`"${session.label}" is a Fellowship meeting's own register. Switch it off instead.`)
+    }
     if (isStandardSession(session.key)) {
       throw new PortalError(
         `"${session.label}" is one of the church's standard sessions. Switch it off if it is not running this year.`,

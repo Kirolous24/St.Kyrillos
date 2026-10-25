@@ -2,7 +2,7 @@
 // this can be unit-tested and so the lockout counter lives server-side, not in
 // the browser like the prototype.
 
-export type LoginRole = 'STUDENT' | 'SERVANT' | 'ADMIN' | 'PASTOR'
+export type LoginRole = 'STUDENT' | 'SERVANT' | 'ADMIN' | 'PASTOR' | 'MEMBER'
 
 export interface LoginAccount {
   id: string
@@ -59,6 +59,10 @@ export async function attemptLogin(
 
   const account = await repo.findByLoginId(loginId)
   if (!account || !account.isActive) return { ok: false, reason: 'invalid' }
+  // A Fellowship member who does not serve never signs in (2026-10-24). Their
+  // IDs are not four digits, so this is the second lock, not the first; it
+  // answers exactly like a wrong PIN, and spends nothing on the counter.
+  if (account.role === 'MEMBER') return { ok: false, reason: 'invalid' }
 
   if (account.lockedUntil && account.lockedUntil.getTime() > now.getTime()) {
     return { ok: false, reason: 'locked', until: account.lockedUntil }

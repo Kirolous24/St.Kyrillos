@@ -53,7 +53,10 @@ export function FamilyMessenger({
   today,
   saved,
   kids,
+  members = false,
 }: {
+  /** A Fellowship meeting (2026-10-24): each message goes to the member, not a family. */
+  members?: boolean
   classId: string
   sessionKey: string
   meeting: string
@@ -137,7 +140,7 @@ export function FamilyMessenger({
   }
 
   function backToStandard() {
-    if (!window.confirm(`Go back to the standard ${meeting} message? The class’s own one is removed.`)) return
+    if (!window.confirm(`Go back to the standard ${meeting} message? The ${members ? 'meeting’s' : 'class’s'} own one is removed.`)) return
     setNotice(null)
     startSaving(async () => {
       const r = await resetMeetingMessage({ classId, sessionKey })
@@ -171,13 +174,15 @@ export function FamilyMessenger({
    * caught and offered again rather than left to break the page.
    */
   function sent(kid: MissedKid, phone: KidPhone, message: string, method: Channel = channel) {
-    setJustSent((m) => ({ ...m, [kid.id]: { method, to: phone.label } }))
+    // A member is messaged on their own phone, so the note names them (2026-10-24).
+    const to = members ? kid.firstName : phone.label
+    setJustSent((m) => ({ ...m, [kid.id]: { method, to } }))
     setErrors((m) => without(m, kid.id))
     setRetry((m) => without(m, kid.id))
     startRecording(async () => {
       let error: string | null = null
       try {
-        const r = await recordFamilyMessage({ studentId: kid.id, classId, channel: method, to: phone.label, text: message, missed: { sessionKey, date } })
+        const r = await recordFamilyMessage({ studentId: kid.id, classId, channel: method, to, text: message, missed: { sessionKey, date } })
         if (!r.ok) error = r.error
       } catch {
         error = 'The connection dropped before it was noted.'
@@ -204,8 +209,10 @@ export function FamilyMessenger({
           </h2>
           <p className="mb-3 text-[12px] text-parch-600">
             {saved.isStandard
-              ? `The standard message. Change it for this ${meeting}: say what you read or did. Every family below gets it with their own child’s name.`
-              : `Your class’s ${meeting} message${saved.by ? `, last changed by ${saved.by}` : ''}${saved.day ? ` on ${formatLongDate(saved.day)}` : ''}. Change it for this one if you like.`}
+              ? members
+                ? `The standard message. Change it for this ${meeting} if you like. Everyone below gets it with their own name.`
+                : `The standard message. Change it for this ${meeting}: say what you read or did. Every family below gets it with their own child’s name.`
+              : `${members ? 'The meeting’s' : 'Your class’s'} ${meeting} message${saved.by ? `, last changed by ${saved.by}` : ''}${saved.day ? ` on ${formatLongDate(saved.day)}` : ''}. Change it for this one if you like.`}
           </p>
           <textarea
             id="family-message"
@@ -214,7 +221,7 @@ export function FamilyMessenger({
             onChange={(e) => edit(e.target.value)}
             rows={8}
             maxLength={MESSAGE_MAX + 200}
-            aria-label="The message every family gets"
+            aria-label={members ? 'The message everyone gets' : 'The message every family gets'}
             aria-describedby="family-message-help"
             className={cn(textareaClass, 'resize-y')}
           />
@@ -227,7 +234,7 @@ export function FamilyMessenger({
                 className="rounded-[8px] border border-parch-200 bg-parch-100 px-2 py-1 text-[11px] font-semibold text-parch-700 hover:border-brand-gold/60"
                 title={`Adds ${p.token}: ${p.label.toLowerCase()}`}
               >
-                + {p.label}
+                + {members && p.token === '{name}' ? 'First name' : p.label}
               </button>
             ))}
             <span className={cn('ml-auto text-[11px] tabular-nums', text.length > MESSAGE_MAX ? 'font-bold text-[#DC2626]' : 'text-parch-500')}>
@@ -242,7 +249,7 @@ export function FamilyMessenger({
           {kids[0] && !problem && (
             <div className="mt-3 rounded-[12px] border border-[#EFE9DC] bg-parch-100 px-3 py-2.5" data-testid="message-preview">
               <p className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.8px] text-parch-500">
-                What {kids[0].firstName}’s family gets
+                {members ? `What ${kids[0].firstName} gets` : `What ${kids[0].firstName}’s family gets`}
               </p>
               <p className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-parch-800">{preview}</p>
             </div>
@@ -302,8 +309,8 @@ export function FamilyMessenger({
           </div>
         </div>
         <p className="text-[12px] text-parch-600">
-          Each button opens {channel === 'whatsapp' ? 'WhatsApp' : 'your Messages app'} with that family’s message written in. Send it
-          there, then come back for the next. Each one is noted on the child’s follow-ups.
+          Each button opens {channel === 'whatsapp' ? 'WhatsApp' : 'your Messages app'} with {members ? 'their' : 'that family’s'} message written in. Send it
+          there, then come back for the next. Each one is noted on {members ? 'their' : 'the child’s'} follow-ups.
         </p>
 
         <ul className="space-y-2.5">
@@ -325,7 +332,7 @@ export function FamilyMessenger({
                 )}
               >
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Link href={`/portal/students/${kid.id}`} className="font-serif text-[14px] font-bold text-parch-900 hover:text-brand-800">
+                  <Link href={members ? `/portal/members/${kid.id}` : `/portal/students/${kid.id}`} className="font-serif text-[14px] font-bold text-parch-900 hover:text-brand-800">
                     {kid.name}
                   </Link>
                   <Badge tone={kid.marked ? 'bad' : 'warn'}>{kid.marked ? 'Absent' : 'Not marked'}</Badge>
@@ -340,7 +347,7 @@ export function FamilyMessenger({
                 {kid.phones.length === 0 ? (
                   <p className="mt-2 text-[12px] text-parch-600">
                     No phone number on file.{' '}
-                    <Link href={`/portal/students/${kid.id}`} className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
+                    <Link href={members ? `/portal/members/${kid.id}` : `/portal/students/${kid.id}`} className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
                       Add one on their page
                     </Link>
                   </p>

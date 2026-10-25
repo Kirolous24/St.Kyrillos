@@ -40,17 +40,20 @@ export function initials(name: string): string {
     .join('')
 }
 
-export const STAGE_LABEL: Record<'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL', string> = {
+export const STAGE_LABEL: Record<'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL' | 'FELLOWSHIP', string> = {
   ELEMENTARY: 'Elementary',
   MIDDLE_SCHOOL: 'Middle School',
   HIGH_SCHOOL: 'High School',
+  // The adults' meetings (2026-10-24).
+  FELLOWSHIP: 'Fellowship',
 }
 
-export const ROLE_LABEL: Record<'STUDENT' | 'SERVANT' | 'ADMIN' | 'PASTOR', string> = {
+export const ROLE_LABEL: Record<'STUDENT' | 'SERVANT' | 'ADMIN' | 'PASTOR' | 'MEMBER', string> = {
   STUDENT: 'Student',
   SERVANT: 'Servant',
   ADMIN: 'Admin',
   PASTOR: 'Pastor',
+  MEMBER: 'Member',
 }
 
 export const TITLE_LABEL: Record<'COORDINATOR' | 'ASSISTANT_COORDINATOR', string> = {

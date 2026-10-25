@@ -104,7 +104,13 @@ describe('every nav row resolves for the role that sees it', () => {
     // takes the list. Both shapes are checked.
     const people: PortalUser[] =
       role === 'SERVANT'
-        ? [user({ role, classIds: ['kg1'] }), user({ role, classIds: ['kg1', 'kg2'], stageOversight: 'ELEMENTARY' })]
+        ? [
+            user({ role, classIds: ['kg1'] }),
+            user({ role, classIds: ['kg1', 'kg2'], stageOversight: 'ELEMENTARY' }),
+            // Fellowship (2026-10-24): one meeting, and an overseer of every meeting.
+            user({ role, classIds: ['mens'], fellowshipClassIds: ['mens'] }),
+            user({ role, stageOversight: 'FELLOWSHIP' }),
+          ]
         : [user({ role })]
 
     people.forEach((u, i) => {

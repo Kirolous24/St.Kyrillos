@@ -14,6 +14,7 @@ import { registerWhere, sessionsForClass } from '@/lib/portal/class-members'
 import { lastSavedOf } from '@/lib/portal/attendance-rules'
 import { can } from '@/lib/portal/permissions'
 import { missedRegister } from '@/lib/portal/family-messages'
+import { isFellowship } from '@/lib/portal/fellowship'
 
 export const metadata = { title: 'Attendance' }
 
@@ -28,7 +29,12 @@ export default async function AttendancePage({
   const cls = await requireClassAccess(user, params.id, 'attendance.write')
 
   // Every class's sessions and this class's own meeting, never another class's (2026-09-28).
-  const sessions = sessionsForClass(await prisma.attendanceSession.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }), cls.id)
+  // A Fellowship meeting (2026-10-24) takes only its own: its members are not
+  // marked for Liturgy or Sunday School.
+  const meeting = isFellowship(cls.stage)
+  const sessions = sessionsForClass(await prisma.attendanceSession.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }), cls.id).filter(
+    (s) => !meeting || s.classId === cls.id,
+  )
   const date = parseDateOnly(searchParams.date) ?? churchToday()
 
   // F0209 — 'sunday' was the unconditional fallback, so once an admin switched
@@ -189,10 +195,14 @@ export default async function AttendancePage({
       {students.length === 0 ? (
         // Still offer the other sessions: an empty one must not be a dead end.
         <EmptyState
-          title={`Nobody to mark for ${active.label}`}
-          hint={sessions.length > 1 ? 'Pick another session:' : 'No students in this class yet.'}
+          title={meeting ? 'No members yet' : `Nobody to mark for ${active.label}`}
+          hint={meeting ? 'Add the people who come, then take attendance here.' : sessions.length > 1 ? 'Pick another session:' : 'No students in this class yet.'}
           action={
-            sessions.length > 1 ? (
+            meeting ? (
+              <LinkButton href={`/portal/classes/${cls.id}/members/new`} size="sm">
+                Add member
+              </LinkButton>
+            ) : sessions.length > 1 ? (
               <span className="flex flex-wrap justify-center gap-2">
                 {sessions
                   .filter((s) => s.key !== sessionKey)
@@ -225,14 +235,15 @@ export default async function AttendancePage({
         />
       )}
       {missedCount > 0 && (
-        <Card className="mt-4 print:hidden" title="Message the families" icon={<Send className="h-4 w-4" aria-hidden />}>
+        <Card className="mt-4 print:hidden" title={meeting ? 'Message the members' : 'Message the families'} icon={<Send className="h-4 w-4" aria-hidden />}>
           <p className="text-[12.5px] text-parch-700" data-testid="message-families-hint">
-            {missedCount === 1 ? '1 child' : `${missedCount} children`} missed {active.label} on {formatShortDate(date)}. Write one
-            message and send it to each family from your phone. Each one gets their own child’s name.
+            {meeting
+              ? `${missedCount === 1 ? '1 member' : `${missedCount} members`} missed ${active.label} on ${formatShortDate(date)}. Write one message and send it to each of them from your phone. Each one gets their own name.`
+              : `${missedCount === 1 ? '1 child' : `${missedCount} children`} missed ${active.label} on ${formatShortDate(date)}. Write one message and send it to each family from your phone. Each one gets their own child’s name.`}
           </p>
           <div className="mt-3">
             <LinkButton href={`/portal/classes/${cls.id}/message?session=${sessionKey}&date=${date}`} size="sm">
-              <Send className="h-3.5 w-3.5" aria-hidden /> Message families
+              <Send className="h-3.5 w-3.5" aria-hidden /> {meeting ? 'Message members' : 'Message families'}
             </LinkButton>
           </div>
         </Card>

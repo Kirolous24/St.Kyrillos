@@ -25,7 +25,10 @@ export function GroupsPanel({
   servants,
   unassigned,
   health,
+  members = false,
 }: {
+  /** A Fellowship meeting's groups (2026-10-24): members, not children. */
+  members?: boolean
   canManage: boolean
   classId: string
   servants: Array<{ id: string; name: string; kids: Kid[] }>
@@ -38,9 +41,12 @@ export function GroupsPanel({
   const [arranging, setArranging] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
+  const one = members ? 'member' : 'child'
+  const many = members ? 'members' : 'children'
+  const place = members ? 'meeting' : 'class'
   const flags = [
-    health.unassigned > 0 ? `${health.unassigned} ${health.unassigned === 1 ? 'child has' : 'children have'} no servant` : null,
-    ...health.emptyServants.map((n) => `${n} has no children yet`),
+    health.unassigned > 0 ? `${health.unassigned} ${health.unassigned === 1 ? `${one} has` : `${many} have`} no servant` : null,
+    ...health.emptyServants.map((n) => `${n} has no ${many} yet`),
     health.uneven ? 'The groups are uneven' : null,
   ].filter((f): f is string => !!f)
 
@@ -58,7 +64,7 @@ export function GroupsPanel({
       const r = await applySplit(classId)
       if (!r.ok) return setMessage({ ok: false, text: r.error })
       setPreview(null)
-      setMessage({ ok: true, text: r.data!.moved === 0 ? 'The groups were already even.' : `Moved ${r.data!.moved} ${r.data!.moved === 1 ? 'child' : 'children'}.` })
+      setMessage({ ok: true, text: r.data!.moved === 0 ? 'The groups were already even.' : `Moved ${r.data!.moved} ${r.data!.moved === 1 ? one : many}.` })
       router.refresh()
     })
   }
@@ -74,7 +80,7 @@ export function GroupsPanel({
 
   const chip = (k: Kid, current: string | null) => (
     <li key={k.id} className="flex flex-wrap items-center gap-1.5">
-      <Link href={`/portal/students/${k.id}`} className="text-[12.5px] text-parch-800 hover:text-brand-800 hover:underline">
+      <Link href={members ? `/portal/members/${k.id}` : `/portal/students/${k.id}`} className="text-[12.5px] text-parch-800 hover:text-brand-800 hover:underline">
         {k.name}
       </Link>
       {arranging && (
@@ -104,8 +110,8 @@ export function GroupsPanel({
         action={flags.length > 0 ? <Badge tone="warn">Needs attention</Badge> : <Badge tone="good">Even</Badge>}
       >
         <p className="mb-3 text-[12px] text-parch-600">
-          Each child has one servant who follows them up. Servants see their own group on My Group and on Follow-ups,
-          and anyone in the class can follow up any child — on a colleague&rsquo;s behalf too — from{' '}
+          Each {one} has one servant who follows them up. Servants see their own group on My Group and on Follow-ups,
+          and anyone in the {place} can follow up any {one} — on a colleague&rsquo;s behalf too — from{' '}
           <Link
             href={`/portal/my-group?tab=class&class=${encodeURIComponent(classId)}`}
             className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2"
@@ -123,7 +129,7 @@ export function GroupsPanel({
         )}
 
         {servants.length === 0 ? (
-          <p className="text-[12.5px] text-parch-500">This class has no active servants, so there is nobody to split the children between.</p>
+          <p className="text-[12.5px] text-parch-500">This {place} has no active servants, so there is nobody to split the {many} between.</p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="group-grid">
             {servants.map((s) => (
@@ -135,7 +141,7 @@ export function GroupsPanel({
                   </span>
                 </p>
                 {s.kids.length === 0 ? (
-                  <p className="text-[11.5px] text-parch-500">No children yet</p>
+                  <p className="text-[11.5px] text-parch-500">No {many} yet</p>
                 ) : (
                   <ul className="space-y-1">{s.kids.map((k) => chip(k, s.id))}</ul>
                 )}
@@ -165,7 +171,7 @@ export function GroupsPanel({
               aria-pressed={arranging}
               className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px]')}
             >
-              {arranging ? 'Done arranging' : 'Move children'}
+              {arranging ? 'Done arranging' : `Move ${many}`}
             </button>
           </div>
         )}

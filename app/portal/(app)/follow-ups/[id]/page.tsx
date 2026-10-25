@@ -18,6 +18,8 @@ import { formatDateTime, formatLongDate } from '@/lib/portal/format'
 import { formatPhone, waLink } from '@/lib/portal/phones'
 import { PageHeader, Card, Badge, Callout, EmptyState } from '@/components/portal/ui'
 import { CaseActions } from './CaseActions'
+import { isFellowship } from '@/lib/portal/fellowship'
+import { MemberPhone } from '@/components/portal/MemberPhone'
 
 export default async function CasePage({ params }: { params: { id: string } }) {
   const user = await requirePortalUser()
@@ -27,7 +29,7 @@ export default async function CasePage({ params }: { params: { id: string } }) {
       id: true, classId: true, status: true, origin: true, title: true, details: true, consecutiveAbsences: true, lastSeen: true, nextFollowUp: true,
       createdAt: true, resolvedAt: true, resolveReason: true, resolveNote: true,
       resolvedBy: { select: { displayName: true } }, createdBy: { select: { displayName: true } },
-      student: { select: { id: true, firstName: true, lastName: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true, parentEmails: true } },
+      student: { select: { id: true, firstName: true, lastName: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true, parentEmails: true, account: { select: { phone: true, email: true } } } },
       class: { select: { name: true } },
       logs: {
         orderBy: { at: 'desc' },
@@ -61,6 +63,8 @@ export default async function CasePage({ params }: { params: { id: string } }) {
         ).map((k) => ({ id: k.id, name: studentName(k) }))
       : []
   const s = c.student
+  // A Fellowship member is reached on their own phone (2026-10-24).
+  const meeting = isFellowship(cls.stage)
   const hasContacts = Boolean(s.fatherPhone || s.motherPhone || s.fatherName || s.motherName) || s.parentEmails.length > 0
   // Follow-up excuse (2026-10-19): on now, or the next one coming.
   const today = churchToday()
@@ -73,7 +77,7 @@ export default async function CasePage({ params }: { params: { id: string } }) {
         subtitle={
           <>
             {c.title} &middot;{' '}
-            <Link href={`/portal/students/${s.id}`} className="font-semibold text-brand-gold-light underline-offset-2 hover:underline">
+            <Link href={meeting ? `/portal/members/${s.id}` : `/portal/students/${s.id}`} className="font-semibold text-brand-gold-light underline-offset-2 hover:underline">
               Open profile
             </Link>
           </>
@@ -169,6 +173,17 @@ export default async function CasePage({ params }: { params: { id: string } }) {
               </div>
             </Card>
           )}
+          {meeting ? (
+            <Card title="Contact" icon={<Users className="h-4 w-4" />}>
+              <MemberPhone name={studentName(s)} phone={s.account.phone} full />
+              {s.account.email && (
+                <a className="mt-2 inline-flex items-center gap-1 break-all text-[12px] font-bold text-brand-800 hover:text-brand-gold-dark" href={`mailto:${s.account.email}`}>
+                  <Mail className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {s.account.email}
+                </a>
+              )}
+            </Card>
+          ) : (
           <Card title="Family contacts" icon={<Users className="h-4 w-4" />} bodyClassName="p-0">
             {!hasContacts ? (
               <p className="px-[18px] py-4 text-[12.5px] text-parch-500">No contact details on file.</p>
@@ -264,6 +279,7 @@ export default async function CasePage({ params }: { params: { id: string } }) {
               </dl>
             )}
           </Card>
+          )}
           {canWrite && <CaseActions caseId={c.id} status={c.status} />}
         </div>
       </div>

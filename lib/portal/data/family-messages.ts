@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { registerWhere, type SessionScope } from '../class-members'
 import { churchToday, formatDateOnly, sundayOnOrBefore, toUTCDate } from '../dates'
 import { STANDARD_MESSAGE, excuseForMeeting, messagingOrder, missedRegister, sentTo } from '../family-messages'
+import { MEMBER_MESSAGE, isFellowship } from '../fellowship'
 import { formatDateTime } from '../format'
 import { kidPhoneList, type KidPhone } from '../phones'
 import { excusesByStudent, type ExcuseView } from './excuses'
@@ -22,15 +23,18 @@ export interface SavedMessage {
   day: string | null
 }
 
-/** The class's message for a meeting, or the standard one. */
-export async function meetingMessage(classId: string, sessionKey: string): Promise<SavedMessage> {
+/**
+ * The class's message for a meeting, or the standard one: to the family for a
+ * class, to the member for a Fellowship meeting (2026-10-24).
+ */
+export async function meetingMessage(classId: string, sessionKey: string, standard: string = STANDARD_MESSAGE): Promise<SavedMessage> {
   const saved = await prisma.meetingMessage.findUnique({
     where: { classId_sessionKey: { classId, sessionKey } },
     select: { body: true, updatedAt: true, updatedBy: { select: { displayName: true } } },
   })
   return saved
     ? { body: saved.body, isStandard: false, by: saved.updatedBy?.displayName ?? null, day: churchToday(saved.updatedAt) }
-    : { body: STANDARD_MESSAGE, isStandard: true, by: null, day: null }
+    : { body: standard, isStandard: true, by: null, day: null }
 }
 
 export interface CaseMessage {
@@ -49,14 +53,17 @@ export async function caseMessages(classIds: readonly string[], today: string): 
   const out = new Map<string, CaseMessage>()
   if (classIds.length === 0) return out
   const ids = [...classIds]
-  const [own, sunday] = await Promise.all([
+  const [own, sunday, stages] = await Promise.all([
     prisma.attendanceSession.findMany({
       where: { classId: { in: ids }, isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }],
       select: { key: true, label: true, classId: true },
     }),
     prisma.attendanceSession.findUnique({ where: { key: 'sunday' }, select: { label: true } }),
+    // A Fellowship meeting's standard message is to the member (2026-10-24).
+    prisma.schoolClass.findMany({ where: { id: { in: ids } }, select: { id: true, stage: true } }),
   ])
+  const meetingIds = new Set(stages.filter((c) => isFellowship(c.stage)).map((c) => c.id))
   const meetingOf = new Map<string, { key: string; label: string }>()
   for (const id of ids) {
     const mine = own.find((s) => s.classId === id)
@@ -80,7 +87,7 @@ export async function caseMessages(classIds: readonly string[], today: string): 
   for (const id of ids) {
     const meeting = meetingOf.get(id)!
     out.set(id, {
-      body: bodyOf.get(id) ?? STANDARD_MESSAGE,
+      body: bodyOf.get(id) ?? (meetingIds.has(id) ? MEMBER_MESSAGE : STANDARD_MESSAGE),
       meeting: meeting.label,
       date: meeting.key === 'sunday' ? sundayOnOrBefore(today) : (lastOf.get(id) ?? today),
     })

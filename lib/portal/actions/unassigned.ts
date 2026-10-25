@@ -10,6 +10,7 @@ import { CLEAR_UNASSIGNED, cleanUnassignReason } from '../unassigned'
 import { keepMembershipsOnMove } from '../data/class-members'
 import { placeNewKids } from '../data/groups'
 import { studentName } from '../data/students'
+import { isFellowship } from '../fellowship'
 
 /**
  * UNASSIGNED (2026-09-26). Any servant of a class takes a child off it with a
@@ -147,9 +148,11 @@ export async function moveUnassigned(studentId: string, toClassId: string): Prom
     const { s, from } = await loadWaiting(user, studentId)
     const to = await prisma.schoolClass.findUnique({
       where: { id: String(toClassId ?? '') },
-      select: { id: true, name: true, isActive: true },
+      select: { id: true, name: true, isActive: true, stage: true },
     })
     if (!to || !to.isActive) throw new PortalError('Pick an active class.')
+    // A child does not become a Fellowship member (2026-10-24).
+    if (isFellowship(to.stage)) throw new PortalError('That is a Fellowship meeting. Pick a class.')
     await prisma.student.update({ where: { id: s.id }, data: { classId: to.id, ...CLEAR_UNASSIGNED } })
     await keepMembershipsOnMove([{ studentId: s.id, from: null }], to.id, user.accountId)
     await placeNewKids(to.id, [s.id]).catch((err) => console.error('Group placement failed:', err))

@@ -64,6 +64,9 @@ export async function assertStudentWrite(user: PortalUser, studentId: string) {
     select: { id: true, classId: true, firstName: true, lastName: true, class: { select: { stage: true } } },
   })
   if (!s) throw new PortalError('Student not found.')
+  // A Fellowship member is not edited as a child (2026-10-24): no parents,
+  // grade or PIN; their details are on their member page.
+  if (s.class?.stage === 'FELLOWSHIP') throw new PortalError('That is a Fellowship member. Change their details on their member page.')
   const ctx = { classId: s.classId ?? undefined, classStage: s.class?.stage, studentId: s.id }
   if (!can(user, 'student.write', ctx)) throw new PortalError('You do not have permission to edit this student.')
   return s

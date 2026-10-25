@@ -1,6 +1,6 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen } from 'lucide-react'
+import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen, HeartHandshake } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { PageHeader, Card, IconTile } from '@/components/portal/ui'
 
@@ -154,6 +154,23 @@ export default async function HelpPage() {
           <b className={S}>Cards printed from the old Sunday School app will not scan</b> — the code on them is a
           different format. Print a fresh set once from <b className={S}>Print QR cards</b> on the QR Check-in page and
           hand them out; until a class has new cards, type the student&rsquo;s 4-digit ID instead.
+        </Topic>
+
+        {/* 2026-10-24 — the Women's, Men's and Youth meetings. */}
+        <Topic
+          icon={<HeartHandshake className={ICON} />}
+          tone="#0E7490"
+          title="Fellowship meetings"
+          href={(user.fellowshipClassIds ?? []).length === 1 ? `/portal/classes/${user.fellowshipClassIds![0]}` : '/portal/classes'}
+        >
+          A meeting&rsquo;s people are <b className={S}>members</b>, not students: servants from any class, and people who
+          don&rsquo;t serve. Add them on the meeting&rsquo;s page with <b className={S}>Add member</b> — find a servant by
+          name so they keep their own login, or add someone new — or bring a whole list with{' '}
+          <b className={S}>Import members</b> (paste straight from Google Sheets works). For attendance, tap names on{' '}
+          <b className={S}>Take attendance</b>, or open <b className={S}>QR check-in</b>: members scan it with their phone
+          camera, no app or sign-in, and tap their own name. Press <b className={S}>Done</b> when everyone is in, so the
+          portal can open follow-ups for whoever keeps missing (two meetings in a row, unless the admin chose another
+          number). There are no points, quizzes or grades.
         </Topic>
 
         <Topic icon={<BookOpen className={ICON} />} tone="#6F1D1B" title="Find the curriculum" href="/portal/curriculum">

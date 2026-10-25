@@ -21,6 +21,8 @@ import { currentExcuse, excuseState } from '@/lib/portal/excuses'
 import { ExcuseNote } from '@/components/portal/ExcuseNote'
 import { ExcuseControl } from '@/components/portal/ExcuseControl'
 import { KidPhones } from '@/components/portal/KidPhones'
+import { MemberPhone } from '@/components/portal/MemberPhone'
+import { isFellowship } from '@/lib/portal/fellowship'
 import { caseMessages } from '@/lib/portal/data/family-messages'
 import { fillMessage } from '@/lib/portal/family-messages'
 import { can } from '@/lib/portal/permissions'
@@ -36,16 +38,20 @@ type CaseStudent = {
 }
 
 /** The prototype's contact list for the Send composer (OG L17367-17380). */
-function emailsFor(s: CaseStudent): Contact[] {
+/**
+ * `member`: a Fellowship member's first name (2026-10-24). Their numbers are
+ * their own, labelled with their name, so the note reads "To Mina".
+ */
+function emailsFor(s: CaseStudent, member?: string): Contact[] {
   const out: Contact[] = []
-  if (s.account.email) out.push({ label: "Student's email", value: s.account.email })
+  if (s.account.email) out.push({ label: member ? `${member}'s email` : "Student's email", value: s.account.email })
   s.parentEmails.filter(Boolean).forEach((e, i) => out.push({ label: `Parent email${i > 0 ? ` ${i + 1}` : ''}`, value: e }))
   return out
 }
 
-function phonesFor(s: CaseStudent): Contact[] {
+function phonesFor(s: CaseStudent, member?: string): Contact[] {
   const out: Contact[] = []
-  if (s.account.phone) out.push({ label: "Student's phone", value: formatPhone(s.account.phone) })
+  if (s.account.phone) out.push({ label: member ? `${member}'s phone` : "Student's phone", value: formatPhone(s.account.phone) })
   if (s.fatherPhone) out.push({ label: "Father's phone", value: formatPhone(s.fatherPhone) })
   if (s.motherPhone) out.push({ label: "Mother's phone", value: formatPhone(s.motherPhone) })
   return out
@@ -64,7 +70,8 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
         <EmptyState title="Not available" hint="Follow-ups are a servant's tool." />
       </>
     )
-  const visible = await listVisibleClasses(user)
+  // A Fellowship meeting's members are followed up too (2026-10-24).
+  const visible = await listVisibleClasses(user, { fellowship: 'include' })
   /**
    * The admin's class workspace links here with `?class=`. Narrowing only —
    * an id the viewer cannot already see is ignored rather than honoured, so the
@@ -124,7 +131,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
           account: { select: { email: true, phone: true } },
         },
       },
-      class: { select: { name: true } },
+      class: { select: { name: true, stage: true } },
       _count: { select: { logs: true } },
       // F0111 — the most recent contact note. The prototype showed it on the
       // row so a servant could see what was already tried before ringing again.
@@ -241,16 +248,20 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                   {/* The family's numbers on the card itself, and the child's
                       excuse when they have one (2026-10-19). */}
                   <div className="space-y-2 border-b border-[#F5F2ED] px-[18px] py-2.5">
-                    <KidPhones
-                      name={studentName(c.student)}
-                      fatherPhone={c.student.fatherPhone}
-                      motherPhone={c.student.motherPhone}
-                      ownPhone={c.student.account.phone}
-                    />
+                    {isFellowship(c.class.stage) ? (
+                      <MemberPhone name={studentName(c.student)} phone={c.student.account.phone} />
+                    ) : (
+                      <KidPhones
+                        name={studentName(c.student)}
+                        fatherPhone={c.student.fatherPhone}
+                        motherPhone={c.student.motherPhone}
+                        ownPhone={c.student.account.phone}
+                      />
+                    )}
                     {excuse && <ExcuseNote excuse={excuse} today={today} />}
                   </div>
                   <dl className="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-4">
-                    <Detail label="Class" value={c.class.name} />
+                    <Detail label={isFellowship(c.class.stage) ? 'Meeting' : 'Class'} value={c.class.name} />
                     {/* Follow-up groups: whose child this is. */}
                     <Detail
                       label="Assigned to"
@@ -320,8 +331,8 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                       classId={c.classId}
                       studentName={studentName(c.student)}
                       message={messageFor(c)}
-                      emails={emailsFor(c.student)}
-                      phones={phonesFor(c.student)}
+                      emails={emailsFor(c.student, isFellowship(c.class.stage) ? c.student.firstName : undefined)}
+                      phones={phonesFor(c.student, isFellowship(c.class.stage) ? c.student.firstName : undefined)}
                       primaryPhone={telFor(c.student)}
                       primaryWa={waFor(c.student)}
                     />

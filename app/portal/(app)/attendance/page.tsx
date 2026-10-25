@@ -7,7 +7,8 @@ export const metadata = { title: 'Attendance' }
 
 export default async function AttendanceEntryPage() {
   const user = await requirePortalUser()
-  const classes = await resolveClassEntry(user, '/attendance', 'attendance.write')
+  // Fellowship meetings take a register too (2026-10-24).
+  const classes = await resolveClassEntry(user, '/attendance', 'attendance.write', { fellowship: 'include' })
   return (
     <ClassChoice
       title="Take Attendance"

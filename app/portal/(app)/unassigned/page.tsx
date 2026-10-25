@@ -25,7 +25,8 @@ export default async function UnassignedPage() {
   const [children, classes] = await Promise.all([
     listUnassigned(user),
     prisma.schoolClass.findMany({
-      where: { isActive: true },
+      // A child is placed in a class, never in a Fellowship meeting (2026-10-24).
+      where: { isActive: true, stage: { not: 'FELLOWSHIP' } },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true },
     }),

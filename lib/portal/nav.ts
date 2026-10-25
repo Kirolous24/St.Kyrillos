@@ -84,6 +84,16 @@ export function userMenuForUser(user: PortalUser): NavItem[] {
  * Labels are the prototype's own, abbreviated to fit a 64px bar.
  */
 export function mobileNavForUser(user: PortalUser): NavItem[] {
+  if (fellowshipOnly(user)) {
+    const one = user.classIds.length === 1 ? user.classIds[0]! : null
+    return [
+      { href: '/portal', label: 'Home', icon: 'dashboard' },
+      { href: one ? `/portal/classes/${one}` : '/portal/classes', label: 'Meeting', icon: 'classes' },
+      { href: '/portal/attendance', label: 'Attend', icon: 'attendance' },
+      { href: one ? `/portal/classes/${one}/checkin` : '/portal/qr', label: 'QR', icon: 'qr' },
+      { href: '/portal/follow-ups', label: 'Visits', icon: 'followups' },
+    ]
+  }
   switch (user.role) {
     case 'ADMIN':
       return [
@@ -145,8 +155,22 @@ export function mobileNavForUser(user: PortalUser): NavItem[] {
  * their destinations here had to learn `?class=` first — a row that looks scoped
  * and quietly is not is worse than no row.
  */
-export function classWorkspaceNav(classId: string, isAdmin: boolean): NavItem[] {
+export function classWorkspaceNav(classId: string, isAdmin: boolean, fellowship = false): NavItem[] {
   const base = `/portal/classes/${classId}`
+  // A Fellowship meeting (2026-10-24): its members, register, QR check-in and
+  // follow-ups; none of a class's points, posts, lessons or logins.
+  if (fellowship) {
+    const section = 'This meeting'
+    return [
+      { href: base, label: 'Members', icon: 'students', section },
+      { href: `${base}/attendance`, label: 'Attendance', icon: 'attendance', section },
+      { href: `${base}/checkin`, label: 'QR Check-in', icon: 'qr', section },
+      { href: `/portal/follow-ups?class=${classId}`, label: 'Follow-up', icon: 'followups', section },
+      { href: `${base}/members/new`, label: 'Add member', icon: 'group', section },
+      { href: `${base}/import`, label: 'Import members', icon: 'reports', section },
+      { href: `${base}/message`, label: 'Message members', icon: 'feed', section },
+    ]
+  }
   return [
     { href: base, label: 'Students', icon: 'students', section: 'This class' },
     { href: `${base}/attendance`, label: 'Attendance', icon: 'attendance', section: 'This class' },
@@ -166,7 +190,49 @@ export function classWorkspaceNav(classId: string, isAdmin: boolean): NavItem[] 
   ]
 }
 
+/**
+ * A servant whose only work is Fellowship meetings (2026-10-24): every class
+ * they serve is a meeting, and any stage they oversee is Fellowship. Their menu
+ * is a meeting's; anyone who also serves children keeps the whole one.
+ */
+export function fellowshipOnly(user: PortalUser): boolean {
+  if (user.role !== 'SERVANT') return false
+  if (user.stageOversight && user.stageOversight !== 'FELLOWSHIP') return false
+  if (user.classIds.length === 0) return user.stageOversight === 'FELLOWSHIP'
+  const meetings = new Set(user.fellowshipClassIds ?? [])
+  return user.classIds.every((id) => meetings.has(id))
+}
+
+/** The menu of a servant who serves only Fellowship meetings. */
+function fellowshipNav(user: PortalUser): NavItem[] {
+  const one = user.classIds.length === 1 ? user.classIds[0]! : null
+  const section = 'Attendance & Follow-up'
+  return [
+    { href: '/portal', label: 'Dashboard', icon: 'dashboard', section: 'Overview' },
+    one
+      ? { href: `/portal/classes/${one}`, label: 'My Meeting', icon: 'classes', section: 'Overview' }
+      : { href: '/portal/classes', label: 'My Meetings', icon: 'classes', section: 'Overview' },
+    { href: '/portal/my-group', label: 'My Group', icon: 'group', section: 'Overview' },
+    { href: '/portal/attendance', label: 'Attendance', icon: 'attendance', section },
+    { href: one ? `/portal/classes/${one}/checkin` : '/portal/qr', label: 'QR Check-in', icon: 'qr', section },
+    { href: '/portal/follow-ups', label: 'Follow-ups', icon: 'followups', section },
+    { href: '/portal/birthdays', label: 'Birthdays', icon: 'birthdays', section: 'Community' },
+    { href: '/portal/events', label: 'Events', icon: 'events', section: 'Community' },
+    { href: '/portal/announcements', label: 'Announcements', icon: 'announcements', section: 'Community' },
+    ...stageItem(user, 'Servant Ministry'),
+    { href: '/portal/my-attendance', label: 'My Attendance', icon: 'attendance', section: 'Servant Ministry' },
+    { href: '/portal/servant-attendance', label: 'Servants Attendance', icon: 'attendance', section: 'Servant Ministry' },
+    { href: '/portal/assignments', label: 'My Assignments', icon: 'lessons', section: 'Servant Ministry' },
+    { href: '/portal/readings', label: 'Daily Readings', icon: 'readings', section: 'Faith' },
+    { href: '/portal/hymns', label: 'Hymns', icon: 'hymns', section: 'Faith' },
+    { ...PROFILE, section: 'Support' },
+    { ...MY_SETTINGS, section: 'Support' },
+    { ...HELP, section: 'Support' },
+  ]
+}
+
 export function navForUser(user: PortalUser): NavItem[] {
+  if (fellowshipOnly(user)) return fellowshipNav(user)
   switch (user.role) {
     case 'ADMIN':
       return [

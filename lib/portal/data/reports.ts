@@ -66,7 +66,9 @@ export function isReportsStaff(user: PortalUser): boolean {
 
 export async function listSessions(): Promise<SessionOption[]> {
   const rows = await prisma.attendanceSession.findMany({
-    where: { isActive: true },
+    // The children's reports: a Fellowship meeting's own register is not one
+    // of their sessions (2026-10-24).
+    where: { isActive: true, OR: [{ classId: null }, { class: { stage: { not: 'FELLOWSHIP' } } }] },
     orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
     select: { key: true, label: true, points: true },
   })
@@ -152,7 +154,9 @@ async function buildFacts(user: PortalUser, today: string): Promise<PortalNotifi
   }
 
   if (user.role === 'SERVANT') {
-    const classes = await listVisibleClasses(user)
+    // The same scope as their Follow-ups, My Group and Birthdays pages, which
+    // include the Fellowship meetings they serve (2026-10-24).
+    const classes = await listVisibleClasses(user, { fellowship: 'include' })
     const classIds = classes.map((c) => c.id)
     if (classIds.length === 0) return buildNotifications('SERVANT', { today })
     // Follow-up groups: a plain servant's cases are their own group's (plus
@@ -245,13 +249,15 @@ export async function reportClasses(user: PortalUser): Promise<ReportClass[]> {
 export async function churchReportScope(user: PortalUser): Promise<ReportClass[] | null> {
   if (user.role === 'ADMIN' || user.role === 'PASTOR') {
     const all = await prisma.schoolClass.findMany({
-      where: { isActive: true },
+      // The children's classes: a Fellowship meeting has no points or quizzes
+      // to report (2026-10-24).
+      where: { isActive: true, stage: { not: 'FELLOWSHIP' } },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, stage: true },
     })
     return all
   }
-  if (user.role === 'SERVANT' && user.stageOversight) {
+  if (user.role === 'SERVANT' && user.stageOversight && user.stageOversight !== 'FELLOWSHIP') {
     const stage = user.stageOversight
     const all = await prisma.schoolClass.findMany({
       where: { isActive: true, stage },
@@ -450,6 +456,9 @@ export async function loadClassStudentRows(
 ): Promise<{ cls: { id: string; name: string }; rows: ChurchStudentRow[] }> {
   if (!isReportsStaff(user)) notFound()
   const cls = await requireClassAccess(user, input.classId, 'class.read')
+  // The children's class report (points, quizzes); a Fellowship meeting has
+  // its own page (2026-10-24).
+  if (cls.stage === 'FELLOWSHIP') notFound()
   const byClass = await studentRowsForClasses([cls.id], input)
   return { cls: { id: cls.id, name: cls.name }, rows: byClass.get(cls.id) ?? [] }
 }

@@ -22,12 +22,15 @@ export async function loadPortalUser(where: Prisma.AccountWhereUniqueInput): Pro
         select: {
           id: true,
           stageOversight: true,
-          classes: { select: { classId: true, title: true } },
+          classes: { select: { classId: true, title: true, class: { select: { stage: true } } } },
         },
       },
     },
   })
   if (!account || !account.isActive) return null
+  // A Fellowship member who does not serve (2026-10-24) has an account only so
+  // their attendance has somewhere to live. It is never a portal user.
+  if (account.role === 'MEMBER') return null
 
   const classIds = account.servant
     ? account.servant.classes.map((c) => c.classId)
@@ -54,5 +57,9 @@ export async function loadPortalUser(where: Prisma.AccountWhereUniqueInput): Pro
       ? account.servant.classes.filter((c) => c.title === 'ASSISTANT_COORDINATOR').map((c) => c.classId)
       : [],
     stageOversight: account.servant?.stageOversight ?? null,
+    // The meetings they serve (2026-10-24); the menu and the dashboard read it.
+    fellowshipClassIds: account.servant
+      ? account.servant.classes.filter((c) => c.class?.stage === 'FELLOWSHIP').map((c) => c.classId)
+      : [],
   }
 }

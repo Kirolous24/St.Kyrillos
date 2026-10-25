@@ -1,10 +1,12 @@
 import { notFound } from 'next/navigation'
-import { GraduationCap, Printer } from 'lucide-react'
+import { GraduationCap, Printer, CalendarCheck, QrCode, HeartHandshake } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { listVisibleClasses } from '@/lib/portal/data/classes'
-import { PageHeader, EmptyState, LinkButton, ClassCard, Tabs, TabLink } from '@/components/portal/ui'
+import { PageHeader, EmptyState, LinkButton, ClassCard, Tabs, TabLink, SectionTitle } from '@/components/portal/ui'
 import { STAGE_LABEL } from '@/lib/portal/format'
 import { accentByOrder } from '@/lib/portal/accents'
+import { isFellowship } from '@/lib/portal/fellowship'
+import { can } from '@/lib/portal/permissions'
 
 export const metadata = { title: 'Classes' }
 
@@ -16,7 +18,10 @@ export default async function ClassesPage({
   const user = await requirePortalUser()
   // Staff area — students reach their own class through their own page only.
   if (user.role === 'STUDENT') notFound()
-  const classes = await listVisibleClasses(user)
+  // The Fellowship meetings get their own section below the classes (2026-10-24).
+  const all = await listVisibleClasses(user, { fellowship: 'include' })
+  const classes = all.filter((c) => !isFellowship(c.stage))
+  const meetings = all.filter((c) => isFellowship(c.stage))
 
   /**
    * A stage coordinator who also teaches opened this page and met every class
@@ -35,13 +40,18 @@ export default async function ClassesPage({
   const split = mine.length > 0 && rest.length > 0
   const onStageTab = split && searchParams.tab === 'stage'
   const shown = split ? (onStageTab ? rest : mine) : classes
-  const stageLabel = user.stageOversight ? STAGE_LABEL[user.stageOversight] : 'Other classes'
+  const stageLabel = user.stageOversight && !isFellowship(user.stageOversight) ? STAGE_LABEL[user.stageOversight] : 'Other classes'
+  // A servant who serves only meetings is not shown an empty classes grid.
+  const onlyMeetings = classes.length === 0 && meetings.length > 0
 
   return (
     <>
       <PageHeader
-        title={user.role === 'SERVANT' ? 'My Classes' : 'Classes'}
-        subtitle={`${shown.length} class${shown.length === 1 ? '' : 'es'}`}
+        title={onlyMeetings ? (meetings.length === 1 ? 'My Meeting' : 'My Meetings') : user.role === 'SERVANT' ? 'My Classes' : 'Classes'}
+        subtitle={[
+          shown.length > 0 || !onlyMeetings ? `${shown.length} class${shown.length === 1 ? '' : 'es'}` : null,
+          meetings.length > 0 ? `${meetings.length} Fellowship meeting${meetings.length === 1 ? '' : 's'}` : null,
+        ].filter(Boolean).join(' · ')}
         icon={<GraduationCap className="h-5 w-5" />}
         actions={user.role === 'ADMIN' ? <LinkButton href="/portal/admin/classes">Manage classes</LinkButton> : undefined}
       />
@@ -55,7 +65,7 @@ export default async function ClassesPage({
           </TabLink>
         </Tabs>
       )}
-      {shown.length === 0 ? (
+      {onlyMeetings ? null : shown.length === 0 ? (
         <EmptyState title="No classes to show" hint="Classes you serve in will appear here." />
       ) : (
         /* .classes-grid — repeat(auto-fill,minmax(210px,1fr)), gap 14px */
@@ -86,6 +96,47 @@ export default async function ClassesPage({
             />
           ))}
         </div>
+      )}
+
+      {/* The adults' meetings (2026-10-24): members instead of students, and
+          attendance and follow-ups rather than the class printouts. */}
+      {meetings.length > 0 && (
+        <section className={onlyMeetings ? '' : 'mt-7'} aria-label="Fellowship meetings">
+          {!onlyMeetings && <SectionTitle hint="Members, attendance and follow-ups">Fellowship meetings</SectionTitle>}
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
+            {meetings.map((c) => {
+              const members = c.studentCount + c.memberCount
+              return (
+                <ClassCard
+                  key={c.id}
+                  href={`/portal/classes/${c.id}`}
+                  name={c.name}
+                  accent={accentByOrder(c.sortOrder)}
+                  icon={<HeartHandshake className="h-[19px] w-[19px]" />}
+                  photo={c.photo}
+                  note={c.description}
+                  rows={[
+                    { key: 'Servants', value: c.servantCount === 0 ? 'Not assigned' : `${c.servantCount} servant${c.servantCount === 1 ? '' : 's'}` },
+                    { key: 'Members', value: members },
+                    { key: 'Follow-up after', value: `${c.visitationThreshold} missed` },
+                  ]}
+                  actions={
+                    can(user, 'attendance.write', { classId: c.id, classStage: c.stage }) ? (
+                      <>
+                        <LinkButton href={`/portal/classes/${c.id}/attendance`} variant="secondary" size="sm">
+                          <CalendarCheck className="h-4 w-4" aria-hidden /> Attendance
+                        </LinkButton>
+                        <LinkButton href={`/portal/classes/${c.id}/checkin`} variant="secondary" size="sm">
+                          <QrCode className="h-4 w-4" aria-hidden /> QR
+                        </LinkButton>
+                      </>
+                    ) : undefined
+                  }
+                />
+              )
+            })}
+          </div>
+        </section>
       )}
     </>
   )

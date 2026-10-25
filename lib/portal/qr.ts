@@ -8,7 +8,7 @@
 
 import { mondayOf } from './dates'
 
-export type QrKind = 'STUDENT_ATTENDANCE' | 'STUDENT_POINTS' | 'SERVANT_MEETING'
+export type QrKind = 'STUDENT_ATTENDANCE' | 'STUDENT_POINTS' | 'SERVANT_MEETING' | 'MEMBER_CHECKIN'
 export type CheckInStatus = 'PRESENT' | 'EXCUSED' | 'ABSENT'
 export type PortalRoleName = 'STUDENT' | 'SERVANT' | 'ADMIN' | 'PASTOR'
 
@@ -118,6 +118,11 @@ export interface RedeemToken {
  */
 export function canRedeem(user: RedeemUser, token: RedeemToken, now: Date = new Date()): string | null {
   if (!isTokenValid(token, now)) return 'This code has expired. Ask for a fresh one.'
+
+  // A Fellowship meeting's code (2026-10-24) opens its own page, where members
+  // tap their name without signing in. Typed in here it would be read as a
+  // children's code.
+  if (token.kind === 'MEMBER_CHECKIN') return 'This is a Fellowship meeting code. Scan it with your phone camera to check in.'
 
   if (token.kind === 'SERVANT_MEETING') {
     if (user.role === 'STUDENT') return 'This code is for servants only.'

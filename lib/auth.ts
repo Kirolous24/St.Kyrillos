@@ -110,6 +110,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         clearRateLimit(limiterKey)
+        // attemptLogin already refuses a Fellowship member's account (2026-10-24).
+        if (result.account.role === 'MEMBER') return null
 
         return {
           id: result.account.id,

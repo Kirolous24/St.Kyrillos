@@ -3,7 +3,8 @@
 // built once per request (see lib/portal/session.ts).
 
 export type Role = 'STUDENT' | 'SERVANT' | 'ADMIN' | 'PASTOR'
-export type StageKey = 'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL'
+// FELLOWSHIP is the adults' meetings (2026-10-24): members, not students.
+export type StageKey = 'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL' | 'FELLOWSHIP'
 
 export interface PortalUser {
   accountId: string
@@ -20,6 +21,11 @@ export interface PortalUser {
   /** Classes where the servant holds the Assistant Coordinator title. */
   assistantOf: string[]
   stageOversight: StageKey | null
+  /**
+   * The Fellowship meetings among `classIds` (2026-10-24): the ones this
+   * servant serves, not the ones they are a member of. Absent means none.
+   */
+  fellowshipClassIds?: string[]
 }
 
 export interface ClassScope {
@@ -76,6 +82,9 @@ export function visibleClassIds(user: PortalUser, classes: ClassScope[]): string
 
 export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): boolean {
   if (!ALL_CLASS_ACTIONS.has(action)) return false
+  // A Fellowship meeting has no points (2026-10-24), for anyone, the admin
+  // included: its members are adults, and points belong to the children.
+  if (action === 'points.write' && ctx.classStage === 'FELLOWSHIP') return false
 
   switch (user.role) {
     case 'ADMIN':

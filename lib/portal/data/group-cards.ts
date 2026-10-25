@@ -6,6 +6,7 @@ import { writtenForGroupOf } from '../followups'
 import { recentSundays, type SundayDot } from '../group-cards'
 import { classTotals } from './dashboard'
 import { excusesByStudent } from './excuses'
+import { isFellowship, watchedSessionKey } from '../fellowship'
 
 /** How many Sundays a card draws as dots. */
 export const RECENT_SUNDAYS = 8
@@ -29,6 +30,8 @@ export interface KidCardData {
   /** On now, or the next one coming. */
   excuse: ExcuseView | null
   excusedNow: boolean
+  /** A Fellowship member (2026-10-24): their meetings, not Sundays; no points. */
+  member: boolean
 }
 
 /**
@@ -43,6 +46,12 @@ export async function loadKidCards(
   if (kids.length === 0) return out
   const kidIds = kids.map((k) => k.id)
   const classIds = Array.from(new Set(kids.map((k) => k.classId)))
+  // Each class is read against the meeting it is followed up on: Sunday School,
+  // or a Fellowship meeting's own register (2026-10-24).
+  const stages = await prisma.schoolClass.findMany({ where: { id: { in: classIds } }, select: { id: true, stage: true } })
+  const keyOf = new Map(stages.map((c) => [c.id, watchedSessionKey(c)]))
+  const memberClass = new Set(stages.filter((c) => isFellowship(c.stage)).map((c) => c.id))
+  const keys = Array.from(new Set(Array.from(keyOf.values())))
   const [details, sundayRows, heldRows, openCases, lastContacts, points, excuses] = await Promise.all([
     prisma.student.findMany({
       where: { id: { in: kidIds } },
@@ -56,15 +65,15 @@ export async function loadKidCards(
       },
     }),
     prisma.attendanceRecord.findMany({
-      where: { studentId: { in: kidIds }, sessionKey: 'sunday' },
-      select: { studentId: true, date: true, status: true },
+      where: { studentId: { in: kidIds }, sessionKey: { in: keys } },
+      select: { studentId: true, date: true, status: true, sessionKey: true },
     }),
     // Class-wide: a Sunday the class held with no row for a child is a Sunday
     // they missed, exactly as the follow-up rule scores it.
     prisma.attendanceRecord.findMany({
-      where: { classId: { in: classIds }, sessionKey: 'sunday' },
-      distinct: ['classId', 'date'],
-      select: { classId: true, date: true },
+      where: { classId: { in: classIds }, sessionKey: { in: keys } },
+      distinct: ['classId', 'sessionKey', 'date'],
+      select: { classId: true, date: true, sessionKey: true },
     }),
     prisma.followUpCase.findMany({
       where: { studentId: { in: kidIds }, status: 'OPEN' },
@@ -89,9 +98,14 @@ export async function loadKidCards(
 
   const detailById = new Map(details.map((d) => [d.id, d]))
   const heldByClass = new Map<string, string[]>()
-  for (const r of heldRows) heldByClass.set(r.classId, [...(heldByClass.get(r.classId) ?? []), formatDateOnly(r.date)])
+  for (const r of heldRows) {
+    if (keyOf.get(r.classId) !== r.sessionKey) continue
+    heldByClass.set(r.classId, [...(heldByClass.get(r.classId) ?? []), formatDateOnly(r.date)])
+  }
+  const classOfKid = new Map(kids.map((k) => [k.id, k.classId]))
   const rowsByKid = new Map<string, HistoryRow[]>()
   for (const r of sundayRows) {
+    if (keyOf.get(classOfKid.get(r.studentId) ?? '') !== r.sessionKey) continue
     rowsByKid.set(r.studentId, [...(rowsByKid.get(r.studentId) ?? []), { date: formatDateOnly(r.date), status: r.status }])
   }
   const caseByKid = new Map(openCases.map((c) => [c.studentId, { id: c.id, title: c.title }]))
@@ -131,6 +145,7 @@ export async function loadKidCards(
       points: points.get(k.id) ?? 0,
       excuse,
       excusedNow: !!excuse && excuseState(excuse, today) === 'active',
+      member: memberClass.has(k.classId),
     })
   }
   return out

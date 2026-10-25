@@ -10,6 +10,8 @@ import { formatShortDate } from '@/lib/portal/format'
 import { PageHeader, EmptyState, LinkButton, inputClass, buttonClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 import { FamilyMessenger } from './FamilyMessenger'
+import { MEMBER_MESSAGE, isFellowship } from '@/lib/portal/fellowship'
+import { STANDARD_MESSAGE } from '@/lib/portal/family-messages'
 
 export const metadata = { title: 'Message families' }
 
@@ -34,6 +36,8 @@ export default async function MessageFamiliesPage({
   const user = await requirePortalUser()
   const cls = await requireClassAccess(user, params.id, 'followup.write')
   const today = churchToday()
+  // A Fellowship meeting (2026-10-24) messages its members, about its own meeting.
+  const members = isFellowship(cls.stage)
   const sessions = sessionsForClass(
     await prisma.attendanceSession.findMany({
       where: { isActive: true },
@@ -41,11 +45,11 @@ export default async function MessageFamiliesPage({
       select: { key: true, label: true, classId: true },
     }),
     cls.id,
-  )
+  ).filter((s) => !members || s.classId === cls.id)
 
   const header = (subtitle: string) => (
     <PageHeader
-      title="Message families"
+      title={members ? 'Message members' : 'Message families'}
       subtitle={subtitle}
       icon={<Send className="h-5 w-5" aria-hidden />}
       back={{ href: `/portal/classes/${cls.id}`, label: cls.name }}
@@ -79,7 +83,7 @@ export default async function MessageFamiliesPage({
   const [dates, missed, saved] = await Promise.all([
     registerDates(cls.id, session.key, 8),
     loadMissedMeeting({ classId: cls.id, session, date, today }),
-    meetingMessage(cls.id, session.key),
+    meetingMessage(cls.id, session.key, members ? MEMBER_MESSAGE : STANDARD_MESSAGE),
   ])
   const dayChips = dates.includes(date) ? dates : [date, ...dates].sort().reverse()
   const registerHref = `/portal/classes/${cls.id}/attendance?session=${session.key}&date=${date}`
@@ -131,13 +135,17 @@ export default async function MessageFamiliesPage({
       {!missed.held ? (
         <EmptyState
           title={`No ${session.label} register on ${formatShortDate(date)}`}
-          hint="The message goes to the families of the children a register says were not there. Take it first, or pick a day it was taken."
+          hint={
+            members
+              ? 'The message goes to the members a register says were not there. Take it first, or pick a day it was taken.'
+              : 'The message goes to the families of the children a register says were not there. Take it first, or pick a day it was taken.'
+          }
           action={<LinkButton href={registerHref}>Take the register</LinkButton>}
         />
       ) : missed.kids.length === 0 ? (
         <EmptyState
           title={`Nobody missed ${session.label} on ${formatShortDate(date)}`}
-          hint="Every child on the register was there or excused."
+          hint={members ? 'Every member on the register was there or excused.' : 'Every child on the register was there or excused.'}
           action={<LinkButton href={registerHref} variant="secondary">Open the register</LinkButton>}
         />
       ) : (
@@ -151,6 +159,7 @@ export default async function MessageFamiliesPage({
           today={today}
           saved={saved}
           kids={missed.kids}
+          members={members}
         />
       )}
     </>

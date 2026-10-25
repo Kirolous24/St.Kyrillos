@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { sealPin } from './pin-vault'
+import { MEMBER_NO_LOGIN_HASH } from './fellowship'
 
 /**
  * The only way a PIN reaches the database.
@@ -38,4 +39,13 @@ export async function issuedPinFields(pin: string, loginId: string): Promise<Pin
 
 export async function selfSetPinFields(pin: string): Promise<{ pinHash: string; pinSealed: null }> {
   return { pinHash: await hashPin(pin), pinSealed: null }
+}
+
+/**
+ * A Fellowship member who does not serve (2026-10-24): an account that never
+ * signs in. Its hash is not a bcrypt hash, so no PIN matches it, and there is
+ * no PIN to keep a copy of.
+ */
+export function noSignInPinFields(): { pinHash: string; pinSealed: null } {
+  return { pinHash: MEMBER_NO_LOGIN_HASH, pinSealed: null }
 }

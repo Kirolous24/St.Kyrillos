@@ -9,6 +9,7 @@ import { churchToday } from '@/lib/portal/dates'
 import { formatLongDate, STAGE_LABEL } from '@/lib/portal/format'
 import { PageHeader, Tabs, TabLink, EmptyState, Callout, LinkButton } from '@/components/portal/ui'
 import { GroupCodePanel } from './GroupCodePanel'
+import Link from '@/components/portal/Link'
 import { ScanPanel } from './ScanPanel'
 
 export const metadata = { title: 'QR Check-in' }
@@ -34,6 +35,11 @@ export default async function QrHubPage({
         : ('ATTENDANCE' as const)
   const all = await listVisibleClasses(user)
   const classes = all.filter((c) => can(user, 'attendance.write', { classId: c.id, classStage: c.stage }))
+  // A Fellowship meeting checks in from its own page (2026-10-24): members tap
+  // their names, no sign-in. Offered here so nobody looks for it in vain.
+  const meetings = (await listVisibleClasses(user, { fellowship: 'only' })).filter((c) =>
+    can(user, 'attendance.write', { classId: c.id, classStage: c.stage }),
+  )
   const classIds = classes.map((c) => c.id)
   /**
    * The admin's class workspace links here with `?class=`, so the code opens
@@ -76,6 +82,22 @@ export default async function QrHubPage({
         actions={<LinkButton href="/portal/qr/cards" variant="secondary"><Printer className="h-4 w-4" aria-hidden /> Print QR cards</LinkButton>}
       />
 
+      {meetings.length > 0 && (
+        <div className="mb-4" data-testid="qr-meetings">
+          <Callout tone="info" title="Fellowship meetings">
+            Members check in on the meeting&rsquo;s own code:{' '}
+            {meetings.map((m, i) => (
+              <span key={m.id}>
+                {i > 0 && ', '}
+                <Link href={`/portal/classes/${m.id}/checkin`} className="font-bold underline decoration-brand-gold underline-offset-2">
+                  {m.name}
+                </Link>
+              </span>
+            ))}
+            .
+          </Callout>
+        </div>
+      )}
       <Tabs>
         <TabLink href="/portal/qr?tab=group" active={tab === 'group'}>
           <span className="inline-flex items-center gap-1.5"><QrCode className="h-4 w-4" aria-hidden /> Group code</span>
@@ -93,7 +115,11 @@ export default async function QrHubPage({
       {classes.length === 0 && initialMode !== 'MEETING' ? (
         <EmptyState
           title="No class to check in"
-          hint="QR check-in needs a class you may take attendance for. Ask an admin to assign you to one."
+          hint={
+            meetings.length > 0
+              ? 'Your Fellowship meeting checks in on its own code: open it above.'
+              : 'QR check-in needs a class you may take attendance for. Ask an admin to assign you to one.'
+          }
         />
       ) : tab === 'group' ? (
         <>

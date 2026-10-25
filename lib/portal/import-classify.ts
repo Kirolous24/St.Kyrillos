@@ -6,7 +6,7 @@
 
 export type ExistingImportAccount = {
   id: string
-  role: 'ADMIN' | 'PASTOR' | 'SERVANT' | 'STUDENT'
+  role: 'ADMIN' | 'PASTOR' | 'SERVANT' | 'STUDENT' | 'MEMBER'
   /** The linked Student.id or Servant.id, whichever the role implies. */
   linkedId: string | null
   /**
@@ -31,6 +31,9 @@ export function classifyStudentImportRow(
   if (!loginId) return { kind: 'create' }
   const account = existingByLoginId.get(loginId)
   if (!account) return { kind: 'create' }
+  if (account.role === 'MEMBER') {
+    return { kind: 'error', message: `ID ${loginId} belongs to a Fellowship member` }
+  }
   if (account.role !== 'STUDENT' || !account.linkedId) {
     return { kind: 'error', message: `ID ${loginId} belongs to a servant account` }
   }
@@ -52,6 +55,9 @@ export function classifyServantImportRow(
   if (!account) return { kind: 'create' }
   if (account.role === 'STUDENT') {
     return { kind: 'error', message: `ID ${loginId} belongs to a student` }
+  }
+  if (account.role === 'MEMBER') {
+    return { kind: 'error', message: `ID ${loginId} belongs to a Fellowship member` }
   }
   if (account.id === selfAccountId && newRole !== 'ADMIN') {
     return { kind: 'error', message: 'This row would remove your own admin access' }

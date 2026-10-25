@@ -2,12 +2,13 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { GraduationCap, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Eye, EyeOff, Layers, Link as LinkIcon } from 'lucide-react'
+import { GraduationCap, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Eye, EyeOff, Layers, Link as LinkIcon, HeartHandshake } from 'lucide-react'
 import { createClass, updateClass, deleteClass, createStandardGradeClasses, setCurriculumLink, type ClassInput } from '@/lib/portal/actions/admin'
 import { Card, ClassCard, Field, inputClass, selectClass, buttonClass, Badge, Callout, EmptyState } from '@/components/portal/ui'
 import { STAGE_LABEL, TITLE_LABEL } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import { cn } from '@/lib/utils'
+import { FELLOWSHIP_THRESHOLD, isFellowship } from '@/lib/portal/fellowship'
 
 type Row = {
   id: string
@@ -201,7 +202,19 @@ export function ClassManager({ classes }: { classes: Row[] }) {
               <select
                 id="cls-stage"
                 value={form.stage}
-                onChange={(e) => setForm({ ...form, stage: e.target.value as ClassForm['stage'] })}
+                onChange={(e) => {
+                  const stage = e.target.value as ClassForm['stage']
+                  // A meeting follows up after two missed meetings unless the
+                  // admin says otherwise (2026-10-24); only the untouched
+                  // default moves with the choice.
+                  const threshold =
+                    isFellowship(stage) && form.visitationThreshold === EMPTY.visitationThreshold
+                      ? FELLOWSHIP_THRESHOLD
+                      : !isFellowship(stage) && isFellowship(form.stage) && form.visitationThreshold === FELLOWSHIP_THRESHOLD
+                        ? EMPTY.visitationThreshold
+                        : form.visitationThreshold
+                  setForm({ ...form, stage, visitationThreshold: threshold })
+                }}
                 className={selectClass}
                 required
               >
@@ -210,16 +223,29 @@ export function ClassManager({ classes }: { classes: Row[] }) {
                     coordinator's oversight and by every stage report. */}
                 <option value="">Choose an age group…</option>
                 <option value="ELEMENTARY">Elementary</option><option value="MIDDLE_SCHOOL">Middle School</option><option value="HIGH_SCHOOL">High School</option>
+                {/* The adults' meetings (2026-10-24). */}
+                <option value="FELLOWSHIP">Fellowship (Women&rsquo;s, Men&rsquo;s, Youth meetings)</option>
               </select>
             </Field>
-            <Field label="Open a follow-up after" htmlFor="cls-threshold" hint="consecutive missed Sunday School sessions">
+            <Field label="Open a follow-up after" htmlFor="cls-threshold" hint={isFellowship(form.stage) ? 'meetings missed in a row' : 'consecutive missed Sunday School sessions'}>
               <input id="cls-threshold" type="number" min={1} max={10} value={form.visitationThreshold} onChange={(e) => setForm({ ...form, visitationThreshold: Number(e.target.value) })} className={inputClass} />
             </Field>
             <Field label="Description" htmlFor="cls-desc" hint="Optional">
               <input id="cls-desc" value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputClass} maxLength={300} placeholder="Brief description…" />
             </Field>
           </div>
-          {/* 2026-09-28 — a class like Pre-Servants holds children who stay in their own class. */}
+          {isFellowship(form.stage) ? (
+            /* 2026-10-24 — a meeting takes its members from anywhere, so the
+               "other classes" box below is implied rather than offered. */
+            <div className="mb-3.5" data-testid="fellowship-note">
+              <Callout tone="info" title="A Fellowship meeting">
+                Its people are members, not students: servants from any class, and people who don&rsquo;t serve and never
+                sign in. It has attendance, a QR check-in members use without signing in, follow-ups and Birthdays, and no
+                points, quizzes or grades. Its own register is created with it.
+              </Callout>
+            </div>
+          ) : (
+          /* 2026-09-28 — a class like Pre-Servants holds children who stay in their own class. */
           <label className="mb-3.5 flex items-start gap-2.5 text-[12.5px] text-parch-800">
             <input
               type="checkbox"
@@ -235,6 +261,7 @@ export function ClassManager({ classes }: { classes: Row[] }) {
               </span>
             </span>
           </label>
+          )}
           {error && <div role="alert" className="mb-3"><Callout tone="bad">{error}</Callout></div>}
           {notice && <div role="status" className="mb-3"><Callout tone="good">{notice}</Callout></div>}
           <div className="flex flex-wrap gap-2">
@@ -261,10 +288,11 @@ export function ClassManager({ classes }: { classes: Row[] }) {
               <ClassCard
                 name={c.name}
                 accent={accentFor(c.id)}
-                icon={<GraduationCap className="h-[19px] w-[19px]" />}
+                icon={isFellowship(c.stage) ? <HeartHandshake className="h-[19px] w-[19px]" /> : <GraduationCap className="h-[19px] w-[19px]" />}
                 rows={[
                   { key: 'Stage', value: <span className="text-brand-gold-dark">{STAGE_LABEL[c.stage]}</span> },
-                  { key: 'Students', value: c.students },
+                  // A meeting's people are members, wherever they came from (2026-10-24).
+                  isFellowship(c.stage) ? { key: 'Members', value: c.students + c.members } : { key: 'Students', value: c.students },
                   {
                     key: 'Servants',
                     value:
@@ -292,7 +320,7 @@ export function ClassManager({ classes }: { classes: Row[] }) {
                       ),
                   },
                   { key: 'Follow-up after', value: `${c.visitationThreshold} missed` },
-                  ...(c.takesOtherClasses ? [{ key: 'From other classes', value: `${c.members} child${c.members === 1 ? '' : 'ren'}` }] : []),
+                  ...(c.takesOtherClasses && !isFellowship(c.stage) ? [{ key: 'From other classes', value: `${c.members} child${c.members === 1 ? '' : 'ren'}` }] : []),
                   ...(c.description ? [{ key: 'Notes', value: <span className="font-normal text-parch-500">{c.description}</span> }] : []),
                   ...(c.curriculumLinkedToId
                     ? [{

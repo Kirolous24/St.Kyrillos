@@ -438,7 +438,8 @@ async function computeNextBirthday(
   user: PortalUser,
   today: string,
 ): Promise<{ name: string; on: string; more: number } | null> {
-  const classes = await listVisibleClasses(user)
+  // The Birthdays page's scope, Fellowship members included (2026-10-24).
+  const classes = await listVisibleClasses(user, { fellowship: 'include' })
   const classIds = classes.map((c) => c.id)
   if (classIds.length === 0) return null
 
@@ -448,24 +449,28 @@ async function computeNextBirthday(
   const [students, servants] = await Promise.all([
     prisma.student.findMany({
       where: { classId: { in: classIds }, dob: { not: null } },
-      select: { id: true, firstName: true, lastName: true, dob: true, classId: true },
+      select: { id: true, accountId: true, firstName: true, lastName: true, dob: true, classId: true },
     }),
     // The prototype's chip counted servants too — a servant's own birthday is
     // exactly the one their colleagues would otherwise miss. Students do not
     // see servants here, matching the page.
     user.role === 'STUDENT'
-      ? Promise.resolve([] as { id: string; birthday: Date | null; account: { displayName: string } }[])
+      ? Promise.resolve([] as { id: string; accountId: string; birthday: Date | null; account: { displayName: string } }[])
       : prisma.servant.findMany({
           where:
             user.role === 'SERVANT'
               ? { birthday: { not: null }, classes: { some: { classId: { in: classIds } } } }
               : { birthday: { not: null } },
-          select: { id: true, birthday: true, account: { select: { displayName: true } } },
+          select: { id: true, accountId: true, birthday: true, account: { select: { displayName: true } } },
         }),
   ])
 
+  // A servant who is also a Fellowship member is counted once, as the page does.
+  const listedServants = new Set(servants.map((s) => s.accountId))
   const people = [
-    ...students.map((s) => ({ id: s.id, name: studentName(s), dob: s.dob ? formatDateOnly(s.dob) : null })),
+    ...students
+      .filter((s) => !listedServants.has(s.accountId))
+      .map((s) => ({ id: s.id, name: studentName(s), dob: s.dob ? formatDateOnly(s.dob) : null })),
     ...servants.map((s) => ({ id: s.id, name: s.account.displayName, dob: s.birthday ? formatDateOnly(s.birthday) : null })),
   ]
 

@@ -9,6 +9,7 @@ import { accentFor } from '@/lib/portal/accents'
 import { ClassPicker } from '@/components/portal/ClassPicker'
 import { BulkSelection, BulkBar, GroupSelectAll, StudentCard, type BulkStudent } from './BulkTools'
 import { StudentForm } from '@/components/portal/StudentForm'
+import { withoutMembers } from '@/lib/portal/fellowship'
 
 export const metadata = { title: 'All students' }
 
@@ -18,12 +19,14 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
   const user = await requirePortalUser()
   if (user.role !== 'ADMIN') notFound()
 
-  const classes = await prisma.schoolClass.findMany({ orderBy: [{ sortOrder: 'asc' }], select: { id: true, name: true, stage: true } })
+  // The children's classes and the children in them; Fellowship meetings and
+  // their members are on the meetings' own pages (2026-10-24).
+  const classes = await prisma.schoolClass.findMany({ where: { stage: { not: 'FELLOWSHIP' } }, orderBy: [{ sortOrder: 'asc' }], select: { id: true, name: true, stage: true } })
   const classId = searchParams.class && (searchParams.class === 'none' || classes.some((c) => c.id === searchParams.class)) ? searchParams.class : 'all'
   const q = (searchParams.q ?? '').trim()
 
   const students = await prisma.student.findMany({
-    where: {
+    where: withoutMembers({
       ...(classId === 'all' ? {} : classId === 'none' ? { classId: null } : { classId }),
       // F0563 — the prototype searched email too ("Search by name or email").
       // A servant handed a parent's address and asked "is this child with us?"
@@ -45,7 +48,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
             ],
           }
         : {}),
-    },
+    }),
     orderBy: [{ class: { sortOrder: 'asc' } }, { firstName: 'asc' }, { lastName: 'asc' }],
     take: 500,
     select: {

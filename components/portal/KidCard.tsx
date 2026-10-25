@@ -8,6 +8,7 @@ import { CheckInButton } from './CheckInButton'
 import { ExcuseControl } from './ExcuseControl'
 import { ExcuseNote } from './ExcuseNote'
 import { KidPhones } from './KidPhones'
+import { MemberPhone } from './MemberPhone'
 import { cn } from '@/lib/utils'
 
 /**
@@ -29,7 +30,7 @@ export function KidCard({ card, today, canWrite }: { card: KidCardData; today: s
         <Avatar name={card.name} photo={card.photo} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Link href={`/portal/students/${card.id}`} className="font-serif text-[14px] font-bold text-parch-900 hover:text-brand-800">
+            <Link href={card.member ? `/portal/members/${card.id}` : `/portal/students/${card.id}`} className="font-serif text-[14px] font-bold text-parch-900 hover:text-brand-800">
               {card.name}
             </Link>
             {card.dob && <span className="text-[11.5px] text-parch-500">· {ageOn(card.dob, today)}</span>}
@@ -47,7 +48,7 @@ export function KidCard({ card, today, canWrite }: { card: KidCardData; today: s
             )}
           </div>
           {/* The last few Sundays the class held, oldest first. */}
-          <div className="mt-1.5 flex items-center gap-1" aria-label="Recent Sundays">
+          <div className="mt-1.5 flex items-center gap-1" aria-label={card.member ? 'Recent meetings' : 'Recent Sundays'}>
             {card.dots.map((dot) => (
               <span
                 key={dot.date}
@@ -63,11 +64,15 @@ export function KidCard({ card, today, canWrite }: { card: KidCardData; today: s
             ))}
             <span className="ml-1.5 text-[11.5px] text-parch-600">
               {card.dots.length === 0
-                ? 'No Sundays recorded yet'
+                ? card.member
+                  ? 'No meetings recorded yet'
+                  : 'No Sundays recorded yet'
                 : card.streak === 0
                   ? card.excusedNow
                     ? 'Excused'
-                    : 'Came last Sunday'
+                    : card.member
+                      ? 'Came last time'
+                      : 'Came last Sunday'
                   : `Missed ${card.streak} in a row`}
             </span>
           </div>
@@ -75,22 +80,31 @@ export function KidCard({ card, today, canWrite }: { card: KidCardData; today: s
             {last === null
               ? 'Not contacted yet'
               : `${last.daysAgo === 0 ? 'Contacted today' : `Last contacted ${last.daysAgo} day${last.daysAgo === 1 ? '' : 's'} ago`}${last.by ? ` by ${last.by}` : ''}${last.forGroup ? ` for ${last.forGroup}’s group` : ''}`}
-            {' · '}
-            {card.points.toLocaleString()} pts
+            {/* No points in a Fellowship meeting (2026-10-24). */}
+            {!card.member && (
+              <>
+                {' · '}
+                {card.points.toLocaleString()} pts
+              </>
+            )}
           </p>
-          <KidPhones name={card.name} fatherPhone={card.fatherPhone} motherPhone={card.motherPhone} ownPhone={card.ownPhone} className="mt-1.5" />
+          {card.member ? (
+            <MemberPhone name={card.name} phone={card.ownPhone} className="mt-1.5" />
+          ) : (
+            <KidPhones name={card.name} fatherPhone={card.fatherPhone} motherPhone={card.motherPhone} ownPhone={card.ownPhone} className="mt-1.5" />
+          )}
         </div>
       </div>
       {card.excuse && <ExcuseNote excuse={card.excuse} today={today} className="mt-3" />}
       {canWrite && (
         <div className="mt-3 flex flex-wrap items-start gap-1.5">
           {primary && (
-            <a href={primary.tel} className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px] px-2.5')} aria-label={`Call ${card.name}’s family`}>
+            <a href={primary.tel} className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px] px-2.5')} aria-label={card.member ? `Call ${card.name}` : `Call ${card.name}’s family`}>
               <Phone className="h-3.5 w-3.5 text-[#DC2626]" aria-hidden />
             </a>
           )}
           {wa && (
-            <a href={wa} target="_blank" rel="noopener noreferrer" className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px] px-2.5')} aria-label={`WhatsApp ${card.name}’s family`}>
+            <a href={wa} target="_blank" rel="noopener noreferrer" className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px] px-2.5')} aria-label={card.member ? `WhatsApp ${card.name}` : `WhatsApp ${card.name}’s family`}>
               <MessageCircle className="h-3.5 w-3.5 text-[#16A34A]" aria-hidden />
             </a>
           )}

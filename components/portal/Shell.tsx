@@ -66,7 +66,7 @@ interface ShellProps {
    * Classes this user may open, by id. Used to recognise that the current URL is
    * a class, to name it, and to draw its photo in the crest.
    */
-  classInfo?: Record<string, { name: string; photo: string | null; stage: string }>
+  classInfo?: Record<string, { name: string; photo: string | null; stage: string; fellowship?: boolean }>
   /** True for the role that gets the class workspace (the prototype's admin). */
   canEnterClassWorkspace?: boolean
   /**
@@ -238,7 +238,7 @@ export function Shell({
   const classMatch = /^\/portal\/classes\/([^/?#]+)/.exec(pathname)
   const workspaceClassId = canEnterClassWorkspace && classMatch ? classMatch[1]! : null
   const inClassWorkspace = !!workspaceClassId && !!classInfo[workspaceClassId]
-  const shownNav = inClassWorkspace ? classWorkspaceNav(workspaceClassId!, true) : nav
+  const shownNav = inClassWorkspace ? classWorkspaceNav(workspaceClassId!, true, !!classInfo[workspaceClassId!]?.fellowship) : nav
 
   // The class whose identity crowns the rail: the one an admin has opened, or
   // the servant's own. The prototype did both through the same block.

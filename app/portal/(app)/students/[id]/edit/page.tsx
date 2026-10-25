@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireStudentRead, studentName } from '@/lib/portal/data/students'
 import { can } from '@/lib/portal/permissions'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/portal/ui'
 import { StudentForm } from '@/components/portal/StudentForm'
@@ -14,13 +14,15 @@ export const metadata = { title: 'Edit student' }
 export default async function EditStudentPage({ params }: { params: { id: string } }) {
   const user = await requirePortalUser()
   const s = await requireStudentRead(user, params.id)
+  // A Fellowship member is edited on their own page (2026-10-24).
+  if (s.class?.stage === 'FELLOWSHIP') redirect(`/portal/members/${s.id}/edit`)
   if (!can(user, 'student.write', { classId: s.classId ?? undefined, classStage: s.class?.stage, studentId: s.id })) notFound()
 
   // Only an admin may move a student between classes (moveStudent enforces it
   // server-side too), so only an admin is offered the field.
   const classes =
     user.role === 'ADMIN'
-      ? await prisma.schoolClass.findMany({ orderBy: [{ sortOrder: 'asc' }], select: { id: true, name: true } })
+      ? await prisma.schoolClass.findMany({ where: { stage: { not: 'FELLOWSHIP' } }, orderBy: [{ sortOrder: 'asc' }], select: { id: true, name: true } })
       : undefined
 
   return (

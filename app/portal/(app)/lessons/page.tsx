@@ -84,6 +84,8 @@ export default async function LessonsPage({
   // Sourcing these from the user's own visible classes left the typical servant
   // — who serves exactly one class — with an empty list and a dead feature.
   const allClasses = await prisma.schoolClass.findMany({
+    // Fellowship meetings keep no lessons (2026-10-24).
+    where: { stage: { not: 'FELLOWSHIP' } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true },
   })
@@ -122,7 +124,7 @@ async function ArchiveView({ tabs, q, classId }: { tabs: React.ReactNode; q: str
   // Church-wide by design: the point of the archive is to see what other
   // classes have taught, so it must not be scoped to the user's own classes.
   const classes = await prisma.schoolClass.findMany({
-    where: { isActive: true },
+    where: { isActive: true, stage: { not: 'FELLOWSHIP' } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true, stage: true },
   })

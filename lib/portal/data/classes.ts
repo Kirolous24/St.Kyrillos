@@ -1,15 +1,18 @@
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
-import { can, visibleClassIds, type Action, type PortalUser } from '../permissions'
+import { can, visibleClassIds, type Action, type PortalUser, type StageKey } from '../permissions'
 import { PortalError } from '../action-result'
+import { isFellowship } from '../fellowship'
 
 export interface ClassSummary {
   id: string
   name: string
-  stage: 'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL'
+  stage: StageKey
   sortOrder: number
   visitationThreshold: number
   studentCount: number
+  /** People who joined it from elsewhere (ClassMember): Pre-Servants, a second Fellowship meeting. */
+  memberCount: number
   servantCount: number
   /**
    * F0153 — the class's own photo. `setClassPhoto` and `SchoolClass.photo` had
@@ -27,7 +30,18 @@ export interface ClassSummary {
   description: string | null
 }
 
-export async function listVisibleClasses(user: PortalUser): Promise<ClassSummary[]> {
+/**
+ * Whether a list includes the Fellowship meetings (2026-10-24). Every list in
+ * the portal was built for the children, so the default leaves the adults'
+ * meetings out; the pages that are about meetings too ask for them by name
+ * (tests/portal/fellowship-scope.test.ts holds the list).
+ */
+export interface ClassListOptions {
+  fellowship?: 'exclude' | 'include' | 'only'
+}
+
+export async function listVisibleClasses(user: PortalUser, opts: ClassListOptions = {}): Promise<ClassSummary[]> {
+  const mode = opts.fellowship ?? 'exclude'
   const all = await prisma.schoolClass.findMany({
     where: { isActive: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -43,12 +57,13 @@ export async function listVisibleClasses(user: PortalUser): Promise<ClassSummary
       // church held the information and the servants opening these cards never
       // saw it.
       description: true,
-      _count: { select: { students: true, servants: true } },
+      _count: { select: { students: true, servants: true, members: true } },
     },
   })
   const visible = new Set(visibleClassIds(user, all))
   return all
     .filter((c) => visible.has(c.id))
+    .filter((c) => mode === 'include' || (mode === 'only') === isFellowship(c.stage))
     .map((c) => ({
       id: c.id,
       name: c.name,
@@ -56,6 +71,7 @@ export async function listVisibleClasses(user: PortalUser): Promise<ClassSummary
       sortOrder: c.sortOrder,
       visitationThreshold: c.visitationThreshold,
       studentCount: c._count.students,
+      memberCount: c._count.members ?? 0,
       servantCount: c._count.servants,
       photo: c.photo,
       description: c.description,

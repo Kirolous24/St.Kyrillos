@@ -28,7 +28,7 @@ export default async function MyStagePage() {
       id: true,
       name: true,
       sortOrder: true,
-      _count: { select: { students: true } },
+      _count: { select: { students: true, members: true } },
       servants: {
         select: {
           title: true,
@@ -43,7 +43,11 @@ export default async function MyStagePage() {
   await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
   const summaries = new Map((await groupSummaries(classes.map((c) => c.id))).map((g) => [g.classId, g]))
 
-  const studentTotal = classes.reduce((n, c) => n + c._count.students, 0)
+  // The Fellowship overseer's page speaks of meetings and members (2026-10-24);
+  // a member of two meetings is counted in each.
+  const meetings = stage === 'FELLOWSHIP'
+  const peopleIn = (c: (typeof classes)[number]) => c._count.students + (meetings ? c._count.members : 0)
+  const studentTotal = classes.reduce((n, c) => n + peopleIn(c), 0)
   // One servant may cover two classes in the stage; count people, not rows.
   const servantTotal = new Set(
     classes.flatMap((c) => c.servants.map((s) => s.servant.account.displayName)),
@@ -56,8 +60,13 @@ export default async function MyStagePage() {
       <PageHeader
         title={label}
         icon={<Layers className="h-5 w-5" aria-hidden />}
-        subtitle={`Every ${label.toLowerCase()} class, who serves in it, and how many students it holds.`}
+        subtitle={
+          meetings
+            ? 'Every Fellowship meeting, who serves in it, and how many members it has.'
+            : `Every ${label.toLowerCase()} class, who serves in it, and how many students it holds.`
+        }
         actions={
+          meetings ? undefined : 
           /* The prototype embedded the whole reports system at the bottom of
              this page, stage-scoped, with its print button relabelled "Print
              Stage Report" (OG L16974-16981, L7433). The scoping survived in
@@ -71,15 +80,15 @@ export default async function MyStagePage() {
       />
 
       <div className="mb-5 grid gap-3.5 sm:grid-cols-3">
-        <StatCard label="Classes" value={classes.length} icon={<GraduationCap className="h-[19px] w-[19px]" />} />
-        <StatCard label="Students" value={studentTotal} icon={<Users className="h-[19px] w-[19px]" />} />
+        <StatCard label={meetings ? 'Meetings' : 'Classes'} value={classes.length} icon={<GraduationCap className="h-[19px] w-[19px]" />} />
+        <StatCard label={meetings ? 'Members' : 'Students'} value={studentTotal} icon={<Users className="h-[19px] w-[19px]" />} />
         <StatCard label="Servants" value={servantTotal} icon={<UserCog className="h-[19px] w-[19px]" />} />
       </div>
 
       {classes.length === 0 ? (
         <EmptyState
-          title={`No ${label.toLowerCase()} classes yet`}
-          hint="Once classes are added to this stage they will appear here."
+          title={meetings ? 'No Fellowship meetings yet' : `No ${label.toLowerCase()} classes yet`}
+          hint={meetings ? 'Once the admin adds the meetings in Manage Classes they will appear here.' : 'Once classes are added to this stage they will appear here.'}
         />
       ) : (
         <ul className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
@@ -113,7 +122,8 @@ export default async function MyStagePage() {
                       {c.name}
                     </span>
                     <Badge tone="neutral">
-                      {c._count.students} student{c._count.students === 1 ? '' : 's'}
+                      {peopleIn(c)} {meetings ? 'member' : 'student'}
+                      {peopleIn(c) === 1 ? '' : 's'}
                     </Badge>
                   </div>
 

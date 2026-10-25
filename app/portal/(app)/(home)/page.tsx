@@ -24,11 +24,72 @@ import { NotCheckedInWidget, TopPerformersWidget, RecentActivityWidget } from '@
 import { scoreBand, SCORE_BAND_TONE } from '@/lib/portal/exams'
 import { churchHour } from '@/lib/portal/dates'
 import { ensureInitialSplits } from '@/lib/portal/data/groups'
+import { fellowshipOverview } from '@/lib/portal/data/fellowship'
+import { fellowshipOnly } from '@/lib/portal/nav'
+import { MeetingCards } from './MeetingCards'
 
 export default async function PortalHome() {
   const user = await requirePortalUser()
   if (user.role === 'STUDENT') return <StudentHome />
+  // A servant whose only work is Fellowship meetings (2026-10-24) gets a
+  // meeting's dashboard: none of the children's quizzes, points or registers.
+  if (fellowshipOnly(user)) return <FellowshipHome />
   return <StaffHome />
+}
+
+/** The dashboard of a servant who serves only Fellowship meetings (2026-10-24). */
+async function FellowshipHome() {
+  const user = await requirePortalUser()
+  await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
+  const meetings = await fellowshipOverview(user)
+  const one = meetings.length === 1 ? meetings[0]! : null
+  const members = meetings.reduce((n, m) => n + m.members, 0)
+  const open = meetings.reduce((n, m) => n + m.openCases, 0)
+  const tag = `Fellowship · Servant${one ? ` · ${one.name}` : meetings.length > 1 ? ` · ${meetings.length} meetings` : ''}`
+  const actions = [
+    { href: '/portal/attendance', title: 'Take attendance', description: 'Mark who came', icon: <CalendarCheck className="h-6 w-6" />, accent: '#16A34A' },
+    { href: one ? `/portal/classes/${one.id}/checkin` : '/portal/qr', title: 'QR check-in', description: 'Members tap their names', icon: <QrCode className="h-6 w-6" />, accent: '#2563EB' },
+    { href: one ? `/portal/classes/${one.id}/members/new` : '/portal/classes', title: 'Add a member', description: 'Someone new, or a servant', icon: <UserPlus className="h-6 w-6" />, accent: '#C89B3C' },
+    { href: '/portal/follow-ups', title: 'Follow-ups', description: 'Who has stopped coming', icon: <HeartHandshake className="h-6 w-6" />, accent: '#D97706' },
+  ]
+  return (
+    <>
+      <HeroBanner
+        tag={tag}
+        title={`Welcome back, ${user.displayName.split(' ')[0]}!`}
+        verse="&ldquo;For where two or three are gathered together in My name, I am there in the midst of them.&rdquo;"
+        reference="Matthew 18:20"
+      />
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Members" value={members} hint={one ? one.name : `across ${meetings.length} meetings`} icon={<Users className="h-6 w-6" />} accent="#16A34A" />
+        <StatCard
+          label="Last meeting"
+          value={one?.last ? one.last.here : '—'}
+          hint={one?.last ? `here on ${formatShortDate(one.last.date)}` : one ? 'No meetings yet' : 'See each meeting below'}
+          icon={<CalendarCheck className="h-6 w-6" />}
+          accent="#2563EB"
+        />
+        <StatCard
+          label="Open follow-ups"
+          value={open}
+          tone={open > 0 ? 'warn' : 'good'}
+          hint={open > 0 ? 'Members who need a call' : 'Everyone is accounted for'}
+          icon={<HeartHandshake className="h-6 w-6" />}
+          accent={open > 0 ? '#D97706' : '#16A34A'}
+        />
+      </div>
+      <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {actions.map((a) => (
+          <ActionCard key={a.href + a.title} href={a.href} title={a.title} description={a.description} icon={a.icon} accent={a.accent} />
+        ))}
+      </div>
+      {meetings.length === 0 ? (
+        <EmptyState title="No meeting assigned yet" hint="Ask the admin to add you to your Fellowship meeting." />
+      ) : (
+        <MeetingCards meetings={meetings} />
+      )}
+    </>
+  )
 }
 
 /**
@@ -44,7 +105,7 @@ async function StaffHome() {
   // class is split with nobody pressing anything. After that this finds nothing
   // to do. A failure is logged and the dashboard still renders.
   await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
-  const [data, servantCheckIn] = await Promise.all([staffOverview(user), latestServantCheckIn(user)])
+  const [data, servantCheckIn, meetings] = await Promise.all([staffOverview(user), latestServantCheckIn(user), fellowshipOverview(user)])
   const isSunday = new Date(`${data.today}T12:00:00Z`).getUTCDay() === 0
   /**
    * F0354 — when the reminder stops being a note and becomes a banner.
@@ -359,6 +420,9 @@ async function StaffHome() {
               </div>
             )}
           </div>
+
+          {/* The Fellowship meetings this person serves or oversees (2026-10-24). */}
+          <MeetingCards meetings={meetings} />
 
           {/*
             F0164 — Registers.

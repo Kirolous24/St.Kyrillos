@@ -13,6 +13,7 @@ import { churchToday } from '@/lib/portal/dates'
 import { PageHeader, EmptyState, SectionTitle, Tabs, TabLink, Badge } from '@/components/portal/ui'
 import { ClassPicker } from '@/components/portal/ClassPicker'
 import { KidCard } from '@/components/portal/KidCard'
+import { isFellowship } from '@/lib/portal/fellowship'
 import { FollowUpLogList } from './FollowUpLogList'
 
 export const metadata = { title: 'My Group' }
@@ -46,7 +47,8 @@ export default async function MyGroupPage({ searchParams }: { searchParams: { ta
 
   // The classes this person follows up, their own first. Class Groups and the
   // log are about one of them at a time.
-  const visible = await listVisibleClasses(user)
+  // Fellowship meetings split their members into groups too (2026-10-24).
+  const visible = await listVisibleClasses(user, { fellowship: 'include' })
   const followable = visible
     .filter((c) => can(user, 'followup.write', { classId: c.id, classStage: c.stage }))
     .sort((a, b) => Number(user.classIds.includes(b.id)) - Number(user.classIds.includes(a.id)))
@@ -139,31 +141,35 @@ export default async function MyGroupPage({ searchParams }: { searchParams: { ta
     )
     const members = await prisma.classMember.count({ where: { classId: chosen.id } })
     const excused = Array.from(cards.values()).filter((c) => c.excusedNow).length
+    // A Fellowship meeting's people are members (2026-10-24).
+    const meeting = isFellowship(chosen.stage)
+    const one = meeting ? 'member' : 'child'
+    const many = meeting ? 'members' : 'children'
     return (
       <>
         {header(`${chosen.name} · every group, so anyone can follow up on a colleague's behalf`)}
         {classPicker}
         <p className="mb-4 rounded-[12px] border border-parch-200 bg-parch-50 px-4 py-2.5 text-[12px] text-parch-700">
-          Log a call or text for any child here. It is recorded as yours, for their servant&rsquo;s group, and shows on the{' '}
+          Log a call or text for any {one} here. It is recorded as yours, for their servant&rsquo;s group, and shows on the{' '}
           <Link href={href('log', chosen.id)} className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
             Follow-up log
           </Link>
-          .{excused > 0 ? ` ${excused} ${excused === 1 ? 'child is' : 'children are'} excused from follow-up for now.` : ''}
+          .{excused > 0 ? ` ${excused} ${excused === 1 ? `${one} is` : `${many} are`} excused from follow-up for now.` : ''}
         </p>
         {kids.length === 0 ? (
-          <EmptyState title={`No children in ${chosen.name} yet`} />
+          <EmptyState title={`No ${many} in ${chosen.name} yet`} />
         ) : (
           <div className="space-y-6" data-testid="class-groups">
             {servants.map((s) => {
               const mine = ordered(byServant.get(s.id) ?? [])
               return (
                 <section key={s.id} data-testid="class-group" data-servant={s.id}>
-                  <SectionTitle hint={`${mine.length} ${mine.length === 1 ? 'child' : 'children'}`}>
+                  <SectionTitle hint={`${mine.length} ${mine.length === 1 ? one : many}`}>
                     {s.name}
                     {s.id === user.servantId ? ' (you)' : ''}
                   </SectionTitle>
                   {mine.length === 0 ? (
-                    <p className="text-[12px] text-parch-500">No children in this group yet.</p>
+                    <p className="text-[12px] text-parch-500">No {many} in this group yet.</p>
                   ) : (
                     <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
                       {mine.map((card) => (
@@ -188,7 +194,9 @@ export default async function MyGroupPage({ searchParams }: { searchParams: { ta
         )}
         {members > 0 && (
           <p className="mt-5 text-[12px] text-parch-600">
-            {members} {members === 1 ? 'child joins' : 'children join'} {chosen.name} from their own class; their groups are in that class.{' '}
+            {meeting
+              ? `${members} ${members === 1 ? 'member is' : 'members are'} here from another Fellowship meeting; their groups are in that meeting.`
+              : `${members} ${members === 1 ? 'child joins' : 'children join'} ${chosen.name} from their own class; their groups are in that class.`}{' '}
             <Link href={`/portal/classes/${chosen.id}`} className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
               See the roster
             </Link>
@@ -209,9 +217,16 @@ export default async function MyGroupPage({ searchParams }: { searchParams: { ta
     }
   })
   const kidCount = mineByClass.reduce((n, g) => n + g.mine.length, 0)
-  const subtitle = kidCount
-    ? `${kidCount} child${kidCount === 1 ? '' : 'ren'} you follow up · call, check in, and keep an eye on the Sundays`
-    : 'The children you follow up'
+  // Someone who follows up only Fellowship members (2026-10-24) reads about
+  // people and meetings, not children and Sundays.
+  const onlyMeetings = mineByClass.length > 0 && mineByClass.every((g) => isFellowship(g.stage))
+  const subtitle = onlyMeetings
+    ? kidCount
+      ? `${kidCount} member${kidCount === 1 ? '' : 's'} you follow up · call, check in, and keep an eye on the meetings`
+      : 'The members you follow up'
+    : kidCount
+      ? `${kidCount} child${kidCount === 1 ? '' : 'ren'} you follow up · call, check in, and keep an eye on the Sundays`
+      : 'The children you follow up'
 
   if (kidCount === 0) {
     return (
@@ -219,7 +234,11 @@ export default async function MyGroupPage({ searchParams }: { searchParams: { ta
         {header(subtitle)}
         <EmptyState
           title="You don't have a group yet"
-          hint="Your class has not been split yet, or its coordinators have not given you any children. You can still follow up any child of your class from Class Groups."
+          hint={
+            onlyMeetings
+              ? 'Your meeting has not been split yet, or its coordinators have not given you anyone. You can still follow up any member from Class Groups.'
+              : 'Your class has not been split yet, or its coordinators have not given you any children. You can still follow up any child of your class from Class Groups.'
+          }
         />
       </>
     )
@@ -237,15 +256,16 @@ export default async function MyGroupPage({ searchParams }: { searchParams: { ta
           .filter((g) => g.mine.length > 0)
           .map((g) => (
             <section key={g.classId} data-testid="my-group-class">
-              <SectionTitle hint={`${g.mine.length} of ${g.kids.length} in the class`}>
+              <SectionTitle hint={`${g.mine.length} of ${g.kids.length} in the ${isFellowship(g.stage) ? 'meeting' : 'class'}`}>
                 <Link href={`/portal/classes/${g.classId}`} className="hover:text-brand-800">
                   {g.name}
                 </Link>
               </SectionTitle>
               {g.unassigned > 0 && (
                 <p className="mb-3 text-[12px] text-[#D97706]">
-                  {g.unassigned} {g.unassigned === 1 ? 'child in this class has' : 'children in this class have'} no servant
-                  yet; your coordinators place them from the class page.
+                  {isFellowship(g.stage)
+                    ? `${g.unassigned} ${g.unassigned === 1 ? 'member of this meeting has' : 'members of this meeting have'} no servant yet; your coordinators place them from the meeting's page.`
+                    : `${g.unassigned} ${g.unassigned === 1 ? 'child in this class has' : 'children in this class have'} no servant yet; your coordinators place them from the class page.`}
                 </p>
               )}
               <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">

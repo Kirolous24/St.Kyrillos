@@ -85,6 +85,10 @@ export async function exportLoginsCsv(
       }))
     } else {
       const students = await prisma.student.findMany({
+        // Children only: a servant who grew up here (F0850) or is a Fellowship
+        // member (2026-10-24) has a Student row, but their login is a servant's,
+        // and a member has none.
+        where: { account: { role: 'STUDENT' } },
         orderBy: [{ class: { sortOrder: 'asc' } }, { firstName: 'asc' }, { lastName: 'asc' }],
         select: {
           firstName: true,

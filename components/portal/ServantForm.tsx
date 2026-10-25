@@ -181,6 +181,8 @@ export function ServantForm({ mode, accountId, isSelf, classes, initial, pinKept
           <Field label="Stage coordinator" htmlFor="stageOversight" hint="Separate from a class position — can view every class in this stage.">
             <select id="stageOversight" value={form.stageOversight ?? ''} onChange={set('stageOversight')} className={selectClass}>
               <option value="">None</option><option value="ELEMENTARY">Elementary</option><option value="MIDDLE_SCHOOL">Middle School</option><option value="HIGH_SCHOOL">High School</option>
+              {/* Every Fellowship meeting (2026-10-24). */}
+              <option value="FELLOWSHIP">Fellowship</option>
             </select>
           </Field>
         </div>

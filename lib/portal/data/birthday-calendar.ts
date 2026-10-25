@@ -14,7 +14,8 @@ export async function birthdayCalendarFor(token: string, now: Date = new Date())
   const user = await loadPortalUser({ calendarToken: token })
   if (!user || user.role === 'STUDENT') return null
 
-  const classes = await listVisibleClasses(user)
+  // The same people as the Birthdays page, Fellowship members included (2026-10-24).
+  const classes = await listVisibleClasses(user, { fellowship: 'include' })
   const students = await prisma.student.findMany({
     where: { classId: { in: classes.map((c) => c.id) }, dob: { not: null } },
     select: { id: true, firstName: true, lastName: true, dob: true, class: { select: { name: true } } },

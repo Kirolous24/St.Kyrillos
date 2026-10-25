@@ -10,10 +10,11 @@ import { churchToday } from '@/lib/portal/dates'
 import { PrintButton } from '@/components/portal/PrintButton'
 import { ReportLetterhead } from '../../reports/ReportLetterhead'
 import { formatPhone } from '@/lib/portal/phones'
+import type { StageKey } from '@/lib/portal/permissions'
 
 export const metadata = { title: 'Servants' }
 
-const STAGE_ORDER = ['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL'] as const
+const STAGE_ORDER = ['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL', 'FELLOWSHIP'] as const
 
 type Card = {
   id: string
@@ -22,8 +23,8 @@ type Card = {
   loginId: string
   phone: string | null
   isActive: boolean
-  role: 'SERVANT' | 'ADMIN' | 'PASTOR' | 'STUDENT'
-  stageOversight: 'ELEMENTARY' | 'MIDDLE_SCHOOL' | 'HIGH_SCHOOL' | null
+  role: 'SERVANT' | 'ADMIN' | 'PASTOR' | 'STUDENT' | 'MEMBER'
+  stageOversight: StageKey | null
   title: 'COORDINATOR' | 'ASSISTANT_COORDINATOR' | null
 }
 

@@ -18,6 +18,11 @@ import { issuedPinFields } from '../pin-issue'
 import { placeNewKids } from '../data/groups'
 import { CLEAR_UNASSIGNED } from '../unassigned'
 import { keepMembershipsOnMove } from '../data/class-members'
+import { isFellowship } from '../fellowship'
+
+/** Children and Fellowship members never cross over here (2026-10-24). */
+const FELLOWSHIP_MOVE_IN = 'That is a Fellowship meeting. Its members are added on the meeting’s own page, and children are not members.'
+const FELLOWSHIP_MOVE_OUT = 'That is a Fellowship member. Remove them on the meeting’s own page.'
 import { clearRateLimit } from '@/lib/rate-limit'
 
 const optionalText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable().optional()
@@ -83,6 +88,8 @@ export async function createStudent(classId: string, raw: StudentFormInput): Pro
   return runAction(async () => {
     const user = await requirePortalUser()
     const cls = await assertClassAction(user, classId, 'student.write')
+    // A Fellowship meeting has members, not children (2026-10-24).
+    if (isFellowship(cls.stage)) throw new PortalError(FELLOWSHIP_MOVE_IN)
     const input = StudentFormSchema.parse(raw)
     const data = toData(input)
     const loginId = await freeLoginId()
@@ -176,11 +183,18 @@ export async function moveStudent(studentId: string, classId: string | null): Pr
   return runAction(async () => {
     const user = await requirePortalUser()
     if (user.role !== 'ADMIN') throw new PortalError('Only the admin can move students between classes.')
-    const s = await prisma.student.findUnique({ where: { id: studentId }, select: { firstName: true, lastName: true, classId: true } })
+    const s = await prisma.student.findUnique({
+      where: { id: studentId },
+      select: { firstName: true, lastName: true, classId: true, class: { select: { stage: true } } },
+    })
     if (!s) throw new PortalError('Student not found.')
+    // Members and children never cross over here (2026-10-24): a meeting's
+    // members are added and removed on the meeting's own page.
+    if (isFellowship(s.class?.stage)) throw new PortalError(FELLOWSHIP_MOVE_OUT)
     if (classId) {
-      const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true } })
+      const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true, stage: true } })
       if (!cls) throw new PortalError('Class not found.')
+      if (isFellowship(cls.stage)) throw new PortalError(FELLOWSHIP_MOVE_IN)
     }
     // A group belongs to a class: taken out of every class, the child has none;
     // moved into one, they join a group there and nobody else moves.
@@ -440,10 +454,15 @@ export async function bulkMoveStudents(input: { studentIds: string[]; classId: s
     const ids = Array.from(new Set(input.studentIds ?? [])).filter(Boolean)
     if (ids.length === 0) throw new PortalError('Select at least one student.')
     if (input.classId) {
-      const cls = await prisma.schoolClass.findUnique({ where: { id: input.classId }, select: { id: true } })
+      const cls = await prisma.schoolClass.findUnique({ where: { id: input.classId }, select: { id: true, stage: true } })
       if (!cls) throw new PortalError('Class not found.')
+      if (isFellowship(cls.stage)) throw new PortalError(FELLOWSHIP_MOVE_IN)
     }
-    const before = await prisma.student.findMany({ where: { id: { in: ids } }, select: { id: true, classId: true } })
+    const before = await prisma.student.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, classId: true, class: { select: { stage: true } } },
+    })
+    if (before.some((b) => isFellowship(b.class?.stage))) throw new PortalError(FELLOWSHIP_MOVE_OUT)
     await prisma.student.updateMany({
       where: { id: { in: ids } },
       data: { classId: input.classId, ...(input.classId ? CLEAR_UNASSIGNED : { groupServantId: null, groupAssignedAt: null }) },

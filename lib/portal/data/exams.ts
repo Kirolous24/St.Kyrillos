@@ -106,7 +106,8 @@ export async function assignableClasses(user: PortalUser) {
   // offer them — and no staff screen gated on this list is reachable for them.
   if (!mayAuthorExams(user)) return []
   const all = await prisma.schoolClass.findMany({
-    where: { isActive: true },
+    // A Fellowship meeting has no quizzes (2026-10-24).
+    where: { isActive: true, stage: { not: 'FELLOWSHIP' } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true, stage: true },
   })

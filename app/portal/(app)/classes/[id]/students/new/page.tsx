@@ -3,12 +3,16 @@ import { requireClassAccess } from '@/lib/portal/data/classes'
 import { UserPlus } from 'lucide-react'
 import { PageHeader } from '@/components/portal/ui'
 import { StudentForm } from '@/components/portal/StudentForm'
+import { redirect } from 'next/navigation'
+import { isFellowship } from '@/lib/portal/fellowship'
 
 export const metadata = { title: 'Add student' }
 
 export default async function NewStudentPage({ params }: { params: { id: string } }) {
   const user = await requirePortalUser()
   const cls = await requireClassAccess(user, params.id, 'student.write')
+  // A Fellowship meeting adds members, not students (2026-10-24).
+  if (isFellowship(cls.stage)) redirect(`/portal/classes/${cls.id}/members/new`)
   return (
     <>
       <PageHeader

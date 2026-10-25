@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { listVisibleClasses, type ClassSummary } from './classes'
+import { listVisibleClasses, type ClassListOptions, type ClassSummary } from './classes'
 import { can, type Action, type PortalUser } from '../permissions'
 
 /**
@@ -20,8 +20,9 @@ export async function resolveClassEntry(
   user: PortalUser,
   suffix: string,
   action: Action = 'class.read',
+  opts: ClassListOptions = {},
 ): Promise<ClassSummary[]> {
-  const classes = (await listVisibleClasses(user)).filter((c) =>
+  const classes = (await listVisibleClasses(user, opts)).filter((c) =>
     can(user, action, { classId: c.id, classStage: c.stage }),
   )
   if (classes.length === 1) redirect(`/portal/classes/${classes[0]!.id}${suffix}`)
