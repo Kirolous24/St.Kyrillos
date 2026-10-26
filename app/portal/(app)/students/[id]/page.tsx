@@ -11,7 +11,7 @@ import { absenceStreakAgainst } from '@/lib/portal/attendance-rules'
 import { presentStreak, readingStreak } from '@/lib/portal/achievements'
 import { attendanceRate, heldOccasions, headlineSession, headlineRows } from '@/lib/portal/reports'
 import { formatDateOnly, churchToday, ageOn } from '@/lib/portal/dates'
-import { formatPhone } from '@/lib/portal/phones'
+import { formatPhone, kidPhoneList, normalizePhone } from '@/lib/portal/phones'
 import { formatLongDate, formatMonthDay, formatDateTime } from '@/lib/portal/format'
 import { PageHeader, Card, StatCard, Avatar, Badge, Callout, LinkButton, buttonClass } from '@/components/portal/ui'
 import { accentFor } from '@/lib/portal/accents'
@@ -245,6 +245,9 @@ export default async function StudentPage({ params }: { params: { id: string } }
 
   const sessionLabels = new Map((await prisma.attendanceSession.findMany({ select: { key: true, label: true } })).map((x) => [x.key, x.label]))
   const accent = accentFor(s.id)
+  // The family's numbers in the order servants reach them: the mother's first,
+  // or the one chosen for this child (2026-10-25).
+  const callOrder = kidPhoneList({ fatherPhone: s.fatherPhone, motherPhone: s.motherPhone, ownPhone: s.account.phone, callFirst: s.callFirst })
 
   // Classes the child joined beyond their own, such as Pre-Servants (2026-09-28).
   const alsoIn = (await membershipsOf([s.id])).get(s.id) ?? []
@@ -583,18 +586,30 @@ export default async function StudentPage({ params }: { params: { id: string } }
                     </dd>
                   </div>
                 ) : null}
-                {s.fatherName || s.fatherPhone ? (
-                  <div>
-                    <dt className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Father</dt>
-                    <dd className="text-parch-800">{s.fatherName}{s.fatherPhone && <> · <a className="font-semibold text-brand-800" href={`tel:${s.fatherPhone}`}>{formatPhone(s.fatherPhone)}</a></>}</dd>
-                  </div>
-                ) : null}
-                {s.motherName || s.motherPhone ? (
-                  <div>
-                    <dt className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Mother</dt>
-                    <dd className="text-parch-800">{s.motherName}{s.motherPhone && <> · <a className="font-semibold text-brand-800" href={`tel:${s.motherPhone}`}>{formatPhone(s.motherPhone)}</a></>}</dd>
-                  </div>
-                ) : null}
+                {/* The mother first, unless a servant chose the father; the
+                    one the Call buttons use is marked (2026-10-25). */}
+                {(s.callFirst === 'FATHER'
+                  ? [
+                      { who: 'Father', name: s.fatherName, phone: s.fatherPhone },
+                      { who: 'Mother', name: s.motherName, phone: s.motherPhone },
+                    ]
+                  : [
+                      { who: 'Mother', name: s.motherName, phone: s.motherPhone },
+                      { who: 'Father', name: s.fatherName, phone: s.fatherPhone },
+                    ]
+                )
+                  .filter((p) => p.name || p.phone)
+                  .map((p) => (
+                    <div key={p.who}>
+                      <dt className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">
+                        {p.who}
+                        {callOrder.length > 1 && p.phone && normalizePhone(p.phone) === callOrder[0]!.digits && (
+                          <span className="ml-1.5 normal-case tracking-normal text-brand-gold-dark">· call first</span>
+                        )}
+                      </dt>
+                      <dd className="text-parch-800">{p.name}{p.phone && <> · <a className="font-semibold text-brand-800" href={`tel:${p.phone}`}>{formatPhone(p.phone)}</a></>}</dd>
+                    </div>
+                  ))}
                 {s.parentEmails.length > 0 && (
                   <div>
                     <dt className="text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Parent email</dt>
@@ -730,7 +745,7 @@ export default async function StudentPage({ params }: { params: { id: string } }
               loginId={s.account.loginId}
               name={`${s.firstName} ${s.lastName}`.trim()}
               email={s.account.email ?? s.parentEmails[0] ?? null}
-              phone={s.account.phone ?? s.fatherPhone ?? s.motherPhone ?? null}
+              phone={s.account.phone ?? callOrder[0]?.digits ?? null}
               onFile={onFile}
               vaultEnabled={pinVaultEnabled()}
             />

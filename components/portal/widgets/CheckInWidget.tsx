@@ -63,15 +63,20 @@ async function ServantCards({ user, servantId }: { user: PortalUser; servantId: 
   const weekStart = mondayOf(today)
   const isSunday = dayOfWeek(today) === 0
 
-  const all = await listVisibleClasses(user)
-  const writable = all.filter((c) => can(user, 'attendance.write', { classId: c.id, classStage: c.stage }))
+  // The registers this servant may take: their classes, and the other half of
+  // a boys'/girls' pair (2026-10-25). That pair's children are not listed
+  // below, as their pages are not this servant's to open.
+  const all = await listVisibleClasses(user, { attendancePartners: true })
+  const takeable = all.filter((c) => can(user, 'attendance.take', { classId: c.id, classStage: c.stage }))
+  const writable = takeable.filter((c) => can(user, 'attendance.write', { classId: c.id, classStage: c.stage }))
   const classIds = writable.map((c) => c.id)
+  const registerIds = takeable.map((c) => c.id)
 
   const [takenToday, activities, mine, roster, presentToday] = await Promise.all([
-    isSunday && classIds.length > 0
+    isSunday && registerIds.length > 0
       ? prisma.attendanceRecord.groupBy({
           by: ['classId'],
-          where: { classId: { in: classIds }, sessionKey: 'sunday', date: toUTCDate(today) },
+          where: { classId: { in: registerIds }, sessionKey: 'sunday', date: toUTCDate(today) },
         })
       : Promise.resolve([] as Array<{ classId: string }>),
     listServantActivities(),
@@ -98,7 +103,7 @@ async function ServantCards({ user, servantId }: { user: PortalUser; servantId: 
   ])
 
   const done = new Set(takenToday.map((t) => t.classId))
-  const missing = isSunday ? writable.filter((c) => !done.has(c.id)) : []
+  const missing = isSunday ? takeable.filter((c) => !done.has(c.id)) : []
   const byKey = new Map(mine.map((m) => [m.activityKey, m.status as CheckInStatus]))
   const marked = mine.length
 

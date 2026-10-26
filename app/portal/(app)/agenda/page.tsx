@@ -5,6 +5,8 @@ import { requirePortalUser } from '@/lib/portal/session'
 import { requireClassAccess } from '@/lib/portal/data/classes'
 import { lessonPrepClasses } from '@/lib/portal/data/lesson-prep'
 import { agendaCsvForClass, agendaServantOptions, listAgendaWeeks, loadAgendaWeek } from '@/lib/portal/data/agenda'
+import { plannerLink } from '@/lib/portal/data/planner'
+import { PlannerCard } from '@/components/portal/PlannerCard'
 import { can } from '@/lib/portal/permissions'
 import { areLinked, linkedWith } from '@/lib/portal/lesson-links'
 import { formatLongDate } from '@/lib/portal/format'
@@ -96,11 +98,12 @@ export default async function AgendaPage({
   const thisMonday = mondayOf(today)
   const week = normaliseWeekStart(searchParams.week) ?? thisMonday
 
-  const [view, servants, archive, csv] = await Promise.all([
+  const [view, servants, archive, csv, planner] = await Promise.all([
     loadAgendaWeek(cls.id, week),
     agendaServantOptions(cls.id),
     listAgendaWeeks(cls.id),
     canWrite ? agendaCsvForClass(cls.id) : Promise.resolve(''),
+    plannerLink(),
   ])
 
   // Generated, not queried — an empty year in the importer's own shape.
@@ -139,6 +142,9 @@ export default async function AgendaPage({
           Archive
         </TabLink>
       </Tabs>
+
+      {/* The planner every class uses (2026-10-25). */}
+      <PlannerCard url={planner} canEdit={user.role === 'ADMIN'} />
 
       <AgendaNav
         classId={cls.id}

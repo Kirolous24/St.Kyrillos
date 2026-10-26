@@ -41,6 +41,8 @@ const StudentFormSchema = z.object({
   fatherPhone: optionalText(30),
   motherName: optionalText(80),
   motherPhone: optionalText(30),
+  // Whose number servants reach first (2026-10-25); blank is the mother's.
+  callFirst: z.enum(['MOTHER', 'FATHER', 'STUDENT', '']).optional(),
   parentEmails: z.string().trim().max(300).optional(),
   // The student's own contact details live on their Account. The port dropped
   // them from every form and from the profile, so a servant could record both
@@ -79,6 +81,7 @@ function toData(input: StudentFormInput) {
     fatherPhone: normalizePhone(input.fatherPhone),
     motherName: input.motherName ?? null,
     motherPhone: normalizePhone(input.motherPhone),
+    callFirst: input.callFirst || null,
     parentEmails: Array.from(new Set(emails)),
     notes: input.notes ?? null,
   }

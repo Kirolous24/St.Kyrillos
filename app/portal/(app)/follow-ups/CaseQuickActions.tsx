@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Phone, MessageCircle, Send, Trash2, X } from 'lucide-react'
 import { deleteCase } from '@/lib/portal/actions/followups'
 import { recordFamilyMessage } from '@/lib/portal/actions/family-messages'
-import { smsHref, whatsAppHref } from '@/lib/portal/family-messages'
+import { noteRecipient, smsHref, whatsAppHref } from '@/lib/portal/family-messages'
 import { buttonClass, inputClass, Callout } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -73,7 +73,7 @@ export function CaseQuickActions({
     }
     setOpen(false)
     // "Father's phone" is noted as "To Father".
-    const to = (list.find((c) => c.value === contact)?.label ?? 'Family').replace(/['’]s phone$/, '')
+    const to = noteRecipient(list.find((c) => c.value === contact)?.label ?? 'Family')
     // The phone may leave for the app before the note is saved: a failure is
     // said plainly rather than left to break the page.
     startTransition(async () => {

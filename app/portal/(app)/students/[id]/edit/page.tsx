@@ -50,6 +50,7 @@ export default async function EditStudentPage({ params }: { params: { id: string
           fatherPhone: formatPhone(s.fatherPhone),
           motherName: s.motherName,
           motherPhone: formatPhone(s.motherPhone),
+          callFirst: s.callFirst ?? '',
           parentEmails: s.parentEmails.join(', '),
           email: s.account.email,
           phone: formatPhone(s.account.phone),

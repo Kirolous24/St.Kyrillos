@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, FileSpreadsheet, ListChecks, Upload } from 'lucide-react'
 import { importExamsCsv, type ImportReport } from '@/lib/portal/actions/exams'
+import { AlsoPostTo, type PostTarget } from '../AlsoPostTo'
 import {
   Badge,
   Callout,
@@ -53,10 +54,18 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   )
 }
 
-export function ExamImport({ classes }: { classes: { id: string; name: string }[] }) {
+export function ExamImport({
+  classes,
+  alsoClasses = [],
+}: {
+  classes: { id: string; name: string }[]
+  /** Every quiz may go to these too (2026-10-26). */
+  alsoClasses?: PostTarget[]
+}) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [classId, setClassId] = useState(classes[0]?.id ?? '')
+  const [also, setAlso] = useState<string[]>([])
   const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED'>('PUBLISHED')
   const [csv, setCsv] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
@@ -111,7 +120,8 @@ export function ExamImport({ classes }: { classes: { id: string; name: string }[
     if (!classId) return setError('Choose a class.')
     if (!csv.trim()) return setError('Choose a CSV file or paste its contents.')
     startTransition(async () => {
-      const result = await importExamsCsv({ classId, csv, status, month, pointsPerQuestion })
+      const alsoClassIds = also.filter((id) => id !== classId && alsoClasses.some((c) => c.id === id))
+      const result = await importExamsCsv({ classId, alsoClassIds, csv, status, month, pointsPerQuestion })
       if (!result.ok) return setError(result.error)
       setReport(result.data ?? null)
       router.refresh()
@@ -131,6 +141,7 @@ export function ExamImport({ classes }: { classes: { id: string; name: string }[
         >
           <p className="mb-3 text-[12.5px] text-parch-700">
             Created {report.created.length} quiz{report.created.length === 1 ? '' : 'zes'}
+            {report.classes.length > 1 && ` in each of ${report.classes.length} classes (${report.classes.join(', ')})`}
             {report.errors.length > 0 ? `, skipped ${report.errors.length} row${report.errors.length === 1 ? '' : 's'}.` : '.'}
           </p>
           <ul className="mb-4 space-y-1.5">
@@ -207,6 +218,11 @@ export function ExamImport({ classes }: { classes: { id: string; name: string }[
             </select>
           </Field>
         </div>
+        {alsoClasses.some((c) => c.id !== classId) && (
+          <div className="mb-3.5">
+            <AlsoPostTo classes={alsoClasses} primaryId={classId} value={also} onChange={setAlso} />
+          </div>
+        )}
 
         {isDaily && (
           <div className="mb-3.5">

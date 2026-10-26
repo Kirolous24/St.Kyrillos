@@ -100,20 +100,40 @@ export async function assertExamWrite(user: PortalUser, examId: string) {
   return exam
 }
 
-/** Classes the user may attach a new exam to. */
-export async function assignableClasses(user: PortalUser) {
-  // Pastors and students may not author exams at all, so there is nothing to
-  // offer them — and no staff screen gated on this list is reachable for them.
-  if (!mayAuthorExams(user)) return []
-  const all = await prisma.schoolClass.findMany({
+function teachingClasses() {
+  return prisma.schoolClass.findMany({
     // A Fellowship meeting has no quizzes (2026-10-24).
     where: { isActive: true, stage: { not: 'FELLOWSHIP' } },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true, stage: true },
   })
-  if (user.role === 'ADMIN') return all
-  const mine = new Set(user.classIds)
-  return all.filter((c) => mine.has(c.id))
+}
+
+/**
+ * Classes the user looks after the exams of: writes them, edits them, reopens
+ * them, sees their results. A Stage coordinator's are their stage's
+ * (2026-10-26; before, only the classes they were assigned to were offered,
+ * though they could already edit the rest).
+ */
+export async function assignableClasses(user: PortalUser) {
+  // Pastors and students may not author exams at all, so there is nothing to
+  // offer them — and no staff screen gated on this list is reachable for them.
+  if (!mayAuthorExams(user)) return []
+  return (await teachingClasses()).filter((c) => can(user, EXAM_WRITE, { classId: c.id, classStage: c.stage }))
+}
+
+/**
+ * Classes a new exam may be posted to (2026-10-26): the ones above, and for a
+ * Coordinator or Assistant Coordinator of the 5th & 6th or 7th & 8th boys' or
+ * girls' class, the other half of the pair, `postOnly`: posted to and nothing
+ * else. Never a source of children or results — the Exams list and the class
+ * an exam is written in come from assignableClasses.
+ */
+export async function postableClasses(user: PortalUser) {
+  if (!mayAuthorExams(user)) return []
+  return (await teachingClasses())
+    .filter((c) => can(user, 'exam.post', { classId: c.id, classStage: c.stage }))
+    .map((c) => ({ ...c, postOnly: !can(user, EXAM_WRITE, { classId: c.id, classStage: c.stage }) }))
 }
 
 /* ── Staff list ───────────────────────────────────────────────────────────── */

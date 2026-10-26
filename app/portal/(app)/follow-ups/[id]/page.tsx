@@ -29,7 +29,7 @@ export default async function CasePage({ params }: { params: { id: string } }) {
       id: true, classId: true, status: true, origin: true, title: true, details: true, consecutiveAbsences: true, lastSeen: true, nextFollowUp: true,
       createdAt: true, resolvedAt: true, resolveReason: true, resolveNote: true,
       resolvedBy: { select: { displayName: true } }, createdBy: { select: { displayName: true } },
-      student: { select: { id: true, firstName: true, lastName: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true, parentEmails: true, account: { select: { phone: true, email: true } } } },
+      student: { select: { id: true, firstName: true, lastName: true, fatherName: true, fatherPhone: true, motherName: true, motherPhone: true, callFirst: true, parentEmails: true, account: { select: { phone: true, email: true } } } },
       class: { select: { name: true } },
       logs: {
         orderBy: { at: 'desc' },
@@ -196,74 +196,54 @@ export default async function CasePage({ params }: { params: { id: string } }) {
                     they do not know, so the fastest way to reach them was the
                     one place this page did not offer. waLink handles the missing
                     country code; numbers are stored without one. */}
-                {(s.fatherName || s.fatherPhone) && (
-                  <Row
-                    label="Father"
-                    value={
-                      <>
-                        {s.fatherName}
-                        {s.fatherPhone && (
-                          <>
-                            {' '}
-                            <a className="inline-flex items-center gap-1 font-bold text-brand-800 hover:text-brand-gold-dark" href={`tel:${s.fatherPhone}`}>
-                              <Phone className="h-3.5 w-3.5" aria-hidden />
-                              {formatPhone(s.fatherPhone)}
-                            </a>
-                            {waLink(s.fatherPhone) && (
-                              <>
-                                {' '}
-                                <a
-                                  className="inline-flex items-center gap-1 font-bold text-[#16A34A] hover:text-brand-gold-dark"
-                                  href={waLink(s.fatherPhone)!}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  aria-label={`WhatsApp ${s.fatherName ?? "the student's father"}`}
-                                >
-                                  <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-                                  WhatsApp
-                                </a>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </>
-                    }
-                  />
-                )}
-                {(s.motherName || s.motherPhone) && (
-                  <Row
-                    label="Mother"
-                    value={
-                      <>
-                        {s.motherName}
-                        {s.motherPhone && (
-                          <>
-                            {' '}
-                            <a className="inline-flex items-center gap-1 font-bold text-brand-800 hover:text-brand-gold-dark" href={`tel:${s.motherPhone}`}>
-                              <Phone className="h-3.5 w-3.5" aria-hidden />
-                              {formatPhone(s.motherPhone)}
-                            </a>
-                            {waLink(s.motherPhone) && (
-                              <>
-                                {' '}
-                                <a
-                                  className="inline-flex items-center gap-1 font-bold text-[#16A34A] hover:text-brand-gold-dark"
-                                  href={waLink(s.motherPhone)!}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  aria-label={`WhatsApp ${s.motherName ?? "the student's mother"}`}
-                                >
-                                  <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-                                  WhatsApp
-                                </a>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </>
-                    }
-                  />
-                )}
+                {/* The mother first, unless a servant chose the father for
+                    this child (2026-10-25). */}
+                {(s.callFirst === 'FATHER'
+                  ? [
+                      { who: 'Father', name: s.fatherName, phone: s.fatherPhone },
+                      { who: 'Mother', name: s.motherName, phone: s.motherPhone },
+                    ]
+                  : [
+                      { who: 'Mother', name: s.motherName, phone: s.motherPhone },
+                      { who: 'Father', name: s.fatherName, phone: s.fatherPhone },
+                    ]
+                )
+                  .filter((p) => p.name || p.phone)
+                  .map((p) => (
+                    <Row
+                      key={p.who}
+                      label={p.who}
+                      value={
+                        <>
+                          {p.name}
+                          {p.phone && (
+                            <>
+                              {' '}
+                              <a className="inline-flex items-center gap-1 font-bold text-brand-800 hover:text-brand-gold-dark" href={`tel:${p.phone}`}>
+                                <Phone className="h-3.5 w-3.5" aria-hidden />
+                                {formatPhone(p.phone)}
+                              </a>
+                              {waLink(p.phone) && (
+                                <>
+                                  {' '}
+                                  <a
+                                    className="inline-flex items-center gap-1 font-bold text-[#16A34A] hover:text-brand-gold-dark"
+                                    href={waLink(p.phone)!}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label={`WhatsApp ${p.name ?? `the student's ${p.who.toLowerCase()}`}`}
+                                  >
+                                    <MessageCircle className="h-3.5 w-3.5" aria-hidden />
+                                    WhatsApp
+                                  </a>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </>
+                      }
+                    />
+                  ))}
                 {s.parentEmails.map((e) => (
                   <Row
                     key={e}

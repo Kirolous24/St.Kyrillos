@@ -7,6 +7,7 @@ import { recentSundays, type SundayDot } from '../group-cards'
 import { classTotals } from './dashboard'
 import { excusesByStudent } from './excuses'
 import { isFellowship, watchedSessionKey } from '../fellowship'
+import type { CallFirst } from '../phones'
 
 /** How many Sundays a card draws as dots. */
 export const RECENT_SUNDAYS = 8
@@ -21,6 +22,8 @@ export interface KidCardData {
   fatherPhone: string | null
   motherPhone: string | null
   ownPhone: string | null
+  /** Whose number comes first (2026-10-25); null is the mother's. */
+  callFirst: CallFirst | null
   dots: SundayDot[]
   /** Sundays missed in a row, excused ones not counted: the follow-up rule's number. */
   streak: number
@@ -61,6 +64,7 @@ export async function loadKidCards(
         createdAt: true,
         fatherPhone: true,
         motherPhone: true,
+        callFirst: true,
         account: { select: { phone: true, photo: true } },
       },
     }),
@@ -128,6 +132,7 @@ export async function loadKidCards(
       fatherPhone: d.fatherPhone,
       motherPhone: d.motherPhone,
       ownPhone: d.account.phone,
+      callFirst: d.callFirst,
       dots: recentSundays({ held, rows, since, excuses: windows, count: RECENT_SUNDAYS }),
       streak: absenceStreakAgainst(held, withExcusedDates(held, rows, windows, since), since),
       openCase: caseByKid.get(k.id) ?? null,

@@ -26,6 +26,18 @@ export interface PortalUser {
    * servant serves, not the ones they are a member of. Absent means none.
    */
   fellowshipClassIds?: string[]
+  /**
+   * Classes whose register this servant may take and nothing else of them
+   * (2026-10-25): the other half of a boys'/girls' pair of one of their own
+   * classes (SchoolClass.attendancePartnerId). Absent means none.
+   */
+  attendanceOnly?: string[]
+  /**
+   * Classes this servant may post an exam to and nothing else (2026-10-26):
+   * the other half of a pair of a class they are Coordinator or Assistant
+   * Coordinator of. Absent means none.
+   */
+  examPostOnly?: string[]
 }
 
 export interface ClassScope {
@@ -38,7 +50,13 @@ export type Action =
   | 'student.read'
   | 'student.write'
   | 'attendance.write'
+  // Taking a register (2026-10-25): attendance.write's people, and the
+  // servants of the class's partner, who may do this and nothing else.
+  | 'attendance.take'
   | 'points.write'
+  // Posting a new exam (2026-10-26): points.write's people, and a pair's
+  // Coordinator and Assistant Coordinator, who may post to the other half.
+  | 'exam.post'
   | 'followup.write'
   | 'servant.read'
   | 'admin.manage'
@@ -56,7 +74,9 @@ const ALL_CLASS_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'student.read',
   'student.write',
   'attendance.write',
+  'attendance.take',
   'points.write',
+  'exam.post',
   'followup.write',
   'servant.read',
   'admin.manage',
@@ -83,8 +103,9 @@ export function visibleClassIds(user: PortalUser, classes: ClassScope[]): string
 export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): boolean {
   if (!ALL_CLASS_ACTIONS.has(action)) return false
   // A Fellowship meeting has no points (2026-10-24), for anyone, the admin
-  // included: its members are adults, and points belong to the children.
-  if (action === 'points.write' && ctx.classStage === 'FELLOWSHIP') return false
+  // included: its members are adults, and points belong to the children. Nor
+  // quizzes, which award points.
+  if ((action === 'points.write' || action === 'exam.post') && ctx.classStage === 'FELLOWSHIP') return false
 
   switch (user.role) {
     case 'ADMIN':
@@ -126,6 +147,17 @@ export function can(user: PortalUser, action: Action, ctx: ActionContext = {}): 
            * records who made it, and the reach is one stage, not the church.
            */
           return assigned || stageRead
+        case 'attendance.take':
+          // The 5th & 6th and 7th & 8th boys' and girls' classes take each
+          // other's registers (2026-10-25: "only for attendance, nothing
+          // else"). No other action looks at attendanceOnly.
+          return assigned || stageRead || (!!ctx.classId && (user.attendanceOnly ?? []).includes(ctx.classId))
+        case 'exam.post':
+          // "If I'm in the fifth and sixth or seventh and eighth and I'm a
+          // coordinator, I can also post it to the other version of the class"
+          // (2026-10-26). Posting is all: the copy it makes there, its results
+          // and its children stay with that class's own servants.
+          return assigned || stageRead || (!!ctx.classId && (user.examPostOnly ?? []).includes(ctx.classId))
         case 'group.manage':
           // Arranging who follows whom is the coordinator's job: the stage
           // overseer for their stage, the class Coordinator and Assistant

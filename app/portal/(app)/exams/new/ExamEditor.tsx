@@ -15,6 +15,7 @@ import {
   textareaClass,
 } from '@/components/portal/ui'
 import { churchToday } from '@/lib/portal/dates'
+import { AlsoPostTo, type PostTarget } from '../AlsoPostTo'
 import { cn } from '@/lib/utils'
 
 export interface EditorQuestion {
@@ -92,10 +93,13 @@ function GroupLabel({ children, hint }: { children: React.ReactNode; hint?: Reac
 
 export function ExamEditor({
   classes,
+  alsoClasses = [],
   exam,
   hasResults = false,
 }: {
   classes: { id: string; name: string }[]
+  /** A new exam may be posted to these too (2026-10-26). */
+  alsoClasses?: PostTarget[]
   exam?: EditorExam
   hasResults?: boolean
 }) {
@@ -104,6 +108,8 @@ export function ExamEditor({
   const [error, setError] = useState<string | null>(null)
 
   const [classId, setClassId] = useState(exam?.classId ?? classes[0]?.id ?? '')
+  const [also, setAlso] = useState<string[]>([])
+  const alsoChosen = also.filter((id) => id !== classId && alsoClasses.some((c) => c.id === id))
   const [title, setTitle] = useState(exam?.title ?? '')
   const [subject, setSubject] = useState(exam?.subject ?? '')
   const [dueDate, setDueDate] = useState(exam?.dueDate ?? '')
@@ -177,9 +183,17 @@ export function ExamEditor({
         status,
         questions: payload,
       }
-      const result = exam ? await updateExam({ ...base, examId: exam.id }) : await createExam(base)
-      if (!result.ok) return setError(result.error)
-      router.push(`/portal/exams/${result.data?.id ?? exam?.id ?? ''}`)
+      if (exam) {
+        const result = await updateExam({ ...base, examId: exam.id })
+        if (!result.ok) return setError(result.error)
+        router.push(`/portal/exams/${exam.id}`)
+      } else {
+        const result = await createExam({ ...base, alsoClassIds: alsoChosen })
+        if (!result.ok) return setError(result.error)
+        // The exam page names the other classes it went to.
+        const posted = result.data!.also.length ? `?also=${result.data!.also.map(encodeURIComponent).join(',')}` : ''
+        router.push(`/portal/exams/${result.data!.id}${posted}`)
+      }
       router.refresh()
     })
   }
@@ -278,6 +292,7 @@ export function ExamEditor({
             <textarea id="exam-msg" className={textareaClass} value={readingMessage} onChange={(e) => setReadingMessage(e.target.value)} />
           </Field>
         </div>
+        {!exam && <AlsoPostTo classes={alsoClasses} primaryId={classId} value={also} onChange={setAlso} />}
       </Card>
 
       <div className="flex items-baseline justify-between gap-3">
@@ -421,7 +436,7 @@ export function ExamEditor({
             Cancel
           </button>
           <button type="button" onClick={submit} disabled={pending || classes.length === 0} className={buttonClass('primary')}>
-            <Save className="h-4 w-4" aria-hidden /> {pending ? 'Saving…' : exam ? 'Save changes' : 'Create exam'}
+            <Save className="h-4 w-4" aria-hidden /> {pending ? 'Saving…' : exam ? 'Save changes' : alsoChosen.length ? `Create in ${alsoChosen.length + 1} classes` : 'Create exam'}
           </button>
         </div>
       </Card>

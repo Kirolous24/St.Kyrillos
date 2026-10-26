@@ -172,3 +172,86 @@ describe('unassigned.manage', () => {
     expect(can(servant, 'student.write', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
   })
 })
+
+// The boys' and girls' classes of 5th & 6th and of 7th & 8th take each other's
+// registers (2026-10-25): "only for attendance, nothing else".
+describe('attendance.take', () => {
+  const boysServant: PortalUser = {
+    accountId: 'b', role: 'SERVANT', displayName: 'B', servantId: 'sv-b',
+    classIds: ['5th-6th-boys'], coordinatorOf: ['5th-6th-boys'], assistantOf: [], stageOversight: null,
+    attendanceOnly: ['5th-6th-girls'],
+  }
+  const girls = { classId: '5th-6th-girls', classStage: 'MIDDLE_SCHOOL' as const }
+
+  it('the paired class’s servants may take its register', () => {
+    expect(can(boysServant, 'attendance.take', girls)).toBe(true)
+  })
+
+  it('and nothing else of it', () => {
+    for (const action of ['class.read', 'student.read', 'student.write', 'attendance.write', 'points.write', 'followup.write', 'servant.read', 'group.manage', 'unassigned.manage', 'admin.manage', 'exam.post'] as const) {
+      expect(can(boysServant, action, girls), action).toBe(false)
+    }
+  })
+
+  it('everyone who could already take a register still can', () => {
+    expect(can(servant, 'attendance.take', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(stageLead, 'attendance.take', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(admin, 'attendance.take', girls)).toBe(true)
+    expect(can(boysServant, 'attendance.take', { classId: '5th-6th-boys', classStage: 'MIDDLE_SCHOOL' })).toBe(true)
+  })
+
+  it('nobody else may', () => {
+    expect(can(servant, 'attendance.take', girls)).toBe(false)
+    expect(can(pastor, 'attendance.take', girls)).toBe(false)
+    expect(can(student, 'attendance.take', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(boysServant, 'attendance.take', { classId: '7th-8th-girls', classStage: 'MIDDLE_SCHOOL' })).toBe(false)
+  })
+
+  it('a pairing reaches no student’s account', () => {
+    expect(can({ ...student, attendanceOnly: ['1st'] }, 'attendance.take', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
+  })
+})
+
+// Posting one exam to several classes at once (2026-10-26): every class whose
+// points you give, and for a Coordinator or Assistant Coordinator of the 5th &
+// 6th or 7th & 8th boys' or girls' class, the other half of the pair, where
+// they may post it and do nothing else.
+describe('exam.post', () => {
+  const boysCoordinator: PortalUser = {
+    accountId: 'b', role: 'SERVANT', displayName: 'B', servantId: 'sv-b',
+    classIds: ['5th-6th-boys'], coordinatorOf: ['5th-6th-boys'], assistantOf: [], stageOversight: null,
+    attendanceOnly: ['5th-6th-girls'], examPostOnly: ['5th-6th-girls'],
+  }
+  const girls = { classId: '5th-6th-girls', classStage: 'MIDDLE_SCHOOL' as const }
+  const meeting = { classId: 'mens-meeting', classStage: 'FELLOWSHIP' as const }
+
+  it('whoever gives a class its points may post its exams', () => {
+    expect(can(servant, 'exam.post', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(stageLead, 'exam.post', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(true)
+    expect(can(admin, 'exam.post', girls)).toBe(true)
+    expect(can(boysCoordinator, 'exam.post', { classId: '5th-6th-boys', classStage: 'MIDDLE_SCHOOL' })).toBe(true)
+  })
+
+  it('a pair’s Coordinator may post to the other half, and do nothing else there', () => {
+    expect(can(boysCoordinator, 'exam.post', girls)).toBe(true)
+    for (const action of ['class.read', 'student.read', 'student.write', 'points.write', 'followup.write', 'servant.read', 'group.manage', 'unassigned.manage'] as const) {
+      expect(can(boysCoordinator, action, girls), action).toBe(false)
+    }
+  })
+
+  it('a servant’s reach is their own classes and their own pair', () => {
+    expect(can(servant, 'exam.post', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can(boysCoordinator, 'exam.post', { classId: '7th-8th-girls', classStage: 'MIDDLE_SCHOOL' })).toBe(false)
+  })
+
+  it('nobody posts an exam to a Fellowship meeting, the admin included', () => {
+    expect(can(admin, 'exam.post', meeting)).toBe(false)
+    expect(can({ ...servant, classIds: ['mens-meeting'] }, 'exam.post', meeting)).toBe(false)
+  })
+
+  it('the pastor and the children never post one', () => {
+    expect(can(pastor, 'exam.post', girls)).toBe(false)
+    expect(can(student, 'exam.post', { classId: 'kg', classStage: 'ELEMENTARY' })).toBe(false)
+    expect(can({ ...student, examPostOnly: ['1st'] }, 'exam.post', { classId: '1st', classStage: 'ELEMENTARY' })).toBe(false)
+  })
+})

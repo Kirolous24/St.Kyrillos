@@ -194,6 +194,14 @@ enum CaseOrigin {
   MANUAL
 }
 
+// Whose number a servant calls or messages first about a child (2026-10-25).
+// No value means the church's default: the mother's.
+enum FamilyContact {
+  MOTHER
+  FATHER
+  STUDENT
+}
+
 // One login per person. Students and servants get a profile row; admin and
 // pastor accounts are just an Account.
 model Account {
@@ -260,21 +268,32 @@ model Account {
 }
 
 model SchoolClass {
-  id                   String    @id // slug, e.g. "5th-6th-boys"
+  id                   String        @id // slug, e.g. "5th-6th-boys"
   name                 String
   stage                Stage
-  sortOrder            Int       @default(0)
+  sortOrder            Int           @default(0)
   description          String?
-  visitationThreshold  Int       @default(1) // consecutive Sunday-School absences before a case opens
+  visitationThreshold  Int           @default(1) // consecutive Sunday-School absences before a case opens
   photo                String? // small data-URL class photo
   curriculumLinkedToId String?
   groupsSplitAt        DateTime? // set once the class has been split into follow-up groups
-  isActive             Boolean   @default(true)
+  // Follow-up groups are shuffled every two months (2026-10-25): the day the
+  // next automatic shuffle is due, and when the last one happened. A
+  // coordinator's "Shuffle now" restarts the two months.
+  groupsShuffleDueOn   DateTime?     @db.Date
+  groupsShuffledAt     DateTime?
+  // The class whose register this one's servants may also take, and nothing
+  // else of it (2026-10-25): the other half of a boys'/girls' pair. Stored
+  // both ways.
+  attendancePartnerId  String?
+  attendancePartner    SchoolClass?  @relation("AttendancePartner", fields: [attendancePartnerId], references: [id], onDelete: SetNull)
+  attendancePartnerOf  SchoolClass[] @relation("AttendancePartner")
+  isActive             Boolean       @default(true)
   // A class children join while staying in their own (Pre-Servants, 2026-09-28).
   // Only such a class may have ClassMember rows.
-  takesOtherClasses    Boolean   @default(false)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  takesOtherClasses    Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   students        Student[]
   members         ClassMember[]
@@ -298,29 +317,31 @@ model SchoolClass {
 }
 
 model Student {
-  id                    String       @id @default(cuid())
-  accountId             String       @unique
-  account               Account      @relation("StudentAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  id                    String         @id @default(cuid())
+  accountId             String         @unique
+  account               Account        @relation("StudentAccount", fields: [accountId], references: [id], onDelete: Cascade)
   classId               String?
-  class                 SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  class                 SchoolClass?   @relation(fields: [classId], references: [id], onDelete: SetNull)
   firstName             String
   lastName              String
   gender                String?
-  dob                   DateTime?    @db.Date
+  dob                   DateTime?      @db.Date
   grade                 String?
   address               String?
   fatherName            String?
   fatherPhone           String?
   motherName            String?
   motherPhone           String?
-  parentEmails          String[]     @default([])
+  // The number servants reach first (2026-10-25); null = the mother's.
+  callFirst             FamilyContact?
+  parentEmails          String[]       @default([])
   notes                 String?
   importNotes           String? // data-quality flags from the migration, cleared once reviewed
   // Follow-up group (2026-09-26): the servant who follows this child up.
   // Resolved when read against the class's active servants (lib/portal/groups.ts),
   // so a servant briefly removed from the class gets their group back.
   groupServantId        String?
-  groupServant          Servant?     @relation("StudentGroup", fields: [groupServantId], references: [id], onDelete: SetNull)
+  groupServant          Servant?       @relation("StudentGroup", fields: [groupServantId], references: [id], onDelete: SetNull)
   groupAssignedAt       DateTime?
   // UNASSIGNED (2026-09-26): a servant took this child off their class, with a
   // required reason. A coordinator then puts them back, moves them or deletes
@@ -328,11 +349,11 @@ model Student {
   // so it outlives the class. All four are cleared when the child is placed.
   unassignedAt          DateTime?
   unassignedById        String?
-  unassignedBy          Account?     @relation("StudentUnassignedBy", fields: [unassignedById], references: [id], onDelete: SetNull)
+  unassignedBy          Account?       @relation("StudentUnassignedBy", fields: [unassignedById], references: [id], onDelete: SetNull)
   unassignedReason      String?
   unassignedFromClassId String?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   attendance      AttendanceRecord[]
   points          PointEntry[]

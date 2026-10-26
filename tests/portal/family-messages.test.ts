@@ -1,17 +1,18 @@
 import { describe, it, expect } from 'vitest'
+import { MEMBER_MESSAGE } from '@/lib/portal/fellowship'
 import {
   MESSAGE_MAX,
   STANDARD_MESSAGE,
   excuseForMeeting,
   fillMessage,
+  greetingName,
   messageProblem,
-  messagingOrder,
   missedRegister,
+  noteRecipient,
   sentTo,
   smsHref,
   whatsAppHref,
 } from '@/lib/portal/family-messages'
-import { kidPhoneList } from '@/lib/portal/phones'
 
 /**
  * Family messages (2026-10-19): a servant writes one message for the children
@@ -44,6 +45,58 @@ describe('fillMessage', () => {
   })
 })
 
+// The sender's greeting (2026-10-25): every message starts "Hello, this is
+// Kirolous!", from whoever is signed in, as a parent may not have their number.
+describe('the greeting', () => {
+  const fill = { name: 'Mina', meeting: 'Sunday School', date: '2026-10-18', servant: 'Kirolous' }
+
+  it('the standard message starts with it', () => {
+    expect(fillMessage(STANDARD_MESSAGE, fill)).toMatch(/^Hello, this is Kirolous! We really missed Mina at Sunday School on Sunday\./)
+  })
+
+  it("a member's standard message greets them first", () => {
+    expect(fillMessage(MEMBER_MESSAGE, fill)).toMatch(/^Hello Mina, this is Kirolous! We really missed you at Sunday School on Sunday\./)
+  })
+
+  it("joins a class's own message after its own hello", () => {
+    expect(fillMessage('Hi! We missed {name} today.', fill)).toBe('Hi, this is Kirolous! We missed Mina today.')
+    expect(fillMessage('Hi {name}! We missed you.', fill)).toBe('Hi Mina, this is Kirolous! We missed you.')
+    expect(fillMessage('Hello everyone, we missed {name}.', fill)).toBe('Hello everyone, this is Kirolous, we missed Mina.')
+    expect(fillMessage('Good morning! {name} was missed.', fill)).toBe('Good morning, this is Kirolous! Mina was missed.')
+  })
+
+  it('opens a message that has no hello of its own', () => {
+    expect(fillMessage('We missed {name}.', fill)).toBe('Hello, this is Kirolous! We missed Mina.')
+    expect(fillMessage('Hiking club missed {name}.', fill)).toBe('Hello, this is Kirolous! Hiking club missed Mina.')
+  })
+
+  it('a message that places {servant} itself gets no second greeting', () => {
+    expect(fillMessage('We missed {name}. — {servant}, St. Kyrillos', fill)).toBe('We missed Mina. — Kirolous, St. Kyrillos')
+  })
+
+  it('without a sender, the old message is left as it was, and {servant} still reads', () => {
+    expect(fillMessage('Hi! We missed {name}.', { name: 'Mina', meeting: 'Sunday School', date: '2026-10-18' })).toBe('Hi! We missed Mina.')
+    expect(fillMessage('From {servant}', { name: 'Mina', meeting: 'Sunday School', date: '2026-10-18' })).toBe('From a servant at St. Kyrillos')
+  })
+})
+
+describe('greetingName', () => {
+  it('is the first name', () => {
+    expect(greetingName('Kirolous Kamel')).toBe('Kirolous')
+    expect(greetingName('  Mina  ')).toBe('Mina')
+  })
+
+  it('keeps a title with the name it belongs to', () => {
+    expect(greetingName('Fr. Pachom')).toBe('Fr. Pachom')
+    expect(greetingName('Tasoni Marcelle Fam')).toBe('Tasoni Marcelle')
+    expect(greetingName('Dr. Mark Adly')).toBe('Dr. Mark')
+  })
+
+  it('says who it is from even without a name', () => {
+    expect(greetingName('')).toBe('a servant at St. Kyrillos')
+  })
+})
+
 describe('messageProblem', () => {
   it('accepts a message', () => {
     expect(messageProblem('We missed {name}.')).toBeNull()
@@ -71,18 +124,6 @@ describe('links that open the message already written', () => {
   it('a number already written with its country code is left as it is', () => {
     expect(smsHref('201001234567', 'Hi')).toBe('sms:+201001234567?&body=Hi')
     expect(whatsAppHref('201001234567', 'Hi')).toBe('https://wa.me/201001234567?text=Hi')
-  })
-})
-
-describe('messagingOrder', () => {
-  it('puts the mother first, as servants text the moms', () => {
-    const phones = kidPhoneList({ fatherPhone: '6155550101', motherPhone: '6155550102', ownPhone: '6155550103' })
-    expect(messagingOrder(phones).map((p) => p.label)).toEqual(['Mother', 'Father', 'Student'])
-  })
-
-  it('then a number the parents share, then the father, then the child', () => {
-    expect(messagingOrder(kidPhoneList({ fatherPhone: '6155550101', motherPhone: '6155550101' })).map((p) => p.label)).toEqual(['Parents'])
-    expect(messagingOrder(kidPhoneList({ fatherPhone: '6155550101', ownPhone: '6155550103' })).map((p) => p.label)).toEqual(['Father', 'Student'])
   })
 })
 
@@ -157,5 +198,20 @@ describe('excuseForMeeting', () => {
 
   it('has nothing to say without one', () => {
     expect(excuseForMeeting([], '2026-10-16', '2026-10-19')).toEqual({ excuse: null, excused: false })
+  })
+})
+
+// Who a sent message is noted as going to: "Father's phone" is noted "To
+// Father" (2026-10-19); a number the parents share, "To Parents" (2026-10-25).
+describe('noteRecipient', () => {
+  it('names the person whose phone or email it was', () => {
+    expect(noteRecipient("Father's phone")).toBe('Father')
+    expect(noteRecipient('Mother’s phone')).toBe('Mother')
+    expect(noteRecipient('Parents’ phone')).toBe('Parents')
+    expect(noteRecipient("Mina's phone")).toBe('Mina')
+  })
+
+  it('keeps any other label as it is', () => {
+    expect(noteRecipient('Parent email 2')).toBe('Parent email 2')
   })
 })

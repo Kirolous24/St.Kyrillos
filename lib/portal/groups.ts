@@ -178,6 +178,127 @@ export function planSplit(
   return moves
 }
 
+/** Follow-up groups are shuffled this often (2026-10-25). */
+export const SHUFFLE_EVERY_MONTHS = 2
+
+/** A class with fewer servants than this is not shuffled: nobody would get anyone new. */
+export const SHUFFLE_MIN_SERVANTS = 2
+
+/** A day some months on, kept to the end of a shorter month (Dec 31 → Feb 28). */
+export function nextShuffleOn(day: string, months: number = SHUFFLE_EVERY_MONTHS): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number]
+  const index = m - 1 + months
+  const year = y + Math.floor(index / 12)
+  const month = ((index % 12) + 12) % 12
+  const last = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`
+}
+
+/**
+ * A shuffle (2026-10-25: "shuffle kids for follow ups every 2 months"): every
+ * child a servant other than the one they have, wherever the numbers allow,
+ * with the groups as even as Split evenly leaves them and brothers and sisters
+ * still together. `random` returns [0, 1); it is Math.random in the portal and
+ * seeded in tests.
+ *
+ * 1. Families (a shared parent phone) in random order, biggest first, each to
+ *    the emptiest servant who is not theirs now and still has room
+ *    (ceil(kids / servants)).
+ * 2. A family left with its own servant swaps with one the same size in
+ *    another group, when neither would end up back with its own.
+ * 3. Split evenly's balancing evens out whatever a big family left uneven.
+ */
+export function planShuffle(kids: readonly GroupKid[], servants: readonly GroupServant[], random: () => number): GroupMove[] {
+  if (servants.length < 2 || kids.length === 0) return []
+  const active = new Set(servants.map((s) => s.id))
+  const current = new Map(kids.map((k) => [k.id, effectiveServant(k.groupServantId, active)]))
+
+  const shuffled = <T>(items: readonly T[]): T[] => {
+    const out = [...items]
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1))
+      ;[out[i], out[j]] = [out[j]!, out[i]!]
+    }
+    return out
+  }
+
+  // A family's servant now: the one most of them have.
+  const holderOf = (unit: readonly string[]): string | null => {
+    const count = new Map<string, number>()
+    for (const id of unit) {
+      const s = current.get(id)
+      if (s) count.set(s, (count.get(s) ?? 0) + 1)
+    }
+    let best: string | null = null
+    for (const [s, n] of Array.from(count.entries())) if (best === null || n > count.get(best)!) best = s
+    return best
+  }
+
+  const units = shuffled(families(kids))
+    .map((ids, i) => ({ ids, holder: holderOf(ids), i }))
+    .sort((a, b) => b.ids.length - a.ids.length || a.i - b.i)
+  const order = shuffled(servants.map((s) => s.id))
+  const rank = new Map(order.map((id, i) => [id, i]))
+  const cap = Math.ceil(kids.length / servants.length)
+  const load = new Map(order.map((id) => [id, 0]))
+  const emptiest = (ids: readonly string[]) =>
+    [...ids].sort((a, b) => load.get(a)! - load.get(b)! || rank.get(a)! - rank.get(b)!)[0]
+
+  const to = new Map<number, string>()
+  units.forEach((u, n) => {
+    const fits = order.filter((id) => load.get(id)! + u.ids.length <= cap)
+    const pick =
+      emptiest(fits.filter((id) => id !== u.holder)) ??
+      emptiest(fits) ??
+      emptiest(order.filter((id) => id !== u.holder)) ??
+      emptiest(order)!
+    to.set(n, pick)
+    load.set(pick, load.get(pick)! + u.ids.length)
+  })
+
+  units.forEach((u, n) => {
+    if (u.holder === null || to.get(n) !== u.holder) return
+    const other = units.findIndex(
+      (v, m) => m !== n && v.ids.length === u.ids.length && to.get(m) !== u.holder && v.holder !== u.holder,
+    )
+    if (other < 0) return
+    const theirs = to.get(other)!
+    to.set(other, u.holder)
+    to.set(n, theirs)
+  })
+
+  const assigned = new Map<string, string>()
+  units.forEach((u, n) => u.ids.forEach((id) => assigned.set(id, to.get(n)!)))
+  const shuffledKids = kids.map((k) => ({ ...k, groupServantId: assigned.get(k.id) ?? null, groupAssignedAt: null }))
+  for (const m of planSplit(shuffledKids, servants)) assigned.set(m.kidId, m.to)
+
+  const moves: GroupMove[] = []
+  for (const k of kids) {
+    const from = current.get(k.id) ?? null
+    const dest = assigned.get(k.id)!
+    if (dest !== from) moves.push({ kidId: k.id, from, to: dest })
+  }
+  return moves
+}
+
+/** "a", "a and b", "a, b and c". */
+function andList(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}
+
+/** What a servant is told when their class's groups are shuffled (2026-10-25). */
+export function shuffleNotice(className: string, kidNames: readonly string[]): { title: string; body: string; href: string } {
+  const shown = kidNames.slice(0, 6)
+  const rest = kidNames.length - shown.length
+  const names = rest > 0 ? `${shown.join(', ')} and ${rest} more` : andList(shown)
+  return {
+    title: 'Your follow-up group changed',
+    body: `${className}: you now follow up with ${kidNames.length} ${kidNames.length === 1 ? 'child' : 'children'}: ${names}.`,
+    href: '/portal/my-group',
+  }
+}
+
 export function groupHealth(kids: readonly GroupKid[], servants: readonly GroupServant[]): GroupHealth {
   if (servants.length === 0) return { unassigned: 0, emptyServants: [], uneven: false, flagged: false, loads: {} }
   const active = new Set(servants.map((s) => s.id))

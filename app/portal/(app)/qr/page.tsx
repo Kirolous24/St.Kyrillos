@@ -33,14 +33,20 @@ export default async function QrHubPage({
       : searchParams.mode === 'meeting'
         ? ('MEETING' as const)
         : ('ATTENDANCE' as const)
-  const all = await listVisibleClasses(user)
-  const classes = all.filter((c) => can(user, 'attendance.write', { classId: c.id, classStage: c.stage }))
+  // The classes this person checks in: their own, and the other half of a
+  // boys'/girls' pair, for attendance only (2026-10-25). `points` says whether
+  // they give that class points too, so a paired class is not offered there.
+  const all = await listVisibleClasses(user, { attendancePartners: true })
+  const classes = all
+    .filter((c) => can(user, 'attendance.take', { classId: c.id, classStage: c.stage }))
+    .map((c) => ({ ...c, points: can(user, 'points.write', { classId: c.id, classStage: c.stage }) }))
   // A Fellowship meeting checks in from its own page (2026-10-24): members tap
   // their names, no sign-in. Offered here so nobody looks for it in vain.
   const meetings = (await listVisibleClasses(user, { fellowship: 'only' })).filter((c) =>
     can(user, 'attendance.write', { classId: c.id, classStage: c.stage }),
   )
   const classIds = classes.map((c) => c.id)
+  const pointsClassIds = classes.filter((c) => c.points).map((c) => c.id)
   /**
    * The admin's class workspace links here with `?class=`, so the code opens
    * already pointed at that class instead of making them pick it again. Only an
@@ -56,9 +62,9 @@ export default async function QrHubPage({
       orderBy: { sortOrder: 'asc' },
       select: { key: true, label: true, points: true },
     }),
-    classIds.length
+    pointsClassIds.length
       ? prisma.pointActivity.findMany({
-          where: { isActive: true, points: { gt: 0 }, OR: [{ classId: null }, { classId: { in: classIds } }] },
+          where: { isActive: true, points: { gt: 0 }, OR: [{ classId: null }, { classId: { in: pointsClassIds } }] },
           orderBy: { label: 'asc' },
           select: { id: true, label: true, points: true, classId: true },
         })
@@ -130,7 +136,7 @@ export default async function QrHubPage({
             </Callout>
           </div>
           <GroupCodePanel
-            classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+            classes={classes.map((c) => ({ id: c.id, name: c.name, points: c.points }))}
             preselectClassId={preselectClassId}
             sessions={sessions}
             activities={activities}
@@ -143,7 +149,7 @@ export default async function QrHubPage({
         </>
       ) : (
         <ScanPanel
-          classes={classes.map((c) => ({ id: c.id, name: c.name }))}
+          classes={classes.map((c) => ({ id: c.id, name: c.name, points: c.points }))}
           sessions={sessions}
           activities={activities}
           /* MEETING is a group-code flow only — the scanner has no such mode, so

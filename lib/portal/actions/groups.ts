@@ -7,7 +7,7 @@ import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { audit } from '../audit'
 import { planSplit } from '../groups'
-import { applyGroupMoves, loadClassGroups } from '../data/groups'
+import { applyGroupMoves, loadClassGroups, shuffleClassGroups } from '../data/groups'
 import { studentName } from '../data/students'
 
 function revalidateGroups(classId: string) {
@@ -86,5 +86,24 @@ export async function moveKidToGroup(studentId: string, servantId: string): Prom
     revalidateGroups(s.classId)
     revalidatePath(`/portal/students/${s.id}`)
     return undefined
+  })
+}
+
+/**
+ * Shuffle now (2026-10-25): the class's groups shuffled at once, as they are
+ * every two months, and the two months started again. For whoever arranges
+ * the groups: the class Coordinator and Assistant Coordinator, the stage
+ * overseer and the admin.
+ */
+export async function shuffleGroupsNow(classId: string): Promise<ActionResult<{ moved: number; nextOn: string }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const cls = await assertClassAction(user, classId, 'group.manage')
+    if (cls.stage === 'FELLOWSHIP') throw new PortalError('A Fellowship meeting keeps its groups; they are not shuffled.')
+    const r = await shuffleClassGroups(cls.id)
+    if (!r.shuffled) throw new PortalError('This class has fewer than two servants, so there is nobody to shuffle the children between.')
+    await audit(user, 'groups.shuffle', 'class', cls.id, `${cls.name}: shuffled the follow-up groups (${r.moved} moved); next shuffle ${r.nextOn}`)
+    revalidateGroups(cls.id)
+    return { moved: r.moved, nextOn: r.nextOn }
   })
 }

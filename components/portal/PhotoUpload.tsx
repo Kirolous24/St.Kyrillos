@@ -5,62 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Camera, Trash2 } from 'lucide-react'
 import { Avatar, buttonClass, Callout } from './ui'
 import { cn } from '@/lib/utils'
+import { downscalePhoto, PHOTO_MAX_EDGE } from './photo-resize'
 import type { ActionResult } from '@/lib/portal/action-result'
-
-/**
- * Photos are stored as small data URLs on the row itself — there is no object
- * storage — so the browser does the shrinking: at most 256×256, re-encoded as
- * JPEG and squeezed under ~60 KB before it is ever posted. The server checks
- * the prefix and the length again; this is a courtesy, not a control.
- */
-const MAX_EDGE = 256
-const TARGET_CHARS = 60_000
-const ACCEPTED = ['image/jpeg', 'image/png']
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('That file could not be read as an image.'))
-    img.src = src
-  })
-}
-
-async function downscale(file: File): Promise<string> {
-  if (!ACCEPTED.includes(file.type)) throw new Error('Choose a JPEG or PNG photo.')
-  if (file.size > 20 * 1024 * 1024) throw new Error('That photo is very large. Try one under 20 MB.')
-
-  const url = URL.createObjectURL(file)
-  try {
-    const img = await loadImage(url)
-    const longest = Math.max(img.naturalWidth, img.naturalHeight) || MAX_EDGE
-    const scale = Math.min(1, MAX_EDGE / longest)
-    const width = Math.max(1, Math.round(img.naturalWidth * scale))
-    const height = Math.max(1, Math.round(img.naturalHeight * scale))
-
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('This browser cannot resize images.')
-    // JPEG has no alpha: flatten onto the cream page ground rather than black.
-    ctx.fillStyle = '#FFFDF8'
-    ctx.fillRect(0, 0, width, height)
-    ctx.drawImage(img, 0, 0, width, height)
-
-    let quality = 0.82
-    let out = canvas.toDataURL('image/jpeg', quality)
-    while (out.length > TARGET_CHARS && quality > 0.35) {
-      quality -= 0.12
-      out = canvas.toDataURL('image/jpeg', quality)
-    }
-    if (!out.startsWith('data:image/jpeg;base64,')) throw new Error('That photo could not be converted.')
-    if (out.length > TARGET_CHARS * 1.5) throw new Error('That photo is still too large. Try cropping it first.')
-    return out
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
 
 interface Props {
   /** The photo currently saved, if any. */
@@ -87,7 +33,7 @@ export function PhotoUpload({ current, name, action, removeAction, saveLabel = '
     setDone(null)
     if (!file) return
     try {
-      setPreview(await downscale(file))
+      setPreview(await downscalePhoto(file))
     } catch (err) {
       setPreview(null)
       setError(err instanceof Error ? err.message : 'That photo could not be used.')
@@ -142,13 +88,13 @@ export function PhotoUpload({ current, name, action, removeAction, saveLabel = '
           <input
             ref={fileRef}
             type="file"
-            accept="image/jpeg,image/png"
+            accept="image/*"
             className="sr-only"
             onChange={(e) => void choose(e.target.files?.[0])}
           />
         </label>
         <p className="text-[11px] leading-relaxed text-parch-500">
-          JPEG or PNG · up to 20 MB · shrunk to {MAX_EDGE}&times;{MAX_EDGE} in your browser before it is sent.
+          Any photo · up to 20 MB · shrunk to {PHOTO_MAX_EDGE}&times;{PHOTO_MAX_EDGE} in your browser before it is sent.
         </p>
       </div>
 

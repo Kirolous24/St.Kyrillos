@@ -54,9 +54,12 @@ export function FamilyMessenger({
   saved,
   kids,
   members = false,
+  sender,
 }: {
   /** A Fellowship meeting (2026-10-24): each message goes to the member, not a family. */
   members?: boolean
+  /** Who is signed in, as the greeting names them: "Hello, this is Kirolous!" (2026-10-25). */
+  sender: string
   classId: string
   sessionKey: string
   meeting: string
@@ -117,7 +120,7 @@ export function FamilyMessenger({
 
   const problem = messageProblem(text)
   const changed = text !== saved.body
-  const preview = kids[0] ? fillMessage(text, { name: kids[0].firstName, meeting, date }) : ''
+  const preview = kids[0] ? fillMessage(text, { name: kids[0].firstName, meeting, date, servant: sender }) : ''
 
   function saveAsClassMessage() {
     setNotice(null)
@@ -316,7 +319,7 @@ export function FamilyMessenger({
         <ul className="space-y-2.5">
           {kids.map((kid) => {
             const phone = kid.phones.find((p) => p.digits === chosen[kid.id]) ?? kid.phones[0] ?? null
-            const message = fillMessage(text, { name: kid.firstName, meeting, date })
+            const message = fillMessage(text, { name: kid.firstName, meeting, date, servant: sender })
             const href = phone ? (channel === 'whatsapp' ? whatsAppHref(phone.digits, message) : smsHref(phone.digits, message)) : null
             const local = justSent[kid.id]
             const isNext = next?.id === kid.id

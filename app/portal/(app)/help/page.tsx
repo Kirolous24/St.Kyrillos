@@ -1,6 +1,6 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen, HeartHandshake } from 'lucide-react'
+import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen, HeartHandshake, ClipboardList, ClipboardCheck, UsersRound } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { PageHeader, Card, IconTile } from '@/components/portal/ui'
 
@@ -125,7 +125,9 @@ export default async function HelpPage() {
           Children earn points for each session they attend, for their quiz scores, and for activities. Every class
           has the church&rsquo;s activities, and a class can add its own under <b className={S}>Class activities</b>{' '}
           and choose what each is worth. In a class&rsquo;s <b className={S}>Points</b> tab, pick the children and an
-          activity, then <b className={S}>+ Give</b>. Taking points away always costs 2 and needs a reason.{' '}
+          activity, then <b className={S}>+ Give</b>. For anything else, choose <b className={S}>Custom</b>: type how
+          many points and what for, and tick <b className={S}>Save for next time</b> to keep it as one of the
+          class&rsquo;s own. Taking points away always costs 2 and needs a reason.{' '}
           {user.role === 'ADMIN' ? (
             <>
               You set the session values and the church&rsquo;s activities in <b className={S}>Sessions &amp; Points</b>.
@@ -136,8 +138,10 @@ export default async function HelpPage() {
         </Topic>
         <Topic icon={<Contact className={ICON} />} tone="#DC2626" title="Correct a student’s details" href={studentsHref}>
           Open a student to see their profile, then <b className={S}>Edit student info</b> to fix their name, grade,
-          birthday, address, or a parent&rsquo;s name and phone number. Only the admin can move a student to a different
-          class.
+          birthday, address, or a parent&rsquo;s name and phone number. <b className={S}>Call first</b> chooses whose
+          number the Call and WhatsApp buttons use; it is the mother&rsquo;s unless you pick another. A class&rsquo;s{' '}
+          <b className={S}>Photos</b> page takes every child&rsquo;s photo in one go, which helps with the youngest, who
+          cannot add their own. Only the admin can move a student to a different class.
         </Topic>
 
         <Topic icon={<QrCode className={ICON} />} tone="#2563EB" title="Take attendance by QR code" href="/portal/qr">
@@ -171,6 +175,35 @@ export default async function HelpPage() {
           camera, no app or sign-in, and tap their own name. Press <b className={S}>Done</b> when everyone is in, so the
           portal can open follow-ups for whoever keeps missing (two meetings in a row, unless the admin chose another
           number). There are no points, quizzes or grades.
+        </Topic>
+
+        {/* 2026-10-25 — the planner, the week's presentation and daily reminders. */}
+        <Topic icon={<ClipboardList className={ICON} />} tone="#B45309" title="Your assignments, the planner and the presentation" href="/portal/assignments">
+          <b className={S}>My Assignments</b> lists what you are down for, with the <b className={S}>Planner</b> every
+          class uses, and each of your classes&rsquo; presentation for this Sunday and next: open it, or add or change
+          the Canva link for everyone serving the class. Once your part is ready, tap <b className={S}>Mark done</b>;
+          until then you are reminded each evening, and on Saturday evening of everything for Sunday. The 5th &amp; 6th
+          and 7th &amp; 8th boys&rsquo; and girls&rsquo; classes can also take each other&rsquo;s attendance: open{' '}
+          <b className={S}>Attendance</b> and pick the class.
+        </Topic>
+
+        {/* 2026-10-25 — groups shuffled every two months; the sender's greeting. */}
+        <Topic icon={<UsersRound className={ICON} />} tone="#5B21B6" title="Follow-up groups and messages" href="/portal/my-group">
+          Each child has one servant who follows them up, on <b className={S}>My Group</b>. Every two months the groups are
+          shuffled, so each child gets to know another servant; brothers and sisters stay together, and everyone is told
+          their new group. A class&rsquo;s Coordinator can press <b className={S}>Shuffle now</b> on the class page, which
+          starts the two months again. Messages to families start &ldquo;Hello, this is&rdquo; and your name, so a parent
+          knows who is writing. On <b className={S}>Follow-ups</b>, pick a <b className={S}>Class</b> at the top to see
+          just that class.
+        </Topic>
+
+        {/* 2026-10-26 — one quiz posted to several classes. */}
+        <Topic icon={<ClipboardCheck className={ICON} />} tone="#0E7490" title="Post one quiz to several classes" href="/portal/exams">
+          On <b className={S}>Exams &amp; Quizzes</b>, write a quiz or import a sheet of them, then tick the other classes
+          under <b className={S}>Also post to</b>. Each class gets its own copy, with its own results. You can post to
+          every class you serve; a Stage coordinator to their stage; the admin to any class. The 5th &amp; 6th and
+          7th &amp; 8th Coordinators and Assistant Coordinators can post to the other half of their pair too, though its
+          results stay with its own servants.
         </Topic>
 
         <Topic icon={<BookOpen className={ICON} />} tone="#6F1D1B" title="Find the curriculum" href="/portal/curriculum">

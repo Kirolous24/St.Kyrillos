@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { registerWhere, type SessionScope } from '../class-members'
 import { churchToday, formatDateOnly, sundayOnOrBefore, toUTCDate } from '../dates'
-import { STANDARD_MESSAGE, excuseForMeeting, messagingOrder, missedRegister, sentTo } from '../family-messages'
+import { STANDARD_MESSAGE, excuseForMeeting, missedRegister, sentTo } from '../family-messages'
 import { MEMBER_MESSAGE, isFellowship } from '../fellowship'
 import { formatDateTime } from '../format'
 import { kidPhoneList, type KidPhone } from '../phones'
@@ -159,7 +159,7 @@ export async function loadMissedMeeting(args: {
     orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
     select: {
       id: true, firstName: true, lastName: true, createdAt: true, classId: true,
-      fatherPhone: true, motherPhone: true,
+      fatherPhone: true, motherPhone: true, callFirst: true,
       account: { select: { phone: true } },
       memberships: { where: { classId }, select: { addedAt: true } },
     },
@@ -197,7 +197,8 @@ export async function loadMissedMeeting(args: {
       name: studentName(s),
       firstName: s.firstName.trim() || studentName(s),
       marked,
-      phones: messagingOrder(kidPhoneList({ fatherPhone: s.fatherPhone, motherPhone: s.motherPhone, ownPhone: s.account.phone })),
+      // The mother's first, or the number a servant chose for this child (2026-10-25).
+      phones: kidPhoneList({ fatherPhone: s.fatherPhone, motherPhone: s.motherPhone, ownPhone: s.account.phone, callFirst: s.callFirst }),
       excuse,
       excused,
       sent: sent

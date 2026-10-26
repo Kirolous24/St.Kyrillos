@@ -15,6 +15,7 @@ export const STUDENT_FORM_FIELDS = [
   'fatherPhone',
   'motherName',
   'motherPhone',
+  'callFirst',
   'parentEmails',
   'email',
   'phone',

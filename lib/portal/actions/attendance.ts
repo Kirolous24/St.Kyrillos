@@ -44,7 +44,7 @@ export async function saveAttendance(
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = SaveSchema.parse(raw)
-    const cls = await assertClassAction(user, input.classId, 'attendance.write')
+    const cls = await assertClassAction(user, input.classId, 'attendance.take')
 
     const date = parseDateOnly(input.date)
     if (!date) throw new PortalError('Pick a valid date.')
@@ -201,7 +201,7 @@ export async function registerMarks(
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = RegisterSchema.parse(raw)
-    const cls = await assertClassAction(user, input.classId, 'attendance.write')
+    const cls = await assertClassAction(user, input.classId, 'attendance.take')
     const date = parseDateOnly(input.date)
     if (!date) throw new PortalError('Pick a valid date.')
     const rows = await prisma.attendanceRecord.findMany({
@@ -244,7 +244,7 @@ export async function removeAttendanceSession(
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = RemoveSchema.parse(raw)
-    const cls = await assertClassAction(user, input.classId, 'attendance.write')
+    const cls = await assertClassAction(user, input.classId, 'attendance.take')
 
     const date = parseDateOnly(input.date)
     if (!date) throw new PortalError('Pick a valid date.')

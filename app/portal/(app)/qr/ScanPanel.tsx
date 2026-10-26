@@ -14,7 +14,8 @@ import { cn } from '@/lib/utils'
 type Mode = 'ATTENDANCE' | 'POINTS'
 
 interface Props {
-  classes: Array<{ id: string; name: string }>
+  /** `points: false`: attendance only, the other half of a pair (2026-10-25). */
+  classes: Array<{ id: string; name: string; points?: boolean }>
   sessions: Array<{ key: string; label: string; points: number }>
   activities: Array<{ id: string; label: string; points: number; classId: string | null }>
   /**
@@ -95,8 +96,11 @@ const scanReview = createLocalToggle('portal:scanReview', true)
 
 export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTENDANCE' }: Props) {
   const [pending, startTransition] = useTransition()
-  const [classId, setClassId] = useState(classes[0]?.id ?? '')
+  const pointsClasses = classes.filter((c) => c.points !== false)
+  const [classId, setClassId] = useState((initialMode === 'POINTS' ? pointsClasses[0] : classes[0])?.id ?? '')
   const [mode, setMode] = useState<Mode>(initialMode)
+  // Points go only to a class this person gives points in.
+  const shown = mode === 'POINTS' ? pointsClasses : classes
   const [sessionKey, setSessionKey] = useState(sessions.find((s) => s.key === 'sunday')?.key ?? sessions[0]?.key ?? '')
   const [activityId, setActivityId] = useState(activities[0]?.id ?? '')
   const [manual, setManual] = useState('')
@@ -482,8 +486,8 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
         <Card title="What each scan does" icon={<SlidersHorizontal className="h-4 w-4" aria-hidden />}>
           <Field label="Class">
             <select value={classId} onChange={(e) => setClassId(e.target.value)} className={selectClass}>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+              {shown.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}{c.points === false ? ' (attendance only)' : ''}</option>
               ))}
             </select>
           </Field>
@@ -493,7 +497,10 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
               <button
                 key={value}
                 type="button"
-                onClick={() => setMode(value)}
+                onClick={() => {
+                  setMode(value)
+                  if (value === 'POINTS' && !pointsClasses.some((c) => c.id === classId)) setClassId(pointsClasses[0]?.id ?? '')
+                }}
                 aria-pressed={mode === value}
                 /* A stable hook for the check that ?mode=points actually lands
                    in points mode — the visible label is copy and may change. */

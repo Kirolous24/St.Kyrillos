@@ -11,12 +11,13 @@
 
 import { DAY_NAMES, toUTCDate } from './dates'
 import { currentExcuse, excuseState, isExcusedOn, type ExcuseWindow } from './excuses'
-import type { KidPhone } from './phones'
 
 export const MESSAGE_MAX = 1000
 
 /** What a servant may write in braces; each family gets its own child's copy. */
 export const MESSAGE_PLACEHOLDERS = [
+  // The sender's own name (2026-10-25), from whoever is signed in.
+  { token: '{servant}', label: 'Your name' },
   { token: '{name}', label: 'Child’s first name' },
   { token: '{meeting}', label: 'The meeting' },
   { token: '{day}', label: 'Its weekday' },
@@ -29,7 +30,7 @@ export const MESSAGE_PLACEHOLDERS = [
  * phone that gets it.
  */
 export const STANDARD_MESSAGE =
-  'Hi! We really missed {name} at {meeting} on {day}. We hope everything is well. ' +
+  'Hello, this is {servant}! We really missed {name} at {meeting} on {day}. We hope everything is well. ' +
   '{name} is always in our prayers, and it would be so nice to see {name} again soon. God bless you always!'
 
 const MONTH_NAMES = [
@@ -44,18 +45,52 @@ export interface MessageFill {
   meeting: string
   /** The day of that meeting, YYYY-MM-DD. */
   date: string
+  /** Who is sending it (greetingName of the signed-in servant), 2026-10-25. */
+  servant?: string
 }
 
-/** One family's copy: the placeholders filled, anything else in braces left alone. */
+/** Who a message is from when nobody is named. */
+const SENDER_FALLBACK = 'a servant at St. Kyrillos'
+
+/** Titles kept with the name after them: "Fr. Pachom", "Tasoni Marcelle". */
+const TITLES = new Set(['fr', 'fr.', 'father', 'abouna', 'abuna', 'tasoni', 't.', 'dr', 'dr.', 'deacon', 'dn', 'dn.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'miss', 'uncle', 'aunt', 'brother', 'sister'])
+
+/**
+ * How the sender is named in "Hello, this is Kirolous!" (2026-10-25): their
+ * first name, with a title kept ("Fr. Pachom").
+ */
+export function greetingName(displayName: string): string {
+  const words = displayName.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return SENDER_FALLBACK
+  return TITLES.has(words[0]!.toLowerCase()) && words[1] ? `${words[0]} ${words[1]}` : words[0]!
+}
+
+/** A message's own hello at its start: "Hi!", "Hi Mina!", "Hello everyone," … */
+const OWN_HELLO = /^(\s*(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^!,.?\n]{0,40}?)\s*([!,.])/i
+
+/**
+ * One family's copy: the placeholders filled, anything else in braces left alone.
+ *
+ * With a sender (2026-10-25) it starts "Hello, this is Kirolous!". A class's
+ * own message that does not place {servant} itself gets the name after its own
+ * hello ("Hi, this is Kirolous! …"), or the greeting in front when it has none,
+ * so no family gets a message from a number they cannot place.
+ */
 export function fillMessage(body: string, fill: MessageFill): string {
   const d = toUTCDate(fill.date)
+  const sender = fill.servant?.trim() ?? ''
   const values: Record<string, string> = {
     name: fill.name,
     meeting: fill.meeting,
     day: DAY_NAMES[d.getUTCDay()] ?? '',
     date: `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`,
+    servant: sender || SENDER_FALLBACK,
   }
-  return body.replace(/\{\s*(name|meeting|day|date)\s*\}/gi, (_, key: string) => values[key.toLowerCase()] ?? '')
+  const placesSender = /\{\s*servant\s*\}/i.test(body)
+  const text = body.replace(/\{\s*(name|meeting|day|date|servant)\s*\}/gi, (_, key: string) => values[key.toLowerCase()] ?? '')
+  if (!sender || placesSender) return text
+  if (OWN_HELLO.test(text)) return text.replace(OWN_HELLO, (_, hello: string, mark: string) => `${hello}, this is ${sender}${mark}`)
+  return `Hello, this is ${sender}! ${text.trimStart()}`
 }
 
 /** What is wrong with a message before it is saved or sent, or null. */
@@ -82,13 +117,6 @@ export function whatsAppHref(digits: string, text: string): string {
  */
 export function smsHref(digits: string, text: string): string {
   return `sms:+${international(digits)}?&body=${encodeURIComponent(text)}`
-}
-
-const MESSAGING_RANK: Record<KidPhone['label'], number> = { Mother: 0, Parents: 1, Father: 2, Student: 3 }
-
-/** The family's numbers in the order a message goes: the mother's first, the child's own last. */
-export function messagingOrder(phones: readonly KidPhone[]): KidPhone[] {
-  return [...phones].sort((a, b) => MESSAGING_RANK[a.label] - MESSAGING_RANK[b.label])
 }
 
 type Mark = 'PRESENT' | 'EXCUSED' | 'ABSENT'
@@ -125,6 +153,14 @@ export function missedRegister(args: {
   return out
 }
 
+
+/**
+ * Who a message is noted as going to, from the composer's label for the number
+ * used: "Father's phone" → "Father", "Parents’ phone" → "Parents".
+ */
+export function noteRecipient(label: string): string {
+  return label.replace(/['’]s? phone$/, '')
+}
 
 /** Who in the family a recorded message went to: the note reads "To Mother: …". */
 export function sentTo(note: string | null | undefined): string | null {

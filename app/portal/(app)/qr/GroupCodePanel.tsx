@@ -19,7 +19,12 @@ interface Props {
   initialMode?: Mode
   /** From ?class= — the class this code should already be pointed at. */
   preselectClassId?: string | null
-  classes: Array<{ id: string; name: string }>
+  /**
+   * `points: false` is a class this servant takes attendance for and nothing
+   * else (the other half of a boys'/girls' pair, 2026-10-25): it is not offered
+   * for a points code.
+   */
+  classes: Array<{ id: string; name: string; points?: boolean }>
   /**
    * F0013 — the servant's own class ids. The prototype pre-checked the servant's
    * class and labelled it "(my class)"; here a servant who serves one class among
@@ -171,6 +176,9 @@ export function GroupCodePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, ended, pending, autoCycles, mode])
 
+  // A points code is for the classes this person gives points in.
+  const shown = mode === 'POINTS' ? classes.filter((c) => c.points !== false) : classes
+
   function toggleClass(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]))
   }
@@ -187,10 +195,11 @@ export function GroupCodePanel({
         setScanned([])
         return setCode(result.data)
       }
-      if (selected.length === 0) return setError('Pick at least one class.')
+      const chosen = selected.filter((id) => shown.some((c) => c.id === id))
+      if (chosen.length === 0) return setError('Pick at least one class.')
       const result = await createGroupCode({
         mode,
-        classIds: selected,
+        classIds: chosen,
         sessionKey: mode === 'ATTENDANCE' ? sessionKey : undefined,
         activityId: mode === 'POINTS' ? activityId : undefined,
       })
@@ -351,7 +360,7 @@ export function GroupCodePanel({
             <fieldset className="mb-3.5">
               <legend className="mb-1.5 block text-[12px] font-bold text-parch-700">Classes this code covers</legend>
               <div className="max-h-[180px] overflow-y-auto rounded-[10px] border-[1.5px] border-parch-200 bg-parch-50">
-                {classes.map((c) => (
+                {shown.map((c) => (
                   <label
                     key={c.id}
                     className="flex min-h-[40px] cursor-pointer items-center gap-2.5 border-t border-[#F5F2ED] px-3 py-2 text-[12.5px] first:border-t-0"
@@ -367,6 +376,9 @@ export function GroupCodePanel({
                       <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.5px] text-brand-gold-dark">
                         my class
                       </span>
+                    )}
+                    {c.points === false && (
+                      <span className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.5px] text-parch-500">attendance only</span>
                     )}
                   </label>
                 ))}

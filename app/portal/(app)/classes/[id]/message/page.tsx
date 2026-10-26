@@ -11,7 +11,7 @@ import { PageHeader, EmptyState, LinkButton, inputClass, buttonClass } from '@/c
 import { cn } from '@/lib/utils'
 import { FamilyMessenger } from './FamilyMessenger'
 import { MEMBER_MESSAGE, isFellowship } from '@/lib/portal/fellowship'
-import { STANDARD_MESSAGE } from '@/lib/portal/family-messages'
+import { STANDARD_MESSAGE, greetingName } from '@/lib/portal/family-messages'
 
 export const metadata = { title: 'Message families' }
 
@@ -160,6 +160,7 @@ export default async function MessageFamiliesPage({
           saved={saved}
           kids={missed.kids}
           members={members}
+          sender={greetingName(user.displayName)}
         />
       )}
     </>

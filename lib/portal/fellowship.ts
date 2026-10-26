@@ -154,7 +154,7 @@ export const SELF_CHECKIN_NOTE = 'Self check-in'
  * to the member rather than to a parent.
  */
 export const MEMBER_MESSAGE =
-  'Hi {name}! We really missed you at {meeting} on {day}. We hope everything is well. ' +
+  'Hello {name}, this is {servant}! We really missed you at {meeting} on {day}. We hope everything is well. ' +
   'You are always in our prayers, and it would be so good to see you again soon. God bless you!'
 
 /* ── Joining and leaving a meeting ──────────────────────────────────────── */

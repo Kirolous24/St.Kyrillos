@@ -1,6 +1,7 @@
 import Link from '@/components/portal/Link'
 import { redirect } from 'next/navigation'
 import { BarChart3, ClipboardList, GraduationCap, HelpCircle, Pencil, Percent, Send, ThumbsDown, Trophy, Users } from 'lucide-react'
+import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '@/lib/portal/session'
 import { requireExamRead, examDetail, examQuestions, canWriteExam } from '@/lib/portal/data/exams'
 import { formatDateOnly, churchToday } from '@/lib/portal/dates'
@@ -50,7 +51,7 @@ function passRate(results: readonly { percentage: number }[]): number | null {
   return Math.round((results.filter((r) => r.percentage >= 70).length / results.length) * 100)
 }
 
-export default async function ExamDetailPage({ params }: { params: { id: string } }) {
+export default async function ExamDetailPage({ params, searchParams }: { params: { id: string }; searchParams: { also?: string } }) {
   const user = await requirePortalUser()
   // This page renders the answer key and every classmate's score. Students go
   // to their own quiz list instead — requireExamRead refuses them too, this is
@@ -59,9 +60,15 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
   const exam = await requireExamRead(user, params.id)
   const canWrite = canWriteExam(user, exam)
 
-  const [detail, questions] = await Promise.all([
+  // Just posted to other classes as well (2026-10-26): name them, since the
+  // copy in the other half of a pair is not one the poster can open.
+  const alsoIds = canWrite ? (searchParams.also ?? '').split(',').filter(Boolean).slice(0, 60) : []
+  const [detail, questions, alsoPosted] = await Promise.all([
     examDetail({ id: exam.id, classId: exam.classId, reopenedFor: exam.reopenedFor }),
     examQuestions(exam.id),
+    alsoIds.length
+      ? prisma.schoolClass.findMany({ where: { id: { in: alsoIds } }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], select: { name: true } })
+      : Promise.resolve([]),
   ])
 
   const today = churchToday()
@@ -150,6 +157,14 @@ export default async function ExamDetailPage({ params }: { params: { id: string 
         {exam.reopenedFor.length > 0 && <Badge tone="info">{exam.reopenedFor.length} reopened</Badge>}
         {exam.bibleReading && <Badge tone="gold">Reading: {exam.bibleReading}</Badge>}
       </div>
+
+      {alsoPosted.length > 0 && (
+        <div className="mb-5" data-testid="exam-also-posted">
+          <Callout tone="good" title={`Also posted to ${alsoPosted.map((c) => c.name).join(', ')}`}>
+            Each class has its own copy of this exam, with its own results. This page is {exam.class?.name ?? 'this class'}&rsquo;s.
+          </Callout>
+        </div>
+      )}
 
       {exam.readingMessage && (
         <div className="mb-5">

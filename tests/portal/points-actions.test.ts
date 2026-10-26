@@ -7,7 +7,10 @@ import path from 'node:path'
  * are held here, in the source (2026-09-28):
  * - the list every class sees is the admin's alone;
  * - a class's own activities belong to whoever gives that class points;
- * - giving points never takes an amount from the request.
+ * - giving points for an activity never takes an amount from the request.
+ *
+ * Custom points (2026-10-25) are a separate action, giveCustomPoints, whose
+ * amount is bounded to an activity's range; tests/portal/custom-points.test.ts.
  */
 const source = readFileSync(path.resolve(__dirname, '../../lib/portal/actions/points.ts'), 'utf8')
 

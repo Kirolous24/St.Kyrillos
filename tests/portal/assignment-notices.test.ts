@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   assignedNotice,
   changedNotice,
+  comingSunday,
+  dailyReminderNotice,
   dutyChanges,
   dutyHref,
   notDoneNotice,
@@ -200,5 +202,37 @@ describe('shouldEmail', () => {
     expect(shouldEmail({ email: null, noticeEmails: true, pushDevices: 0 })).toBe(false)
     expect(shouldEmail({ email: '  ', noticeEmails: true, pushDevices: 0 })).toBe(false)
     expect(shouldEmail({ email: 'a@b.c', noticeEmails: false, pushDevices: 0 })).toBe(false)
+  })
+})
+
+// Daily reminders (2026-10-25): every evening but Saturday's, the coming
+// Sunday's parts a servant has not marked done.
+describe('comingSunday', () => {
+  it('is the first Sunday after the day', () => {
+    expect(comingSunday('2026-10-19')).toBe('2026-10-25') // Monday
+    expect(comingSunday('2026-10-21')).toBe('2026-10-25') // Wednesday
+    expect(comingSunday('2026-10-24')).toBe('2026-10-25') // Saturday
+  })
+
+  it('on a Sunday, is the next one', () => {
+    expect(comingSunday('2026-10-25')).toBe('2026-11-01')
+  })
+})
+
+describe('dailyReminderNotice', () => {
+  it('names the parts still to do, with their topics, and how to stop it', () => {
+    expect(
+      dailyReminderNotice([duty({ label: 'Agpeya', topic: 'St. Mary' }), duty({ label: 'Coptic' })], '2026-10-25'),
+    ).toEqual({
+      title: 'Reminder for Sunday, Oct 25',
+      body: 'Agpeya (St. Mary) and Coptic · 5th & 6th Boys. Tap Mark done on each once it’s ready.',
+      href: '/portal/assignments#week-2026-10-19',
+    })
+  })
+
+  it('one part is "it"', () => {
+    expect(dailyReminderNotice([duty({ label: 'Verse' })], '2026-11-01').body).toBe(
+      'Verse · 5th & 6th Boys. Tap Mark done once it’s ready.',
+    )
   })
 })

@@ -106,6 +106,34 @@ export function sundayOfWeek(mondayKey: string): string {
   return addDays(mondayKey, 6)
 }
 
+export interface PresentationWeek {
+  /** The week's Monday, as weeks are stored. */
+  weekStart: string
+  /** "This Sunday · Oct 26". */
+  title: string
+  url: string | null
+}
+
+/** One class's presentations on My Assignments (2026-10-25). */
+export interface PresentationRow {
+  classId: string
+  className: string
+  weeks: PresentationWeek[]
+}
+
+/**
+ * The weeks My Assignments offers a presentation for (2026-10-25): this
+ * Sunday's and next Sunday's, keyed by their Mondays as weeks are stored.
+ */
+export function presentationWeeks(todayKey: string): Array<{ weekStart: string; title: string }> {
+  const monday = mondayOf(todayKey)
+  const next = addDays(monday, 7)
+  return [
+    { weekStart: monday, title: `This Sunday · ${formatMonthDay(sundayOfWeek(monday))}` },
+    { weekStart: next, title: `Next Sunday · ${formatMonthDay(sundayOfWeek(next))}` },
+  ]
+}
+
 /**
  * True once a date box holds a whole, plausible date. Typing a date on a
  * computer fires on every keystroke, so "0002-10-04" arrives before

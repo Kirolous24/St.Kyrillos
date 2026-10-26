@@ -5,7 +5,7 @@
 // between two snapshots, and words the notices. No DB access; tested in
 // tests/portal/assignment-notices.test.ts.
 
-import { DAY_NAMES, mondayOf, toUTCDate } from './dates'
+import { DAY_NAMES, addDays, dayOfWeek, mondayOf, toUTCDate } from './dates'
 import { formatMonthDay } from './format'
 
 /** How long a servant's notices stay in the bell, and in the database. */
@@ -162,6 +162,26 @@ export function reminderNotice(due: readonly Duty[]): NoticeText {
     title: 'Reminder for tomorrow',
     body: `${list(duties.map((d) => (d.topic ? `${d.label} (${d.topic})` : d.label)))} · ${classes(duties)}`,
     href: dutyHref(duties[0]?.due ?? null),
+  }
+}
+
+/** The first Sunday after this day: on a Sunday, the next one (2026-10-25). */
+export function comingSunday(today: string): string {
+  return addDays(today, 7 - dayOfWeek(today))
+}
+
+/**
+ * The daily reminder (2026-10-25): every evening but the one before, the
+ * coming Sunday's parts this servant has not marked done. It stops once they
+ * are, which is the way to stop it.
+ */
+export function dailyReminderNotice(due: readonly Duty[], sunday: string): NoticeText {
+  const duties = ordered(due)
+  const how = duties.length === 1 ? 'Tap Mark done once it’s ready.' : 'Tap Mark done on each once it’s ready.'
+  return {
+    title: `Reminder for ${dayLabel(sunday)}`,
+    body: `${list(duties.map((d) => (d.topic ? `${d.label} (${d.topic})` : d.label)))} · ${classes(duties)}. ${how}`,
+    href: dutyHref(sunday),
   }
 }
 

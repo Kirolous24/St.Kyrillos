@@ -22,7 +22,14 @@ export async function loadPortalUser(where: Prisma.AccountWhereUniqueInput): Pro
         select: {
           id: true,
           stageOversight: true,
-          classes: { select: { classId: true, title: true, class: { select: { stage: true } } } },
+          classes: {
+            select: {
+              classId: true,
+              title: true,
+              // Its attendance partner, stored either way (2026-10-25).
+              class: { select: { stage: true, attendancePartnerId: true, attendancePartnerOf: { select: { id: true } } } },
+            },
+          },
         },
       },
     },
@@ -61,5 +68,29 @@ export async function loadPortalUser(where: Prisma.AccountWhereUniqueInput): Pro
     fellowshipClassIds: account.servant
       ? account.servant.classes.filter((c) => c.class?.stage === 'FELLOWSHIP').map((c) => c.classId)
       : [],
+    // The registers they may also take: their classes' partners they do not
+    // serve themselves (2026-10-25).
+    attendanceOnly: account.servant ? attendancePartners(account.servant.classes, classIds) : [],
+    // The classes they may also post exams to: the partners of the classes
+    // they are Coordinator or Assistant Coordinator of (2026-10-26).
+    examPostOnly: account.servant
+      ? attendancePartners(
+          account.servant.classes.filter((c) => c.title === 'COORDINATOR' || c.title === 'ASSISTANT_COORDINATOR'),
+          classIds,
+        )
+      : [],
   }
+}
+
+function attendancePartners(
+  classes: ReadonlyArray<{ class?: { attendancePartnerId: string | null; attendancePartnerOf: Array<{ id: string }> } | null }>,
+  own: readonly string[],
+): string[] {
+  const out: string[] = []
+  for (const c of classes) {
+    for (const id of [c.class?.attendancePartnerId, ...(c.class?.attendancePartnerOf ?? []).map((p) => p.id)]) {
+      if (id && !own.includes(id) && !out.includes(id)) out.push(id)
+    }
+  }
+  return out
 }

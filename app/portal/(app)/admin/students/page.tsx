@@ -53,7 +53,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
     take: 500,
     select: {
       id: true, firstName: true, lastName: true, grade: true, classId: true, importNotes: true,
-      fatherPhone: true, motherPhone: true,
+      fatherPhone: true, motherPhone: true, callFirst: true,
       class: { select: { name: true } }, account: { select: { loginId: true, photo: true, lastLoginAt: true, phone: true } },
     },
   })

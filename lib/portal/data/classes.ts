@@ -38,6 +38,12 @@ export interface ClassSummary {
  */
 export interface ClassListOptions {
   fellowship?: 'exclude' | 'include' | 'only'
+  /**
+   * Also the classes whose register this servant may take and nothing else
+   * (2026-10-25, PortalUser.attendanceOnly). Only the register's own pick
+   * lists ask for them.
+   */
+  attendancePartners?: boolean
 }
 
 export async function listVisibleClasses(user: PortalUser, opts: ClassListOptions = {}): Promise<ClassSummary[]> {
@@ -61,6 +67,7 @@ export async function listVisibleClasses(user: PortalUser, opts: ClassListOption
     },
   })
   const visible = new Set(visibleClassIds(user, all))
+  if (opts.attendancePartners) for (const id of user.attendanceOnly ?? []) visible.add(id)
   return all
     .filter((c) => visible.has(c.id))
     .filter((c) => mode === 'include' || (mode === 'only') === isFellowship(c.stage))
@@ -85,7 +92,9 @@ export async function requireClassAccess(user: PortalUser, classId: string, acti
     select: { id: true, name: true, stage: true, visitationThreshold: true, isActive: true, photo: true, takesOtherClasses: true },
   })
   if (!cls) notFound()
-  if (!can(user, 'class.read', { classId: cls.id, classStage: cls.stage })) notFound()
+  // A paired class's register is open to the other class's servants, who may
+  // not read the class itself (2026-10-25): taking it is all they may do.
+  if (action !== 'attendance.take' && !can(user, 'class.read', { classId: cls.id, classStage: cls.stage })) notFound()
   // A page the user may read but not act on (e.g. pastor opening the
   // attendance taker) is simply not there for them.
   if (!can(user, action, { classId: cls.id, classStage: cls.stage })) notFound()

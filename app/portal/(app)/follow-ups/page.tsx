@@ -10,10 +10,11 @@ import { churchToday, formatDateOnly, daysBetween } from '@/lib/portal/dates'
 import { formatMonthDay } from '@/lib/portal/format'
 import { PageHeader, Card, StatCard, Badge, EmptyState, LinkButton, Callout } from '@/components/portal/ui'
 import { NewCaseForm } from './NewCaseForm'
-import { formatPhone, waLink } from '@/lib/portal/phones'
+import { composerPhones, waLink, type CallFirst } from '@/lib/portal/phones'
 import { CaseQuickActions, type Contact } from './CaseQuickActions'
 import { ClosedCaseCleanup } from './ClosedCaseCleanup'
 import { AssigneeFilter } from './AssigneeFilter'
+import { ClassFilter } from './ClassFilter'
 import { followUpScope } from '@/lib/portal/groups'
 import { assigneeByStudent, ensureInitialSplits, followUpCaseWhere, groupSummaries, loadClassGroups } from '@/lib/portal/data/groups'
 import { dueCaseWhere, excusedCaseWhere, excusesByStudent } from '@/lib/portal/data/excuses'
@@ -24,7 +25,7 @@ import { KidPhones } from '@/components/portal/KidPhones'
 import { MemberPhone } from '@/components/portal/MemberPhone'
 import { isFellowship } from '@/lib/portal/fellowship'
 import { caseMessages } from '@/lib/portal/data/family-messages'
-import { fillMessage } from '@/lib/portal/family-messages'
+import { fillMessage, greetingName } from '@/lib/portal/family-messages'
 import { can } from '@/lib/portal/permissions'
 import type { Prisma } from '@prisma/client'
 
@@ -34,6 +35,7 @@ type CaseStudent = {
   parentEmails: string[]
   fatherPhone: string | null
   motherPhone: string | null
+  callFirst: CallFirst | null
   account: { email: string | null; phone: string | null }
 }
 
@@ -49,17 +51,17 @@ function emailsFor(s: CaseStudent, member?: string): Contact[] {
   return out
 }
 
+/**
+ * The mother's number first, or the one a servant chose for the child
+ * (2026-10-25); a member's own. The first is what Call and WhatsApp use.
+ */
 function phonesFor(s: CaseStudent, member?: string): Contact[] {
-  const out: Contact[] = []
-  if (s.account.phone) out.push({ label: member ? `${member}'s phone` : "Student's phone", value: formatPhone(s.account.phone) })
-  if (s.fatherPhone) out.push({ label: "Father's phone", value: formatPhone(s.fatherPhone) })
-  if (s.motherPhone) out.push({ label: "Mother's phone", value: formatPhone(s.motherPhone) })
-  return out
+  return composerPhones({ fatherPhone: s.fatherPhone, motherPhone: s.motherPhone, ownPhone: s.account.phone, callFirst: s.callFirst }, member)
 }
 
-const firstNumber = (s: CaseStudent) => s.account.phone || s.fatherPhone || s.motherPhone || null
-const telFor = (s: CaseStudent) => { const n = firstNumber(s); return n ? `tel:${n.replace(/[^\d+]/g, '')}` : null }
-const waFor = (s: CaseStudent) => waLink(firstNumber(s))
+const firstNumber = (s: CaseStudent, member?: string) => phonesFor(s, member)[0]?.value ?? null
+const telFor = (s: CaseStudent, member?: string) => { const n = firstNumber(s, member); return n ? `tel:${n.replace(/[^\d+]/g, '')}` : null }
+const waFor = (s: CaseStudent, member?: string) => waLink(firstNumber(s, member))
 
 export default async function FollowUpsPage({ searchParams }: { searchParams: { show?: string; class?: string; servant?: string } }) {
   const user = await requirePortalUser()
@@ -127,7 +129,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
       student: {
         select: {
           id: true, firstName: true, lastName: true,
-          fatherPhone: true, motherPhone: true, parentEmails: true,
+          fatherPhone: true, motherPhone: true, callFirst: true, parentEmails: true,
           account: { select: { email: true, phone: true } },
         },
       },
@@ -168,7 +170,8 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
   ])
   const messageFor = (c: (typeof fetched)[number]) => {
     const m = messages.get(c.classId)
-    return m ? fillMessage(m.body, { name: c.student.firstName.trim() || studentName(c.student), meeting: m.meeting, date: m.date }) : ''
+    // It starts "Hello, this is <you>!" (2026-10-25).
+    return m ? fillMessage(m.body, { name: c.student.firstName.trim() || studentName(c.student), meeting: m.meeting, date: m.date, servant: greetingName(user.displayName) }) : ''
   }
   // One message to every family whose child missed a meeting, when the page
   // shows one class this person follows up.
@@ -256,6 +259,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                         fatherPhone={c.student.fatherPhone}
                         motherPhone={c.student.motherPhone}
                         ownPhone={c.student.account.phone}
+                        callFirst={c.student.callFirst}
                       />
                     )}
                     {excuse && <ExcuseNote excuse={excuse} today={today} />}
@@ -333,8 +337,8 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
                       message={messageFor(c)}
                       emails={emailsFor(c.student, isFellowship(c.class.stage) ? c.student.firstName : undefined)}
                       phones={phonesFor(c.student, isFellowship(c.class.stage) ? c.student.firstName : undefined)}
-                      primaryPhone={telFor(c.student)}
-                      primaryWa={waFor(c.student)}
+                      primaryPhone={telFor(c.student, isFellowship(c.class.stage) ? c.student.firstName : undefined)}
+                      primaryWa={waFor(c.student, isFellowship(c.class.stage) ? c.student.firstName : undefined)}
                     />
                   </div>
                   {!showDone && (
@@ -496,20 +500,25 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
         </p>
       )}
 
-      {/* Follow-up groups: a coordinator can narrow to one servant's group; a
+      {/* Anyone who sees more than one class can narrow to one (2026-10-26).
+          Follow-up groups: a coordinator can narrow to one servant's group; a
           plain servant is told what their list is, so a shorter list is never
           mistaken for fewer children waiting. */}
-      {coordinatorView ? (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <AssigneeFilter
-            value={servantParam}
-            hasOwnGroup={!!user.servantId && scope.group.length + scope.whole.filter((id) => user.classIds.includes(id)).length > 0}
-            classes={classGroups
-              .filter((g) => scope.whole.includes(g.classId))
-              .map((g) => ({ name: g.name, servants: g.servants }))}
-          />
+      {(visible.length > 1 || coordinatorView) && (
+        <div className="mb-4 flex flex-wrap items-center gap-3" data-testid="followup-filters">
+          {visible.length > 1 && <ClassFilter value={scopedTo?.id ?? ''} classes={visible.map((c) => ({ id: c.id, name: c.name }))} />}
+          {coordinatorView && (
+            <AssigneeFilter
+              value={servantParam}
+              hasOwnGroup={!!user.servantId && scope.group.length + scope.whole.filter((id) => user.classIds.includes(id)).length > 0}
+              classes={classGroups
+                .filter((g) => scope.whole.includes(g.classId))
+                .map((g) => ({ name: g.name, servants: g.servants }))}
+            />
+          )}
         </div>
-      ) : scope.group.length > 0 ? (
+      )}
+      {!coordinatorView && scope.group.length > 0 && (
         <p className="mb-4 rounded-[12px] border border-parch-200 bg-parch-50 px-4 py-2.5 text-[12px] text-parch-700">
           Showing your group and anybody in your class who has no servant yet.{' '}
           <Link href="/portal/my-group" className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
@@ -520,7 +529,7 @@ export default async function FollowUpsPage({ searchParams }: { searchParams: { 
             Follow up any child in Class Groups
           </Link>
         </p>
-      ) : null}
+      )}
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">

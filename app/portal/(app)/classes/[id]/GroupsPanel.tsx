@@ -3,9 +3,11 @@
 import { useState, useTransition } from 'react'
 import Link from '@/components/portal/Link'
 import { useRouter } from 'next/navigation'
-import { UsersRound, Shuffle } from 'lucide-react'
-import { applySplit, moveKidToGroup, previewSplit } from '@/lib/portal/actions/groups'
-import type { GroupHealth } from '@/lib/portal/groups'
+import { UsersRound, Shuffle, Dices } from 'lucide-react'
+import { applySplit, moveKidToGroup, previewSplit, shuffleGroupsNow } from '@/lib/portal/actions/groups'
+import { nextShuffleOn, SHUFFLE_EVERY_MONTHS, SHUFFLE_MIN_SERVANTS, type GroupHealth } from '@/lib/portal/groups'
+import { daysBetween } from '@/lib/portal/dates'
+import { formatLongDate } from '@/lib/portal/format'
 import { Badge, Callout, Card, buttonClass, selectClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -26,9 +28,15 @@ export function GroupsPanel({
   unassigned,
   health,
   members = false,
+  shuffle,
 }: {
   /** A Fellowship meeting's groups (2026-10-24): members, not children. */
   members?: boolean
+  /**
+   * The children's classes are shuffled every two months (2026-10-25): when
+   * next, and when last. Absent for a Fellowship meeting, which never is.
+   */
+  shuffle?: { nextOn: string | null; lastOn: string | null; today: string }
   canManage: boolean
   classId: string
   servants: Array<{ id: string; name: string; kids: Kid[] }>
@@ -41,6 +49,8 @@ export function GroupsPanel({
   const [arranging, setArranging] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
+  // One servant has every child already, so there is nothing to shuffle (2026-10-26).
+  const canShuffle = !!shuffle && servants.length >= SHUFFLE_MIN_SERVANTS
   const one = members ? 'member' : 'child'
   const many = members ? 'members' : 'children'
   const place = members ? 'meeting' : 'class'
@@ -65,6 +75,23 @@ export function GroupsPanel({
       if (!r.ok) return setMessage({ ok: false, text: r.error })
       setPreview(null)
       setMessage({ ok: true, text: r.data!.moved === 0 ? 'The groups were already even.' : `Moved ${r.data!.moved} ${r.data!.moved === 1 ? one : many}.` })
+      router.refresh()
+    })
+  }
+
+  function shuffleNow() {
+    if (!shuffle) return
+    const next = formatLongDate(nextShuffleOn(shuffle.today))
+    if (!window.confirm(`Shuffle the groups now? Nearly every child gets a new servant to follow them up, brothers and sisters together, and the next shuffle moves to ${next}. Everyone serving the class is told.`)) return
+    setMessage(null)
+    setPreview(null)
+    startTransition(async () => {
+      const r = await shuffleGroupsNow(classId)
+      if (!r.ok) return setMessage({ ok: false, text: r.error })
+      setMessage({
+        ok: true,
+        text: `Shuffled: ${r.data!.moved} ${r.data!.moved === 1 ? one : many} ${r.data!.moved === 1 ? 'has' : 'have'} a new servant. Next shuffle ${formatLongDate(r.data!.nextOn)}.`,
+      })
       router.refresh()
     })
   }
@@ -120,6 +147,23 @@ export function GroupsPanel({
           </Link>
           .
         </p>
+        {/* Every two months the children get new servants (2026-10-25). */}
+        {shuffle && (
+          <p className="mb-3 text-[12px] text-parch-600" data-testid="group-shuffle">
+            Groups are shuffled every {SHUFFLE_EVERY_MONTHS} months, so each {one} gets to know another servant.{' '}
+            {!canShuffle ? (
+              `That starts once the ${place} has ${SHUFFLE_MIN_SERVANTS} servants or more.`
+            ) : shuffle.nextOn ? (
+              <>
+                Next shuffle: <b className="text-parch-900">{formatLongDate(shuffle.nextOn)}</b>
+                {daysBetween(shuffle.today, shuffle.nextOn) > 0 && ` (in ${daysBetween(shuffle.today, shuffle.nextOn)} days)`}.
+              </>
+            ) : (
+              'The first shuffle is set when the groups are first made.'
+            )}
+            {shuffle.lastOn && ` Last shuffled ${formatLongDate(shuffle.lastOn)}.`}
+          </p>
+        )}
         {flags.length > 0 && (
           <div className="mb-3" data-testid="group-flags">
             <Callout tone="warn" title="Groups need attention">
@@ -164,6 +208,11 @@ export function GroupsPanel({
             <button type="button" disabled={pending} onClick={askSplit} className={cn(buttonClass('primary', 'sm'), 'min-h-[36px]')}>
               <Shuffle className="h-3.5 w-3.5" aria-hidden /> Split evenly
             </button>
+            {canShuffle && (
+              <button type="button" disabled={pending} onClick={shuffleNow} className={cn(buttonClass('secondary', 'sm'), 'min-h-[36px]')} data-testid="shuffle-now">
+                <Dices className="h-3.5 w-3.5" aria-hidden /> Shuffle now
+              </button>
+            )}
             <button
               type="button"
               disabled={pending}

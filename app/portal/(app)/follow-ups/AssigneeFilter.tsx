@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
+import { followUpsHref } from '@/lib/portal/followups'
 import { selectClass } from '@/components/portal/ui'
 
 /**
@@ -26,12 +27,7 @@ export function AssigneeFilter({
         aria-label="Assigned to"
         value={value}
         className={`${selectClass} max-w-[240px] normal-case tracking-normal`}
-        onChange={(e) => {
-          const next = new URLSearchParams(params.toString())
-          if (e.target.value) next.set('servant', e.target.value)
-          else next.delete('servant')
-          router.push(`/portal/follow-ups${next.toString() ? `?${next.toString()}` : ''}`)
-        }}
+        onChange={(e) => router.push(followUpsHref(params.toString(), { servant: e.target.value }))}
       >
         <option value="">Everyone</option>
         {hasOwnGroup && <option value="mine">My group</option>}

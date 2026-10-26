@@ -12,6 +12,7 @@ import {
   normaliseWeekDraft,
   normaliseWeekStart,
   parseLessonLinks,
+  presentationWeeks,
   resolveActivityKey,
   safeUrl,
   weekDistanceLabel,
@@ -281,6 +282,14 @@ describe('agenda CSV round-trip', () => {
 })
 
 describe('link handling', () => {
+  // The planner is a Google Sheet (2026-10-26): its tab is in the query and
+  // the fragment, and the link must open on that tab. (A made-up sheet id: the
+  // real link lives in the portal's settings, not this public repo.)
+  it('keeps a Google Sheets link whole, tab and all', () => {
+    const sheet = 'https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-AbCd/edit?gid=987654321#gid=987654321'
+    expect(safeUrl(sheet)).toBe(sheet)
+  })
+
   it('allows only http and https', () => {
     expect(safeUrl('https://example.org/a')).toBe('https://example.org/a')
     expect(safeUrl('http://example.org/')).toBe('http://example.org/')
@@ -366,5 +375,19 @@ describe('groupAssignmentsByWeek', () => {
 
   it('handles an empty list', () => {
     expect(groupAssignmentsByWeek([], '2026-09-16')).toEqual({ upcoming: [], past: [], undated: [] })
+  })
+})
+
+// Presentations on My Assignments (2026-10-25): this Sunday's week and next.
+describe('presentationWeeks', () => {
+  it('is this Sunday and next, keyed by their Mondays', () => {
+    expect(presentationWeeks('2026-10-21')).toEqual([
+      { weekStart: '2026-10-19', title: 'This Sunday · Oct 25' },
+      { weekStart: '2026-10-26', title: 'Next Sunday · Nov 1' },
+    ])
+  })
+
+  it('on a Sunday, that Sunday is this Sunday', () => {
+    expect(presentationWeeks('2026-10-25')[0]).toEqual({ weekStart: '2026-10-19', title: 'This Sunday · Oct 25' })
   })
 })

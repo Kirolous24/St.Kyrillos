@@ -10,7 +10,9 @@ import {
   normaliseWeekStart,
   weekLabel,
   agendaWeekName,
+  presentationWeeks,
   type AgendaGrid,
+  type PresentationRow,
   type Assignment,
   type AgendaWeekDraft,
 } from '../agenda'
@@ -395,3 +397,32 @@ export async function weekAssignmentsForServant(
 }
 
 export const AGENDA_ACTIVITY_COUNT = AGENDA_ACTIVITIES.length
+
+/* ── Presentations ────────────────────────────────────────────────────────── */
+
+/**
+ * This Sunday's and next Sunday's presentation for each of these classes
+ * (2026-10-25), the children's classes only: a Fellowship meeting has no
+ * Schedule.
+ */
+export async function presentationRows(classIds: readonly string[], todayKey = churchToday()): Promise<PresentationRow[]> {
+  if (classIds.length === 0) return []
+  const weeks = presentationWeeks(todayKey)
+  const [classes, stored] = await Promise.all([
+    prisma.schoolClass.findMany({
+      where: { id: { in: [...classIds] }, isActive: true, stage: { not: 'FELLOWSHIP' } },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true },
+    }),
+    prisma.agendaWeek.findMany({
+      where: { classId: { in: [...classIds] }, weekStart: { in: weeks.map((w) => toUTCDate(w.weekStart)) } },
+      select: { classId: true, weekStart: true, slideLink: true },
+    }),
+  ])
+  const link = new Map(stored.map((w) => [`${w.classId}:${formatDateOnly(w.weekStart)}`, w.slideLink]))
+  return classes.map((c) => ({
+    classId: c.id,
+    className: c.name,
+    weeks: weeks.map((w) => ({ ...w, url: link.get(`${c.id}:${w.weekStart}`) ?? null })),
+  }))
+}

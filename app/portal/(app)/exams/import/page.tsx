@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { Upload } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
-import { assignableClasses } from '@/lib/portal/data/exams'
+import { postableClasses } from '@/lib/portal/data/exams'
 import { mayAuthorExams } from '@/lib/portal/exams'
 import { LinkButton, PageHeader } from '@/components/portal/ui'
 import { ExamImport } from './ExamImport'
@@ -11,8 +11,13 @@ export const metadata = { title: 'Import quizzes' }
 export default async function ImportExamsPage() {
   const user = await requirePortalUser()
   if (!mayAuthorExams(user)) notFound()
-  const classes = await assignableClasses(user)
+  // Imported into a class the servant looks after, and posted to the others
+  // they tick (2026-10-26).
+  const targets = await postableClasses(user)
+  const classes = targets.filter((c) => !c.postOnly)
   if (classes.length === 0) notFound()
+  const preferred = classes.find((c) => user.classIds.includes(c.id)) ?? classes[0]!
+  const ordered = [preferred, ...classes.filter((c) => c.id !== preferred.id)]
 
   return (
     <>
@@ -27,7 +32,10 @@ export default async function ImportExamsPage() {
           </LinkButton>
         }
       />
-      <ExamImport classes={classes.map((c) => ({ id: c.id, name: c.name }))} />
+      <ExamImport
+        classes={ordered.map((c) => ({ id: c.id, name: c.name }))}
+        alsoClasses={targets.map((c) => ({ id: c.id, name: c.name, postOnly: c.postOnly }))}
+      />
     </>
   )
 }

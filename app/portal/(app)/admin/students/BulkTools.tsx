@@ -16,6 +16,7 @@ import { Avatar, Badge, buttonClass, inputClass, selectClass, checkboxClass } fr
 import { formatFullName } from '@/lib/portal/names'
 import { MoveStudentSelect } from './MoveStudentSelect'
 import { KidPhones } from '@/components/portal/KidPhones'
+import type { CallFirst } from '@/lib/portal/phones'
 import { cn } from '@/lib/utils'
 
 export interface BulkStudent {
@@ -28,6 +29,7 @@ export interface BulkStudent {
   // The family's numbers on the card (2026-10-19).
   fatherPhone: string | null
   motherPhone: string | null
+  callFirst: CallFirst | null
   account: { loginId: string; photo: string | null; phone: string | null }
 }
 
@@ -144,6 +146,7 @@ export function StudentCard({
         name={name}
         fatherPhone={student.fatherPhone}
         motherPhone={student.motherPhone}
+        callFirst={student.callFirst}
         ownPhone={student.account.phone}
         center
         className="mb-2"

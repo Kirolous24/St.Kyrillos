@@ -143,7 +143,9 @@ export async function createGroupCode(raw: CreateGroupCodeInput): Promise<Action
     const user = await requirePortalUser()
     const input = GroupSchema.parse(raw)
     const classIds = Array.from(new Set(input.classIds))
-    const action = input.mode === 'ATTENDANCE' ? ('attendance.write' as const) : ('points.write' as const)
+    // A paired class's register may be taken by the other class's servants;
+    // points stay with the class's own (2026-10-25).
+    const action = input.mode === 'ATTENDANCE' ? ('attendance.take' as const) : ('points.write' as const)
 
     const names: string[] = []
     for (const id of classIds) {
@@ -579,7 +581,7 @@ export async function resolveScan(raw: ScanStudentInput): Promise<ActionResult<R
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = ScanSchema.parse(raw)
-    const cls = await assertClassAction(user, input.classId, input.mode === 'ATTENDANCE' ? 'attendance.write' : 'points.write')
+    const cls = await assertClassAction(user, input.classId, input.mode === 'ATTENDANCE' ? 'attendance.take' : 'points.write')
 
     const loginId = parseStudentPayload(input.code)
     if (!loginId) throw new PortalError('That is not a student card. Scan a portal QR card or type a 4-digit ID.')
@@ -610,7 +612,7 @@ export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<S
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = ScanSchema.parse(raw)
-    const cls = await assertClassAction(user, input.classId, input.mode === 'ATTENDANCE' ? 'attendance.write' : 'points.write')
+    const cls = await assertClassAction(user, input.classId, input.mode === 'ATTENDANCE' ? 'attendance.take' : 'points.write')
 
     const loginId = parseStudentPayload(input.code)
     if (!loginId) throw new PortalError('That is not a student card. Scan a portal QR card or type a 4-digit ID.')
@@ -727,7 +729,7 @@ export async function undoScan(raw: z.infer<typeof UndoSchema>): Promise<ActionR
       select: { id: true, classId: true, sessionKey: true, date: true, student: { select: { firstName: true, lastName: true } } },
     })
     if (!record) throw new PortalError('That check-in is already gone.')
-    const cls = await assertClassAction(user, record.classId, 'attendance.write')
+    const cls = await assertClassAction(user, record.classId, 'attendance.take')
     // The linked PointEntry is removed by the cascade on attendanceRecordId.
     await prisma.attendanceRecord.delete({ where: { id: record.id } })
     await audit(

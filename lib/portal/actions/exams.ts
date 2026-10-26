@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { rosterWhere } from '../class-members'
 import { requirePortalUser } from '../session'
+import type { PortalUser } from '../permissions'
 import { assertClassAction } from '../data/classes'
 import { assertExamWrite, studentExamPaper, EXAM_WRITE } from '../data/exams'
 import { runAction, PortalError, type ActionResult } from '../action-result'
@@ -55,6 +56,27 @@ const ExamSchema = z.object({
 })
 
 export type ExamInput = z.infer<typeof ExamSchema>
+
+/**
+ * Other classes a new exam is posted to as well (2026-10-26), each getting its
+ * own copy with its own results. `classId` stays the class it is written in.
+ */
+const AlsoClassIds = z.array(z.string().min(1)).max(60).optional()
+
+/**
+ * The classes a new exam goes to, every one checked before anything is
+ * written: the class it is written in, which the poster must look after (they
+ * land on it afterwards), then each other class once, which they may post to.
+ */
+async function examTargets(user: PortalUser, classId: string, also: readonly string[] = []) {
+  const first = await assertClassAction(user, classId, EXAM_WRITE)
+  const rest = []
+  for (const id of Array.from(new Set(also))) {
+    if (id === first.id) continue
+    rest.push(await assertClassAction(user, id, 'exam.post'))
+  }
+  return [first, ...rest]
+}
 
 /**
  * Validate every question, keeping each correct answer bound to its option
@@ -114,38 +136,59 @@ export async function findDuplicateExam(
 
 /* ── Create / update ──────────────────────────────────────────────────────── */
 
-export async function createExam(raw: ExamInput): Promise<ActionResult<{ id: string }>> {
+const CreateSchema = ExamSchema.extend({ alsoClassIds: AlsoClassIds })
+
+/**
+ * Write a new exam, and post a copy of it to each of `alsoClassIds` too
+ * (2026-10-26). Returns the exam in the class it was written in, and the other
+ * classes it went to.
+ */
+export async function createExam(raw: z.infer<typeof CreateSchema>): Promise<ActionResult<{ id: string; also: string[] }>> {
   return runAction(async () => {
     const user = await requirePortalUser()
-    const input = ExamSchema.parse(raw)
-    const cls = await assertClassAction(user, input.classId, EXAM_WRITE)
+    const input = CreateSchema.parse(raw)
+    const targets = await examTargets(user, input.classId, input.alsoClassIds)
     const questions = cleanQuestions(input.questions)
     const due = parseDue(input.dueDate)
 
-    const exam = await prisma.exam.create({
-      data: {
-        classId: cls.id,
-        stage: cls.stage,
-        title: input.title,
-        subject: input.subject || null,
-        dueDate: due,
-        pointsPerQuestion: input.pointsPerQuestion,
-        bibleReading: input.bibleReading || null,
-        readingMessage: input.readingMessage || null,
-        status: input.status,
-        createdById: user.accountId,
-        questions: {
-          create: questions.map((q, i) => ({ text: q.text, options: q.options, correctIndex: q.correctIndex, sortOrder: i })),
-        },
+    const exams = await prisma.$transaction(
+      async (tx) => {
+        const out: Array<{ id: string; className: string }> = []
+        for (const cls of targets) {
+          const exam = await tx.exam.create({
+            data: {
+              classId: cls.id,
+              stage: cls.stage,
+              title: input.title,
+              subject: input.subject || null,
+              dueDate: due,
+              pointsPerQuestion: input.pointsPerQuestion,
+              bibleReading: input.bibleReading || null,
+              readingMessage: input.readingMessage || null,
+              status: input.status,
+              createdById: user.accountId,
+              // One insert for all of an exam's questions, however many classes it goes to.
+              questions: {
+                createMany: { data: questions.map((q, i) => ({ text: q.text, options: q.options, correctIndex: q.correctIndex, sortOrder: i })) },
+              },
+            },
+            select: { id: true },
+          })
+          out.push({ id: exam.id, className: cls.name })
+        }
+        return out
       },
-      select: { id: true },
-    })
+      { timeout: 60_000, maxWait: 10_000 },
+    )
 
-    await audit(user, 'exam.create', 'exam', exam.id, `${cls.name}: "${input.title}" (${questions.length} questions)`)
+    const posted = targets.length > 1 ? `, posted to ${targets.length} classes` : ''
+    for (const exam of exams) {
+      await audit(user, 'exam.create', 'exam', exam.id, `${exam.className}: "${input.title}" (${questions.length} questions${posted})`)
+    }
     revalidatePath('/portal/exams')
     revalidatePath('/portal/quizzes')
     revalidatePath('/portal')
-    return { id: exam.id }
+    return { id: exams[0]!.id, also: targets.slice(1).map((c) => c.id) }
   })
 }
 
@@ -346,6 +389,7 @@ export async function deleteExams(examIds: string[]): Promise<ActionResult<{ del
 
 const ImportSchema = z.object({
   classId: z.string().min(1),
+  alsoClassIds: AlsoClassIds,
   csv: z.string().min(1).max(500_000),
   status: z.enum(['DRAFT', 'PUBLISHED']),
   // Only used by the prototype's Day-based sheet, which carries no Title and
@@ -357,13 +401,18 @@ const ImportSchema = z.object({
 export interface ImportReport {
   created: { title: string; questions: number; dueDate: string | null }[]
   errors: RowError[]
+  /** The classes every quiz went to (2026-10-26). */
+  classes: string[]
 }
+
+/** One import writes at most this many quizzes, every class counted. */
+const MAX_IMPORTED_EXAMS = 200
 
 export async function importExamsCsv(raw: z.infer<typeof ImportSchema>): Promise<ActionResult<ImportReport>> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = ImportSchema.parse(raw)
-    const cls = await assertClassAction(user, input.classId, EXAM_WRITE)
+    const targets = await examTargets(user, input.classId, input.alsoClassIds)
 
     const records = parseCsvRecords(input.csv)
     if (records.length === 0) throw new PortalError('That file has no rows under its header.')
@@ -376,44 +425,55 @@ export async function importExamsCsv(raw: z.infer<typeof ImportSchema>): Promise
       )
     }
     if (drafts.length > 50) throw new PortalError('That file holds more than 50 quizzes. Split it up.')
+    const total = drafts.length * targets.length
+    if (total > MAX_IMPORTED_EXAMS) {
+      throw new PortalError(
+        `That would add ${total} quizzes: ${drafts.length} in each of ${targets.length} classes. One import adds at most ${MAX_IMPORTED_EXAMS}, so split the sheet or pick fewer classes.`,
+      )
+    }
 
-    const created: ImportReport['created'] = []
+    const created: ImportReport['created'] = drafts.map((d) => ({ title: d.title, questions: d.questions.length, dueDate: d.dueDate }))
     await prisma.$transaction(
       async (tx) => {
-        for (const draft of drafts) {
-          await tx.exam.create({
-            data: {
-              classId: cls.id,
-              stage: cls.stage,
-              title: draft.title,
-              subject: draft.subject,
-              dueDate: draft.dueDate ? toUTCDate(draft.dueDate) : null,
-              pointsPerQuestion: draft.pointsPerQuestion,
-              bibleReading: draft.bibleReading,
-              readingMessage: draft.readingMessage,
-              status: input.status,
-              createdById: user.accountId,
-              questions: {
-                create: draft.questions.map((q, i) => ({
-                  text: q.text,
-                  options: q.options,
-                  correctIndex: q.correctIndex,
-                  sortOrder: i,
-                })),
+        for (const cls of targets) {
+          for (const draft of drafts) {
+            await tx.exam.create({
+              data: {
+                classId: cls.id,
+                stage: cls.stage,
+                title: draft.title,
+                subject: draft.subject,
+                dueDate: draft.dueDate ? toUTCDate(draft.dueDate) : null,
+                pointsPerQuestion: draft.pointsPerQuestion,
+                bibleReading: draft.bibleReading,
+                readingMessage: draft.readingMessage,
+                status: input.status,
+                createdById: user.accountId,
+                questions: {
+                  createMany: {
+                    data: draft.questions.map((q, i) => ({
+                      text: q.text,
+                      options: q.options,
+                      correctIndex: q.correctIndex,
+                      sortOrder: i,
+                    })),
+                  },
+                },
               },
-            },
-            select: { id: true },
-          })
-          created.push({ title: draft.title, questions: draft.questions.length, dueDate: draft.dueDate })
+              select: { id: true },
+            })
+          }
         }
       },
       { timeout: 60_000, maxWait: 10_000 },
     )
 
-    await audit(user, 'exam.import', 'class', cls.id, `${cls.name}: imported ${created.length} quiz${created.length === 1 ? '' : 'zes'} (${errors.length} row error${errors.length === 1 ? '' : 's'})`)
+    for (const cls of targets) {
+      await audit(user, 'exam.import', 'class', cls.id, `${cls.name}: imported ${created.length} quiz${created.length === 1 ? '' : 'zes'} (${errors.length} row error${errors.length === 1 ? '' : 's'})`)
+    }
     revalidatePath('/portal/exams')
     revalidatePath('/portal/quizzes')
-    return { created, errors }
+    return { created, errors, classes: targets.map((c) => c.name) }
   })
 }
 

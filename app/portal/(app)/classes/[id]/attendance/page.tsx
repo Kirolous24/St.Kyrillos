@@ -26,7 +26,12 @@ export default async function AttendancePage({
   searchParams: { date?: string; session?: string }
 }) {
   const user = await requirePortalUser()
-  const cls = await requireClassAccess(user, params.id, 'attendance.write')
+  // 'attendance.take' (2026-10-25): the servants of a class paired with this one
+  // may take this register, and only this register, so the back link and the
+  // switch below are worked out for them too.
+  const cls = await requireClassAccess(user, params.id, 'attendance.take')
+  const canOpenClass = can(user, 'class.read', { classId: cls.id, classStage: cls.stage })
+  const back = canOpenClass ? { href: `/portal/classes/${cls.id}`, label: cls.name } : { href: '/portal/attendance', label: 'Attendance' }
 
   // Every class's sessions and this class's own meeting, never another class's (2026-09-28).
   // A Fellowship meeting (2026-10-24) takes only its own: its members are not
@@ -58,7 +63,7 @@ export default async function AttendancePage({
           title="Attendance"
           subtitle={`${cls.name} · mark who is present, excused or absent`}
           icon={<CalendarCheck className="h-5 w-5" />}
-          back={{ href: `/portal/classes/${cls.id}`, label: cls.name }}
+          back={back}
         />
         <EmptyState
           title="No attendance sessions are set up"
@@ -114,6 +119,16 @@ export default async function AttendancePage({
 
   const lastSaved = lastSavedOf(existing)
 
+  // The other half of a boys'/girls' pair, one tap away on the same day and
+  // meeting (2026-10-25), for whoever may take its register.
+  const paired = (
+    await prisma.schoolClass.findMany({
+      where: { isActive: true, OR: [{ attendancePartnerId: cls.id }, { attendancePartnerOf: { some: { id: cls.id } } }] },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, stage: true },
+    })
+  ).filter((c) => c.id !== cls.id && can(user, 'attendance.take', { classId: c.id, classStage: c.stage }))
+
   // Message families (2026-10-19): once this register is taken, one message
   // to every family whose child was not there, written once.
   const missedCount = can(user, 'followup.write', { classId: cls.id, classStage: cls.stage })
@@ -133,8 +148,18 @@ export default async function AttendancePage({
         title="Attendance"
         subtitle={`${cls.name} \u00b7 mark who is present, excused or absent`}
         icon={<CalendarCheck className="h-5 w-5" />}
-        back={{ href: `/portal/classes/${cls.id}`, label: cls.name }}
+        back={back}
       />
+      {paired.length > 0 && (
+        <nav aria-label="Other registers" className="mb-4 flex flex-wrap items-center gap-2 print:hidden" data-testid="paired-registers">
+          <span className="text-[12px] font-bold text-parch-500">Also take:</span>
+          {paired.map((c) => (
+            <LinkButton key={c.id} href={`/portal/classes/${c.id}/attendance?session=${sessionKey}&date=${date}`} variant="secondary" size="sm">
+              {c.name}
+            </LinkButton>
+          ))}
+        </nav>
+      )}
       {trend.length > 0 && students.length > 0 && (
         <Card className="mb-4 print:hidden" title={`${sessions.find((x) => x.key === sessionKey)?.label ?? 'Session'} — recent weeks`} icon={<CalendarCheck className="h-4 w-4" aria-hidden />}>
           <ul className="flex flex-wrap gap-2.5">

@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { GraduationCap, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Eye, EyeOff, Layers, Link as LinkIcon, HeartHandshake } from 'lucide-react'
-import { createClass, updateClass, deleteClass, createStandardGradeClasses, setCurriculumLink, type ClassInput } from '@/lib/portal/actions/admin'
+import { GraduationCap, Plus, Pencil, Trash2, ChevronUp, ChevronDown, Eye, EyeOff, Layers, Link as LinkIcon, HeartHandshake, CalendarCheck } from 'lucide-react'
+import { createClass, updateClass, deleteClass, createStandardGradeClasses, setAttendancePartner, setCurriculumLink, type ClassInput } from '@/lib/portal/actions/admin'
 import { Card, ClassCard, Field, inputClass, selectClass, buttonClass, Badge, Callout, EmptyState } from '@/components/portal/ui'
 import { STAGE_LABEL, TITLE_LABEL } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
@@ -19,6 +19,8 @@ type Row = {
   isActive: boolean
   sortOrder: number
   curriculumLinkedToId: string | null
+  /** The class whose register this one's servants also take (2026-10-25). */
+  attendancePartnerId: string | null
   takesOtherClasses: boolean
   students: number
   /** Children from other classes in it. */
@@ -88,6 +90,21 @@ export function ClassManager({ classes }: { classes: Row[] }) {
         target
           ? `${c.name} now follows ${classes.find((x) => x.id === target)?.name ?? target}.`
           : `${c.name} follows its own plan again.`,
+      )
+      router.refresh()
+    })
+  }
+
+  function pairAttendance(c: Row, target: string | null) {
+    setError('')
+    setNotice('')
+    startTransition(async () => {
+      const r = await setAttendancePartner(c.id, target)
+      if (!r.ok) return setError(r.error)
+      setNotice(
+        target
+          ? `${c.name} and ${classes.find((x) => x.id === target)?.name ?? target} now take each other's attendance, and nothing else of each other.`
+          : `${c.name} takes only its own attendance again.`,
       )
       router.refresh()
     })
@@ -405,6 +422,26 @@ export function ClassManager({ classes }: { classes: Row[] }) {
                   ))}
                 </select>
               </label>
+              {/* Attendance partners (2026-10-25): each class's servants may
+                  take the other's register, and nothing else of it. */}
+              {!isFellowship(c.stage) && (
+                <label className="mt-1.5 flex items-center gap-2 px-1 text-[10.5px] font-bold uppercase tracking-[0.5px] text-parch-500">
+                  <CalendarCheck className="h-3 w-3 shrink-0" aria-hidden />
+                  Takes attendance with
+                  <select
+                    value={c.attendancePartnerId ?? ''}
+                    disabled={pending}
+                    aria-label={`Class ${c.name} takes attendance with`}
+                    onChange={(e) => pairAttendance(c, e.target.value || null)}
+                    className="min-w-0 flex-1 rounded-[7px] border border-parch-200 bg-parch-50 px-2 py-1 text-[11px] font-semibold normal-case tracking-normal text-parch-800 outline-none focus:border-brand-gold"
+                  >
+                    <option value="">Only its own</option>
+                    {classes.filter((x) => x.id !== c.id && x.isActive && !isFellowship(x.stage)).map((x) => (
+                      <option key={x.id} value={x.id}>{x.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
           ))}
         </div>

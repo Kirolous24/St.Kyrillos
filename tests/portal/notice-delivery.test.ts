@@ -164,6 +164,14 @@ describe('deliverNotices', () => {
     expect(String(email.text)).toContain('https://stkyrillostn.org/portal/settings')
   })
 
+  it('a notice marked bell-and-phone only is never emailed (2026-10-25)', async () => {
+    world.servants = [servant([])]
+    const r = await deliverNotices([notice({ kind: 'reminder', dedupeKey: 'daily:sv-mina:2026-10-21', email: false })], LIVE)
+    expect(world.notices).toHaveLength(1)
+    expect(world.emails).toEqual([])
+    expect(r.emailed).toBe(0)
+  })
+
   it('outside production, no email to real addresses', async () => {
     world.servants = [servant([])]
     await deliverNotices([notice()], DEV)

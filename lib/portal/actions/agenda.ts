@@ -31,6 +31,7 @@ import { can, type PortalUser } from '../permissions'
 import { audit } from '../audit'
 import { weekDuties } from '../data/duties'
 import { withDutyNotices } from '../with-duty-notices'
+import { PLANNER_KEY } from '../data/planner'
 
 const ItemSchema = z.object({
   activityKey: z.string().min(1).max(40),
@@ -168,6 +169,74 @@ export async function saveAgendaWeek(raw: SaveAgendaWeekInput): Promise<ActionRe
     await audit(user, 'agenda.save', 'class', cls.id, `${cls.name}: agenda for ${weekLabel(monday)} (${filled}/10 filled)`)
     revalidateAgenda(cls.id)
     return { weekStart: monday }
+  })
+}
+
+/**
+ * The planner (2026-10-25): one link for every class, kept by the admin and
+ * shown on My Assignments and the Schedule. Empty takes it away.
+ */
+export async function setPlannerLink(raw: string): Promise<ActionResult<{ url: string | null }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    if (user.role !== 'ADMIN') throw new PortalError('Only the Sunday School admin can change the planner link.')
+    const value = typeof raw === 'string' ? raw.trim() : ''
+    if (!value) {
+      await prisma.portalSetting.deleteMany({ where: { key: PLANNER_KEY } })
+      await audit(user, 'planner.link', 'portal', null, 'Removed the planner link')
+      revalidateAgenda('')
+      return { url: null }
+    }
+    const url = safeUrl(value)
+    if (!url) throw new PortalError('The planner link must be a web address, starting https://')
+    await prisma.portalSetting.upsert({
+      where: { key: PLANNER_KEY },
+      create: { key: PLANNER_KEY, value: { url } },
+      update: { value: { url } },
+    })
+    await audit(user, 'planner.link', 'portal', null, `Planner link set to ${url}`)
+    revalidateAgenda('')
+    return { url }
+  })
+}
+
+const PresentationSchema = z.object({
+  classId: z.string().min(1),
+  weekStart: z.string().max(20),
+  url: z.string().max(2000),
+})
+
+/**
+ * A class's presentation for one week (2026-10-25), e.g. the Canva deck every
+ * part of that Sunday goes into. Any servant who teaches the class may add or
+ * change it from My Assignments, without opening the whole Schedule; it is the
+ * week's slide link, so the Schedule shows the same one. Empty clears it.
+ */
+export async function setWeekPresentation(raw: z.infer<typeof PresentationSchema>): Promise<ActionResult<{ url: string | null }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = PresentationSchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, TEACHING_WRITE)
+    const monday = normaliseWeekStart(input.weekStart)
+    if (!monday) throw new PortalError('Pick a valid week.')
+    const value = input.url.trim()
+    const url = value ? safeUrl(value) : null
+    if (value && !url) throw new PortalError('The presentation link must be a web address, starting https://')
+    const weekStart = toUTCDate(monday)
+    await prisma.agendaWeek.upsert({
+      where: { classId_weekStart: { classId: cls.id, weekStart } },
+      create: { classId: cls.id, weekStart, slideLink: url },
+      update: { slideLink: url },
+    })
+    await audit(
+      user,
+      'agenda.presentation',
+      'class',
+      cls.id,
+      url ? `${cls.name}: presentation for ${weekLabel(monday)}` : `${cls.name}: removed the presentation for ${weekLabel(monday)}`,
+    )
+    revalidateAgenda(cls.id)
+    return { url }
   })
 }
 

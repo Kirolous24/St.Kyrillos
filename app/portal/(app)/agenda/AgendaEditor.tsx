@@ -176,14 +176,14 @@ export function AgendaEditor({
           {servantSelect(form.backupServantId, (v) => setForm({ ...form, backupServantId: v }), 'Backup servant', 'agenda-backup')}
         </Field>
         <div className="sm:col-span-2">
-          <Field label="Slide link" htmlFor="agenda-slides" hint="A http or https address">
+          <Field label="Presentation link (Canva)" htmlFor="agenda-slides" hint="This week’s deck. Every servant of the class sees it on My Assignments.">
             <div className="flex items-center gap-2">
               <input
                 id="agenda-slides"
                 value={form.slideLink}
                 onChange={(e) => setForm({ ...form, slideLink: e.target.value })}
                 className={inputClass}
-                placeholder="https://docs.google.com/presentation/…"
+                placeholder="https://www.canva.com/design/…"
                 inputMode="url"
               />
               {/* F0224 — "Open Slide" existed on the read-only views but not

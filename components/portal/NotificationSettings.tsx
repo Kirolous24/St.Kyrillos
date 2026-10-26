@@ -139,8 +139,9 @@ export function NotificationSettings({
   return (
     <div className="space-y-4 text-[12.5px] text-parch-700" data-testid="notification-settings">
       <p>
-        You are told when you are given a part of a Sunday class or taken off one, and reminded the evening before. It always
-        shows in the bell; here you choose where else it reaches you.
+        You are told when you are given a part of a Sunday class or taken off one. Every evening you are reminded of the parts
+        you have not marked done yet, and on Saturday evening of everything for Sunday. It always shows in the bell; here you
+        choose where else it reaches you. Email brings only the Saturday evening reminder.
       </p>
 
       <section aria-labelledby="phone-heading" className="rounded-[12px] border border-parch-200 bg-parch-100/50 p-3">

@@ -311,6 +311,48 @@ export async function setCurriculumLink(classId: string, linkedToId: string | nu
   })
 }
 
+/**
+ * Pair two classes for attendance (2026-10-25): each one's servants may take
+ * the other's register, and nothing else of it. The 5th & 6th and 7th & 8th
+ * boys' and girls' classes. A pair is stored both ways; either class's old
+ * pair ends first. No partner ends the class's pair.
+ */
+export async function setAttendancePartner(classId: string, partnerId: string | null): Promise<ActionResult> {
+  return runAction(async () => {
+    const user = await requireAdmin()
+    const target = (partnerId ?? '').trim() || null
+    if (target === classId) throw new PortalError('A class cannot take its own attendance twice. Pick another class.')
+    const ids = target ? [classId, target] : [classId]
+    const rows = await prisma.schoolClass.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, stage: true, isActive: true } })
+    const cls = rows.find((r) => r.id === classId)
+    const other = target ? rows.find((r) => r.id === target) : null
+    if (!cls || (target && (!other || !other.isActive))) throw new PortalError('That class does not exist.')
+    if (isFellowship(cls.stage) || (other && isFellowship(other.stage))) {
+      throw new PortalError('A Fellowship meeting takes its own register and cannot be paired.')
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.schoolClass.updateMany({
+        where: { OR: [{ id: { in: ids } }, { attendancePartnerId: { in: ids } }] },
+        data: { attendancePartnerId: null },
+      })
+      if (other) {
+        await tx.schoolClass.update({ where: { id: cls.id }, data: { attendancePartnerId: other.id } })
+        await tx.schoolClass.update({ where: { id: other.id }, data: { attendancePartnerId: cls.id } })
+      }
+    })
+    await audit(
+      user,
+      'class.attendancePartner',
+      'class',
+      cls.id,
+      other ? `${cls.name} and ${other.name} take each other's registers` : `${cls.name} takes only its own register`,
+    )
+    revalidatePath('/portal/admin/classes')
+    revalidatePath('/portal/attendance')
+    return undefined
+  })
+}
+
 export async function updateClass(id: string, raw: ClassInput & { isActive?: boolean; sortOrder?: number }): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requireAdmin()

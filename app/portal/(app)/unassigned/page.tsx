@@ -78,9 +78,10 @@ function ChildCard({
     c.gender,
     `ID ${c.loginId}`,
   ].filter(Boolean)
+  // The mother first, as everywhere else (2026-10-25).
   const parents = [
-    { who: 'Father', name: c.fatherName, phone: c.fatherPhone },
     { who: 'Mother', name: c.motherName, phone: c.motherPhone },
+    { who: 'Father', name: c.fatherName, phone: c.fatherPhone },
   ].filter((p) => p.name || p.phone)
 
   return (

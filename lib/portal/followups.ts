@@ -122,3 +122,24 @@ export function mayChangeContactNote(args: {
   if (args.method === 'resolved' || !args.canWrite) return false
   return args.writtenByMe || args.canManage
 }
+
+/**
+ * Where the Follow-ups filters go (2026-10-26): a class, whose children, or
+ * both, keeping open or resolved. A servant picked in one class does not
+ * follow to another; My group and No servant yet do.
+ */
+export function followUpsHref(current: string, change: { class?: string; servant?: string }): string {
+  const next = new URLSearchParams(current)
+  if (change.class !== undefined) {
+    if (change.class) next.set('class', change.class)
+    else next.delete('class')
+    const servant = next.get('servant')
+    if (servant && servant !== 'mine' && servant !== 'unassigned') next.delete('servant')
+  }
+  if (change.servant !== undefined) {
+    if (change.servant) next.set('servant', change.servant)
+    else next.delete('servant')
+  }
+  const qs = next.toString()
+  return `/portal/follow-ups${qs ? `?${qs}` : ''}`
+}

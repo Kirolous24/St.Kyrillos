@@ -15,6 +15,7 @@ const studentSelect = {
   fatherPhone: true,
   motherName: true,
   motherPhone: true,
+  callFirst: true,
   parentEmails: true,
   notes: true,
   importNotes: true,

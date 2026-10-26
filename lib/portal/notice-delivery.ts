@@ -18,13 +18,18 @@ import { pushConfigured, sendPush } from './web-push'
  * Nothing here may undo the save that caused it, so it never rejects.
  */
 
-export type NoticeKind = 'assigned' | 'unassigned' | 'reminder' | 'test'
+export type NoticeKind = 'assigned' | 'unassigned' | 'reminder' | 'test' | 'groups'
 
 export interface OutgoingNotice extends NoticeText {
   servantId: string
   kind: NoticeKind
   /** Unique: a second notice with the same key is neither stored nor sent. */
   dedupeKey: string
+  /**
+   * False keeps it to the bell and the phone (2026-10-25): the daily reminders,
+   * which would otherwise fill inboxes and the email service's daily allowance.
+   */
+  email?: boolean
 }
 
 export interface DeliveryReport {
@@ -131,7 +136,7 @@ export async function deliverNotices(notices: readonly OutgoingNotice[], env: En
         if (reached) report.pushed++
 
         const phones = pushOn ? account.pushSubscriptions.length : 0
-        if (routing.mode !== 'off' && apiKey && shouldEmail({ email: account.email, noticeEmails: account.noticeEmails, pushDevices: phones })) {
+        if (n.email !== false && routing.mode !== 'off' && apiKey && shouldEmail({ email: account.email, noticeEmails: account.noticeEmails, pushDevices: phones })) {
           emails.push({
             from: LOGIN_EMAIL_FROM,
             to: routing.mode === 'live' ? account.email!.trim() : routing.to,

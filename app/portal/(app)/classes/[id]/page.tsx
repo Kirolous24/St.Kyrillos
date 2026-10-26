@@ -55,7 +55,11 @@ export default async function ClassPage({ params, searchParams }: { params: { id
   const canManageGroups = can(user, 'group.manage', ctx)
   // Follow-up groups: split on first use, then read this class's groups.
   await ensureInitialSplits().catch((err) => console.error('Initial group split failed:', err))
-  const [classGroups] = await loadClassGroups([cls.id])
+  const [[classGroups], shuffle] = await Promise.all([
+    loadClassGroups([cls.id]),
+    // When the groups are next shuffled, and when they last were (2026-10-25).
+    prisma.schoolClass.findUnique({ where: { id: cls.id }, select: { groupsShuffleDueOn: true, groupsShuffledAt: true } }),
+  ])
 
   const [students, servants, openCases, sundayRows, quizByStudent, recentPoints] = await Promise.all([
     // Its own children and, in a class that takes them, children from other
@@ -65,8 +69,8 @@ export default async function ClassPage({ params, searchParams }: { params: { id
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       select: {
         id: true, firstName: true, lastName: true, dob: true, grade: true, importNotes: true, classId: true,
-        // The family's numbers on the card (2026-10-19).
-        fatherPhone: true, motherPhone: true,
+        // The family's numbers on the card (2026-10-19), the one to call first on top (2026-10-25).
+        fatherPhone: true, motherPhone: true, callFirst: true,
         class: { select: { name: true } }, account: { select: { photo: true, loginId: true, phone: true } },
       },
     }),
@@ -207,6 +211,13 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                 {/* 2026-09-27 — a class list comes in as a spreadsheet; the import
                     keeps to this class and skips anyone already in the portal. */}
                 {canEditStudents && <LinkButton href={`/portal/classes/${cls.id}/import`} variant="secondary">Import students</LinkButton>}
+                {/* Every child's photo on one page (2026-10-25: "Allow pictures
+                    for Pre K!"), since the youngest cannot set their own. */}
+                {canEditStudents && (
+                  <LinkButton href={`/portal/classes/${cls.id}/photos`} variant="secondary">
+                    <Camera className="h-4 w-4" aria-hidden /> Photos
+                  </LinkButton>
+                )}
               {/* Restored from the prototype's class profile header (OG L4830-4831),
                   where these were the only route to either printout. The port moved
                   them to /portal/qr and /portal/reports, so admins who knew the OG
@@ -399,6 +410,11 @@ export default async function ClassPage({ params, searchParams }: { params: { id
               servants={classGroups.servants.map((sv) => ({ id: sv.id, name: sv.name, kids: byServant.get(sv.id)! }))}
               unassigned={unassigned}
               health={groupHealth(classGroups.kids, classGroups.servants)}
+              shuffle={{
+                nextOn: shuffle?.groupsShuffleDueOn ? formatDateOnly(shuffle.groupsShuffleDueOn) : null,
+                lastOn: shuffle?.groupsShuffledAt ? churchToday(shuffle.groupsShuffledAt) : null,
+                today: churchToday(),
+              }}
             />
           </div>
         )
@@ -503,6 +519,7 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                     fatherPhone={s.fatherPhone}
                     motherPhone={s.motherPhone}
                     ownPhone={s.account.phone}
+                    callFirst={s.callFirst}
                     center
                     className="mt-3 border-t border-[#F5F2ED] pt-2.5"
                   />

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { User, Users, KeyRound } from 'lucide-react'
 import { createStudent, updateStudent, moveStudent, type StudentFormInput } from '@/lib/portal/actions/students'
 import { studentFormState } from '@/lib/portal/student-form'
+import { CALL_FIRST_OPTIONS } from '@/lib/portal/phones'
 import { Field, inputClass, selectClass, textareaClass, buttonClass, Card, Callout } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
 
@@ -139,6 +140,13 @@ export function StudentForm({ mode, classId, studentId, initial, backHref, class
           <Field label="Father's phone" htmlFor="fatherPhone"><input id="fatherPhone" type="tel" value={form.fatherPhone ?? ''} onChange={set('fatherPhone')} className={inputClass} maxLength={30} /></Field>
           <Field label="Mother's name" htmlFor="motherName"><input id="motherName" value={form.motherName ?? ''} onChange={set('motherName')} className={inputClass} maxLength={80} /></Field>
           <Field label="Mother's phone" htmlFor="motherPhone"><input id="motherPhone" type="tel" value={form.motherPhone ?? ''} onChange={set('motherPhone')} className={inputClass} maxLength={30} /></Field>
+          {/* Whose number the Call and WhatsApp buttons use, and which is
+              listed first (2026-10-25). The mother's unless chosen otherwise. */}
+          <Field label="Call first" htmlFor="callFirst" hint="The number the Call and WhatsApp buttons use first.">
+            <select id="callFirst" value={form.callFirst ?? ''} onChange={set('callFirst')} className={selectClass}>
+              {CALL_FIRST_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
           <div className="sm:col-span-2">
             <Field label="Parent emails" htmlFor="parentEmails" hint="Separate several with commas."><input id="parentEmails" value={form.parentEmails ?? ''} onChange={set('parentEmails')} className={inputClass} maxLength={300} /></Field>
           </div>

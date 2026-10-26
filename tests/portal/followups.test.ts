@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { RESOLVE_REASONS, resolveReasonLabel, contactMethodLabel, writtenForGroupOf } from '@/lib/portal/followups'
+import { RESOLVE_REASONS, resolveReasonLabel, contactMethodLabel, writtenForGroupOf, followUpsHref } from '@/lib/portal/followups'
 
 describe('resolveReasonLabel', () => {
   it('uses the church’s wording, not the database value', () => {
@@ -111,5 +111,30 @@ describe('writtenForGroupOf', () => {
 
   it('says nothing when the child had no servant, or the note is older than groups', () => {
     expect(writtenForGroupOf({ groupServantId: null, groupServantName: null, byServantId: 'sv-george' })).toBeNull()
+  })
+})
+
+// Follow-ups narrowed to one class (2026-10-26: coordinators "need to be able to
+// filter through what class they're looking at"), beside Assigned to.
+describe('followUpsHref', () => {
+  it('picks a class, keeping open or resolved', () => {
+    expect(followUpsHref('show=done', { class: 'pre-k' })).toBe('/portal/follow-ups?show=done&class=pre-k')
+    expect(followUpsHref('', { class: 'pre-k' })).toBe('/portal/follow-ups?class=pre-k')
+  })
+
+  it('goes back to every class', () => {
+    expect(followUpsHref('class=pre-k&show=done', { class: '' })).toBe('/portal/follow-ups?show=done')
+    expect(followUpsHref('class=pre-k', { class: '' })).toBe('/portal/follow-ups')
+  })
+
+  it('drops a servant picked in the old class, but keeps My group and No servant yet', () => {
+    expect(followUpsHref('class=kg&servant=sv-1', { class: 'pre-k' })).toBe('/portal/follow-ups?class=pre-k')
+    expect(followUpsHref('servant=mine', { class: 'pre-k' })).toBe('/portal/follow-ups?servant=mine&class=pre-k')
+    expect(followUpsHref('servant=unassigned&class=kg', { class: '' })).toBe('/portal/follow-ups?servant=unassigned')
+  })
+
+  it('picks whose children, keeping the class', () => {
+    expect(followUpsHref('class=pre-k', { servant: 'sv-2' })).toBe('/portal/follow-ups?class=pre-k&servant=sv-2')
+    expect(followUpsHref('class=pre-k&servant=sv-2', { servant: '' })).toBe('/portal/follow-ups?class=pre-k')
   })
 })

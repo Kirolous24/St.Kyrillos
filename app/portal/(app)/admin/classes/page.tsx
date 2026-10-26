@@ -21,6 +21,7 @@ export default async function AdminClassesPage() {
       isActive: true,
       sortOrder: true,
       curriculumLinkedToId: true,
+      attendancePartnerId: true,
       takesOtherClasses: true,
       // F0541 — the card said "3 servants" and stopped. An admin checking who
       // covers a class had to open the roster and filter it, and the one thing

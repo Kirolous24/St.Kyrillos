@@ -1,10 +1,25 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { effectiveServant, followUpScope, groupHealth, planSplit, type GroupHealth, type GroupKid, type GroupMove, type GroupServant } from '../groups'
+import {
+  effectiveServant,
+  followUpScope,
+  groupHealth,
+  nextShuffleOn,
+  planShuffle,
+  planSplit,
+  SHUFFLE_MIN_SERVANTS,
+  shuffleNotice,
+  type GroupHealth,
+  type GroupKid,
+  type GroupMove,
+  type GroupServant,
+} from '../groups'
 import type { PortalUser, StageKey } from '../permissions'
 import { studentName } from './students'
 import { dueCaseWhere } from './excuses'
-import { churchToday } from '../dates'
+import { churchToday, toUTCDate } from '../dates'
+import { deliverNotices } from '../notice-delivery'
+import { PortalError } from '../action-result'
 
 type Db = Prisma.TransactionClient | typeof prisma
 
@@ -114,7 +129,11 @@ export async function ensureInitialSplits(): Promise<void> {
   for (const { id } of pending) {
     await prisma.$transaction(
       async (tx) => {
-        const claimed = await tx.schoolClass.updateMany({ where: { id, groupsSplitAt: null }, data: { groupsSplitAt: new Date() } })
+        // Its two months until the first shuffle start now (2026-10-25).
+        const claimed = await tx.schoolClass.updateMany({
+          where: { id, groupsSplitAt: null },
+          data: { groupsSplitAt: new Date(), groupsShuffleDueOn: toUTCDate(nextShuffleOn(churchToday())) },
+        })
         if (claimed.count === 0) return
         const [g] = await loadClassGroups([id], tx)
         if (!g) return
@@ -136,6 +155,108 @@ export async function ensureInitialSplits(): Promise<void> {
       { timeout: 30_000, maxWait: 10_000 },
     )
   }
+}
+
+/**
+ * Shuffle one class's follow-up groups (2026-10-25): every child a new servant
+ * where the numbers allow (lib/portal/groups.ts planShuffle), and the next
+ * shuffle two months on. With `claimDue` the class is first claimed by moving
+ * its due date, so the daily job run twice, or twice at once, shuffles it
+ * once. Its servants are told their new groups, in the bell and on the phone.
+ * The caller writes the activity log.
+ *
+ * A class with fewer than two servants is not shuffled (2026-10-26): nobody
+ * moves, it is not marked shuffled and `shuffled` comes back false. The daily
+ * job's claim still moves its date on, so it is looked at again in two months
+ * rather than every evening.
+ */
+export async function shuffleClassGroups(
+  classId: string,
+  opts: { now?: Date; claimDue?: boolean } = {},
+): Promise<{ moved: number; nextOn: string; shuffled: boolean; name: string }> {
+  const now = opts.now ?? new Date()
+  const today = churchToday(now)
+  const nextOn = nextShuffleOn(today)
+  const result = await prisma.$transaction(
+    async (tx) => {
+      if (opts.claimDue) {
+        const claim = await tx.schoolClass.updateMany({
+          where: { id: classId, groupsShuffleDueOn: { lte: toUTCDate(today) } },
+          data: { groupsShuffleDueOn: toUTCDate(nextOn) },
+        })
+        if (claim.count === 0) return null
+      }
+      const [g] = await loadClassGroups([classId], tx)
+      if (!g) throw new PortalError('Class not found.')
+      if (g.servants.length < SHUFFLE_MIN_SERVANTS) return { g, moves: null }
+      const moves = planShuffle(g.kids, g.servants, Math.random)
+      await applyGroupMoves(tx, moves, now)
+      await tx.schoolClass.update({ where: { id: classId }, data: { groupsShuffledAt: now, groupsShuffleDueOn: toUTCDate(nextOn) } })
+      // A class shuffled before its first split counts as split.
+      await tx.schoolClass.updateMany({ where: { id: classId, groupsSplitAt: null }, data: { groupsSplitAt: now } })
+      return { g, moves }
+    },
+    { timeout: 30_000, maxWait: 10_000 },
+  )
+  if (!result) return { moved: 0, nextOn, shuffled: false, name: '' }
+
+  const { g, moves } = result
+  if (!moves) return { moved: 0, nextOn, shuffled: false, name: g.name }
+  if (moves.length > 0) {
+    const to = new Map(moves.map((m) => [m.kidId, m.to]))
+    const active = new Set(g.servants.map((sv) => sv.id))
+    const groupOf = (k: GroupKid) => to.get(k.id) ?? effectiveServant(k.groupServantId, active)
+    const notices = g.servants
+      .map((sv) => ({ sv, names: g.kids.filter((k) => groupOf(k) === sv.id).map((k) => k.name) }))
+      .filter((x) => x.names.length > 0)
+      .map(({ sv, names }) => ({
+        servantId: sv.id,
+        kind: 'groups' as const,
+        ...shuffleNotice(g.name, names),
+        dedupeKey: `groups:${classId}:${sv.id}:${now.toISOString()}`,
+        email: false,
+      }))
+    await deliverNotices(notices)
+  }
+  return { moved: moves.length, nextOn, shuffled: true, name: g.name }
+}
+
+/**
+ * The daily job's part (2026-10-25): every children's class whose shuffle is
+ * due today or earlier is shuffled once. A Fellowship meeting never is.
+ */
+export async function shuffleDueGroups(now: Date = new Date()): Promise<{ classes: number; moved: number }> {
+  const today = churchToday(now)
+  const due = await prisma.schoolClass.findMany({
+    where: {
+      isActive: true,
+      stage: { not: 'FELLOWSHIP' },
+      groupsSplitAt: { not: null },
+      groupsShuffleDueOn: { lte: toUTCDate(today) },
+    },
+    select: { id: true, name: true },
+  })
+  let moved = 0
+  for (const c of due) {
+    try {
+      const r = await shuffleClassGroups(c.id, { now, claimDue: true })
+      if (!r.shuffled) continue
+      moved += r.moved
+      await prisma.portalAuditLog.create({
+        data: {
+          actorId: null,
+          actorName: 'Portal (automatic)',
+          action: 'groups.shuffle',
+          entity: 'class',
+          entityId: c.id,
+          detail: `${c.name}: shuffled the follow-up groups (${r.moved} moved), as every two months; next ${r.nextOn}`,
+        },
+      })
+    } catch (err) {
+      console.error(`Shuffling ${c.id} failed:`, err)
+    }
+  }
+  return { classes: due.length, moved }
 }
 
 /** The kids a person's follow-up list shows, as a where-clause on cases. */

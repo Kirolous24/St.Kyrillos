@@ -4,10 +4,10 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from '@/components/portal/Link'
 import { Trophy, Star, History, Search, Eye, Pencil } from 'lucide-react'
-import { givePoints, undoPoints } from '@/lib/portal/actions/points'
-import { DEDUCTION_POINTS } from '@/lib/portal/points-math'
+import { giveCustomPoints, givePoints, undoPoints } from '@/lib/portal/actions/points'
+import { ACTIVITY_POINTS_MAX, ACTIVITY_POINTS_MIN, DEDUCTION_POINTS } from '@/lib/portal/points-math'
 import { CHURCH_TIMEZONE } from '@/lib/portal/dates'
-import { Avatar, buttonClass, inputClass, selectClass, Card, EmptyState } from '@/components/portal/ui'
+import { Avatar, buttonClass, checkboxClass, inputClass, selectClass, Card, EmptyState } from '@/components/portal/ui'
 import { ActivityEditor } from '@/components/portal/ActivityEditor'
 import { formatDateTime } from '@/lib/portal/format'
 import { useChime } from '@/hooks/useChime'
@@ -41,6 +41,9 @@ interface Props {
 const ACT_COLORS = ['#166534', '#9A3412', '#1E3A8A', '#B45309', '#991B1B', '#5B21B6', '#0E7490', '#9D174D']
 
 const MEDAL = ['🥇', '🥈', '🥉']
+
+/** The Custom choice beside the activities (2026-10-25): any amount, with a reason. */
+const CUSTOM = '__custom'
 
 /**
  * Where an entry came from — the prototype's Type column. Without it a servant
@@ -161,12 +164,19 @@ export function PointsPanel({ classId, classLabel, isAdmin, students, activities
   // '' = nothing picked yet, 'other' = type your own into `reason`.
   const [removeReason, setRemoveReason] = useState('')
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  // Custom points (2026-10-25): the amount typed, and whether to keep it as one
+  // of the class's own activities.
+  const [customPoints, setCustomPoints] = useState('5')
+  const [saveCustom, setSaveCustom] = useState(false)
 
-  const activity = activities.find((a) => a.id === activityId)
-  // Give is the chosen activity's value, church-wide or the class's own; Remove
-  // is always DEDUCTION_POINTS. There is no amount to type, so the two modes can
-  // never borrow each other's number (F0415).
-  const magnitude = mode === 'remove' ? DEDUCTION_POINTS : activity?.points ?? 0
+  const custom = mode === 'add' && activityId === CUSTOM
+  const activity = custom ? undefined : activities.find((a) => a.id === activityId)
+  const customAmount = Number(customPoints)
+  const customOk = Number.isInteger(customAmount) && customAmount >= ACTIVITY_POINTS_MIN && customAmount <= ACTIVITY_POINTS_MAX
+  // Give is the chosen activity's value, church-wide or the class's own, or the
+  // amount typed for Custom; Remove is always DEDUCTION_POINTS. Only Custom has
+  // an amount to type, so the two modes never borrow each other's number (F0415).
+  const magnitude = mode === 'remove' ? DEDUCTION_POINTS : custom ? (customOk ? customAmount : 0) : activity?.points ?? 0
   const effectiveReason = mode === 'remove' ? (removeReason === 'other' ? reason.trim() : removeReason) : reason.trim()
 
   function toggle(id: string) {
@@ -187,6 +197,28 @@ export function PointsPanel({ classId, classLabel, isAdmin, students, activities
     if (selected.size === 0) return setMessage({ kind: 'err', text: 'Select at least one student.' })
     if (mode === 'remove' && !effectiveReason) {
       return setMessage({ kind: 'err', text: 'Pick a reason before taking points away.' })
+    }
+    if (custom) {
+      if (!customOk) return setMessage({ kind: 'err', text: `Give between ${ACTIVITY_POINTS_MIN} and ${ACTIVITY_POINTS_MAX} points.` })
+      if (!effectiveReason) return setMessage({ kind: 'err', text: 'Write what the points are for.' })
+      startTransition(async () => {
+        const result = await giveCustomPoints({ classId, studentIds: Array.from(selected), points: customAmount, reason: effectiveReason, save: saveCustom })
+        if (!result.ok) {
+          chime('err')
+          return setMessage({ kind: 'err', text: result.error })
+        }
+        chime('ok')
+        const n = result.data?.count ?? 0
+        setMessage({
+          kind: 'ok',
+          text: `Added ${customAmount} point${customAmount === 1 ? '' : 's'} for ${n} student${n === 1 ? '' : 's'}.${result.data?.saved ? ` “${effectiveReason}” is saved for next time.` : ''}`,
+        })
+        setSelected(new Set())
+        setReason('')
+        setSaveCustom(false)
+        router.refresh()
+      })
+      return
     }
     if (mode === 'add' && !activity) return setMessage({ kind: 'err', text: 'Pick an activity first.' })
     startTransition(async () => {
@@ -291,9 +323,30 @@ export function PointsPanel({ classId, classLabel, isAdmin, students, activities
             )
           })}
         </div>
+        {/* Custom (2026-10-25): any number of points with a reason, which can
+            be kept as one of this class's own for next time. */}
+        <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]">
+          <button
+            type="button"
+            onClick={() => {
+              setActivityId(CUSTOM)
+              setMode('add')
+            }}
+            aria-pressed={activityId === CUSTOM}
+            data-testid="custom-points-chip"
+            className={cn(
+              'rounded-[14px] border-[1.5px] border-dashed bg-parch-50 p-2.5 pt-3.5 text-center transition-all',
+              activityId === CUSTOM ? 'border-brand-800 shadow-nav-on ring-1 ring-brand-gold/50' : 'border-brand-gold/60',
+            )}
+          >
+            <span className="mb-1.5 block text-[26px] leading-none">✏️</span>
+            <span className="mb-0.5 block truncate text-[12px] font-bold text-parch-900">Custom</span>
+            <span className="block text-[11px] font-bold text-parch-500">Any amount</span>
+          </button>
+        </div>
         {activities.length === 0 && (
           <p className="pt-2.5 text-center text-[11.5px] text-parch-500">
-            No activities yet. Add this class&rsquo;s own under Class activities.
+            No activities yet. Use Custom, or add this class&rsquo;s own under Class activities.
           </p>
         )}
       </Card>
@@ -443,7 +496,30 @@ export function PointsPanel({ classId, classLabel, isAdmin, students, activities
                   {a.icon ? `${a.icon} ` : ''}{a.label} (+{a.points})
                 </option>
               ))}
+              <option value={CUSTOM}>✏️ Custom amount…</option>
             </select>
+          )}
+          {mode === 'add' && activities.length === 0 && !custom && (
+            <button type="button" onClick={() => setActivityId(CUSTOM)} className={cn(buttonClass('secondary'), 'min-h-[40px]')}>
+              ✏️ Custom amount
+            </button>
+          )}
+          {custom && (
+            <label className="flex min-h-[40px] items-center gap-1.5 text-[11.5px] font-bold text-parch-700">
+              Points
+              <input
+                type="number"
+                inputMode="numeric"
+                min={ACTIVITY_POINTS_MIN}
+                max={ACTIVITY_POINTS_MAX}
+                step={1}
+                value={customPoints}
+                onChange={(e) => setCustomPoints(e.target.value)}
+                className={cn(inputClass, 'w-[76px]')}
+                aria-label="Points to give"
+                data-testid="custom-points-amount"
+              />
+            </label>
           )}
           {mode === 'remove' ? (
             <>
@@ -474,6 +550,28 @@ export function PointsPanel({ classId, classLabel, isAdmin, students, activities
                 />
               )}
             </>
+          ) : custom ? (
+            <>
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className={cn(inputClass, 'min-w-[160px] flex-1')}
+                maxLength={saveCustom ? 60 : 200}
+                aria-label="What the points are for"
+                placeholder="What for? e.g. Helped set up — shown on the ledger"
+                data-testid="custom-points-reason"
+              />
+              <label className="flex min-h-[40px] items-center gap-1.5 text-[11.5px] font-bold text-parch-700">
+                <input
+                  type="checkbox"
+                  checked={saveCustom}
+                  onChange={(e) => setSaveCustom(e.target.checked)}
+                  className={checkboxClass}
+                  data-testid="custom-points-save"
+                />
+                Save for next time
+              </label>
+            </>
           ) : (
             <input
               value={reason}
@@ -484,7 +582,12 @@ export function PointsPanel({ classId, classLabel, isAdmin, students, activities
               placeholder="Reason (optional) — shown on the student's ledger"
             />
           )}
-          <button type="button" onClick={submit} disabled={pending || (mode === 'remove' ? !effectiveReason : !activity)} className={cn(buttonClass(mode === 'add' ? 'primary' : 'danger'), 'min-h-[40px] shrink-0')}>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={pending || (mode === 'remove' ? !effectiveReason : custom ? !customOk || !effectiveReason : !activity)}
+            className={cn(buttonClass(mode === 'add' ? 'primary' : 'danger'), 'min-h-[40px] shrink-0')}
+          >
             {pending ? 'Saving…' : `${mode === 'add' ? 'Give' : 'Remove'} ${magnitude} pt${magnitude === 1 ? '' : 's'}`}
           </button>
         </div>

@@ -3,7 +3,10 @@ import { notFound } from 'next/navigation'
 import { BookOpen, CalendarClock, CalendarDays, Check, ClipboardList, ExternalLink, History, Star, UserCheck } from 'lucide-react'
 import { AgendaDoneButton } from '@/components/portal/AgendaDoneButton'
 import { requirePortalUser } from '@/lib/portal/session'
-import { assignmentsForServant } from '@/lib/portal/data/agenda'
+import { assignmentsForServant, presentationRows } from '@/lib/portal/data/agenda'
+import { plannerLink } from '@/lib/portal/data/planner'
+import { PlannerCard } from '@/components/portal/PlannerCard'
+import { PresentationLinks } from '@/components/portal/PresentationLinks'
 import { groupAssignmentsByWeek, weekDistanceLabel, type Assignment, type AssignmentWeek } from '@/lib/portal/agenda'
 import { mondayOf, churchToday } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
@@ -40,9 +43,12 @@ export default async function AssignmentsPage() {
   if (user.role === 'STUDENT') notFound()
 
   if (!user.servantId) {
+    // The admin keeps the planner link here and on the Schedule (2026-10-25).
+    const planner = await plannerLink()
     return (
       <>
         <PageHeader title="My Assignments" icon={<ClipboardList className="h-5 w-5" aria-hidden />} />
+        <PlannerCard url={planner} canEdit={user.role === 'ADMIN'} />
         <EmptyState
           title="Assignments are for servants"
           hint="Anything you are asked to lead or prepare will show up here once you are on a class."
@@ -52,13 +58,24 @@ export default async function AssignmentsPage() {
   }
 
   const today = churchToday()
-  const [all, account, phones] = await Promise.all([
+  const fellowship = new Set(user.fellowshipClassIds ?? [])
+  const [all, account, phones, planner, presentations] = await Promise.all([
     assignmentsForServant(user.servantId, today),
     prisma.account.findUnique({ where: { id: user.accountId }, select: { email: true } }),
     // Servant assignment notices (2026-10-19): somebody with no phone turned on
     // and no email only ever sees them in the bell.
     prisma.pushSubscription.count({ where: { accountId: user.accountId, live: isLiveSite(process.env) } }),
+    // The planner every class uses, and each class's deck for this Sunday and
+    // next, for every class this servant serves (2026-10-25).
+    plannerLink(),
+    presentationRows(user.classIds.filter((id) => !fellowship.has(id)), today),
   ])
+  const links = (
+    <>
+      <PlannerCard url={planner} canEdit={user.role === 'ADMIN'} />
+      <PresentationLinks rows={presentations} />
+    </>
+  )
   const unreachable = phones === 0 && !account?.email?.trim()
   const { upcoming, past, undated } = groupAssignmentsByWeek(all, today)
   // `upcoming` holds this week AND every future week, so upcoming[0] is only
@@ -70,6 +87,7 @@ export default async function AssignmentsPage() {
     return (
       <>
         <PageHeader title="My Assignments" icon={<ClipboardList className="h-5 w-5" aria-hidden />} />
+        {links}
         <EmptyState
           title="Nothing assigned to you yet"
           hint="Your class's Schedule of the Year is where activities and lead duty are handed out."
@@ -110,12 +128,14 @@ export default async function AssignmentsPage() {
 
       {unreachable && (
         <p className="mb-5 rounded-[12px] border border-parch-200 bg-parch-50 px-4 py-2.5 text-[12px] text-parch-700" data-testid="notices-hint">
-          Want to hear when you are given something, and the evening before?{' '}
+          Want to hear when you are given something, and a reminder each evening until it is done?{' '}
           <Link href="/portal/settings" className="font-bold text-brand-800 underline decoration-brand-gold underline-offset-2">
             Turn on phone notifications in Settings
           </Link>
         </p>
       )}
+
+      {links}
 
       {upcoming.length === 0 ? (
         <EmptyState title="Nothing coming up" hint="Your past assignments are below." />
@@ -246,7 +266,7 @@ function AssignmentList({ items, muted }: { items: Assignment[]; muted?: boolean
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[12px] font-bold text-brand-800 underline decoration-brand-gold underline-offset-2"
                     >
-                      <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Open slides
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden /> Open presentation
                     </a>
                   )}
                   {!muted && <AgendaDoneButton itemId={item.agendaItemId} done={!!item.doneLabel} part={item.title} />}

@@ -1,5 +1,5 @@
 import { Phone } from 'lucide-react'
-import { kidPhoneList, type KidPhone } from '@/lib/portal/phones'
+import { kidPhoneList, type CallFirst, type KidPhone } from '@/lib/portal/phones'
 import { cn } from '@/lib/utils'
 
 const WHOSE: Record<KidPhone['label'], string> = {
@@ -12,13 +12,14 @@ const WHOSE: Record<KidPhone['label'], string> = {
 /**
  * A child's phone numbers on every card a servant sees (2026-10-19), each one
  * tap to call. Staff pages only: a child never sees another child's family's
- * numbers.
+ * numbers. The mother's comes first, or the one a servant chose (2026-10-25).
  */
 export function KidPhones({
   name,
   fatherPhone,
   motherPhone,
   ownPhone,
+  callFirst,
   center = false,
   className,
 }: {
@@ -26,10 +27,11 @@ export function KidPhones({
   fatherPhone?: string | null
   motherPhone?: string | null
   ownPhone?: string | null
+  callFirst?: CallFirst | null
   center?: boolean
   className?: string
 }) {
-  const phones = kidPhoneList({ fatherPhone, motherPhone, ownPhone })
+  const phones = kidPhoneList({ fatherPhone, motherPhone, ownPhone, callFirst })
   if (phones.length === 0) {
     return (
       <p data-testid="kid-phones" className={cn('text-[11px] text-parch-500', center && 'text-center', className)}>

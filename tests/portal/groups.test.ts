@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  effectiveServant, families, planSplit, groupHealth, followUpScope, UNEVEN_GAP,
+  effectiveServant, families, planSplit, planShuffle, nextShuffleOn, shuffleNotice, groupHealth, followUpScope, UNEVEN_GAP,
   type GroupKid, type GroupServant,
 } from '@/lib/portal/groups'
 
@@ -161,5 +161,121 @@ describe('followUpScope', () => {
   it('admin and pastor see everything whole', () => {
     expect(followUpScope({ ...base, role: 'ADMIN' }, classes).whole).toEqual(['kg', '1st', '7th'])
     expect(followUpScope({ ...base, role: 'PASTOR' }, classes).whole).toEqual(['kg', '1st', '7th'])
+  })
+})
+
+/** A small seeded generator (mulberry32), so a shuffle in a test is the same every run. */
+function seeded(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// Shuffled every two months (2026-10-25): each child gets a new servant to
+// follow them up, the groups stay even and brothers and sisters stay together.
+describe('planShuffle', () => {
+  const placed = (n: number, ss: GroupServant[] = servants) =>
+    Array.from({ length: n }, (_, i) => kid(`k${String(i).padStart(2, '0')}`, { groupServantId: ss[i % ss.length]!.id }))
+
+  it('gives every child a new servant when the numbers allow, and keeps the groups even', () => {
+    for (const seed of [1, 2, 3, 42, 99, 2026]) {
+      const kids = placed(16)
+      const moves = planShuffle(kids, servants, seeded(seed))
+      expect(moves).toHaveLength(16)
+      for (const m of moves) expect(m.to).not.toBe(m.from)
+      const s = sizes(apply(kids, moves), servants)
+      expect(Math.max(...s) - Math.min(...s)).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('an uneven class still comes out within one: 18 children across 4 servants', () => {
+    for (const seed of [4, 5, 6]) {
+      const kids = placed(18)
+      const s = sizes(apply(kids, planShuffle(kids, servants, seeded(seed))), servants)
+      expect(Math.max(...s) - Math.min(...s)).toBeLessThanOrEqual(1)
+      expect(s.reduce((a, b) => a + b, 0)).toBe(18)
+    }
+  })
+
+  it('keeps brothers and sisters together, and raises no flag', () => {
+    const kids = [
+      kid('s1', { phones: ['6155550111'], groupServantId: 'A' }),
+      kid('s2', { phones: ['6155550111'], groupServantId: 'A' }),
+      kid('t1', { phones: ['6155550122'], groupServantId: 'B' }),
+      kid('t2', { phones: ['6155550122'], groupServantId: 'B' }),
+      kid('t3', { phones: ['6155550122'], groupServantId: 'B' }),
+      ...placed(11),
+    ]
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const after = apply(kids, planShuffle(kids, servants, seeded(seed)))
+      const servantOf = (id: string) => after.find((k) => k.id === id)!.groupServantId
+      expect(servantOf('s1')).toBe(servantOf('s2'))
+      expect(new Set([servantOf('t1'), servantOf('t2'), servantOf('t3')]).size).toBe(1)
+      expect(groupHealth(after, servants).flagged).toBe(false)
+    }
+  })
+
+  it('is the same shuffle for the same seed, and another for another seed', () => {
+    const kids = placed(16)
+    expect(planShuffle(kids, servants, seeded(7))).toEqual(planShuffle(kids, servants, seeded(7)))
+    expect(planShuffle(kids, servants, seeded(7))).not.toEqual(planShuffle(kids, servants, seeded(8)))
+  })
+
+  it('with one servant nobody moves', () => {
+    const one = [servants[0]!]
+    expect(planShuffle(placed(5, one), one, seeded(1))).toEqual([])
+  })
+
+  it('a servant new to the class is given children; only those who must stay with their old servant', () => {
+    const two = servants.slice(0, 2)
+    const kids = Array.from({ length: 6 }, (_, i) => kid(`k${i}`, { groupServantId: 'A' }))
+    const moves = planShuffle(kids, two, seeded(5))
+    expect(sizes(apply(kids, moves), two)).toEqual([3, 3])
+    expect(moves).toHaveLength(3)
+  })
+
+  it('a child with no servant yet is placed too', () => {
+    const kids = [...placed(8), kid('new')]
+    const after = apply(kids, planShuffle(kids, servants, seeded(3)))
+    expect(after.find((k) => k.id === 'new')!.groupServantId).not.toBeNull()
+  })
+})
+
+describe('nextShuffleOn', () => {
+  it('is two months on', () => {
+    expect(nextShuffleOn('2026-10-25')).toBe('2026-12-25')
+  })
+
+  it('keeps to the end of a shorter month', () => {
+    expect(nextShuffleOn('2026-12-31')).toBe('2027-02-28')
+    expect(nextShuffleOn('2027-12-31')).toBe('2028-02-29')
+  })
+
+  it('takes another number of months', () => {
+    expect(nextShuffleOn('2026-10-25', 1)).toBe('2026-11-25')
+  })
+})
+
+describe('shuffleNotice', () => {
+  it("tells a servant their new group, by the children's names", () => {
+    expect(shuffleNotice('5th & 6th Boys', ['Mina Saad', 'Mark Adly'])).toEqual({
+      title: 'Your follow-up group changed',
+      body: '5th & 6th Boys: you now follow up with 2 children: Mina Saad and Mark Adly.',
+      href: '/portal/my-group',
+    })
+  })
+
+  it('names the first six and counts the rest', () => {
+    const names = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8']
+    expect(shuffleNotice('KG', names).body).toBe('KG: you now follow up with 8 children: A1, A2, A3, A4, A5, A6 and 2 more.')
+  })
+
+  it('one child is "a child"', () => {
+    expect(shuffleNotice('KG', ['Mina Saad']).body).toBe('KG: you now follow up with 1 child: Mina Saad.')
   })
 })

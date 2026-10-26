@@ -81,6 +81,101 @@ export async function givePoints(raw: GivePointsInput): Promise<ActionResult<{ c
   })
 }
 
+/**
+ * Custom points (2026-10-25): "add custom points for all classes … and a reason,
+ * if they would like to save it for next time or not". A servant types how many
+ * (the range an activity may be worth) and what for. Ticking Save keeps it as
+ * one of the class's own activities at that value, so next time it is a tap.
+ * Taking points away is unchanged: always DEDUCTION_POINTS, with a reason.
+ */
+const CustomSchema = z.object({
+  classId: z.string().min(1),
+  studentIds: z.array(z.string().min(1)).min(1).max(200),
+  points: z.number(),
+  reason: z.string(),
+  save: z.boolean().optional(),
+})
+
+export type GiveCustomPointsInput = z.infer<typeof CustomSchema>
+
+/** The ledger's label is at most this long; a longer reason is kept whole beside it. */
+const LEDGER_LABEL_MAX = 80
+/** As long as an activity's name may be (createActivity). */
+const ACTIVITY_NAME_MAX = 60
+
+export async function giveCustomPoints(raw: GiveCustomPointsInput): Promise<ActionResult<{ count: number; points: number; saved: boolean }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    const input = CustomSchema.parse(raw)
+    const cls = await assertClassAction(user, input.classId, 'points.write')
+
+    const points = input.points
+    if (!Number.isInteger(points) || points < ACTIVITY_POINTS_MIN || points > ACTIVITY_POINTS_MAX) {
+      throw new PortalError(`Give between ${ACTIVITY_POINTS_MIN} and ${ACTIVITY_POINTS_MAX} points.`)
+    }
+    const reason = input.reason.trim()
+    if (!reason) throw new PortalError('Write what the points are for.')
+    if (reason.length > 200) throw new PortalError('Keep the reason under 200 characters.')
+    const save = input.save === true
+    if (save && reason.length > ACTIVITY_NAME_MAX) {
+      throw new PortalError(`Keep the reason under ${ACTIVITY_NAME_MAX} characters to save it for next time.`)
+    }
+
+    const students = await prisma.student.findMany({
+      where: { AND: [{ id: { in: input.studentIds } }, rosterWhere(cls.id)] },
+      select: { id: true, firstName: true, lastName: true },
+    })
+    if (students.length === 0) throw new PortalError('Those students are not in this class.')
+
+    // Saved, it is one of the class's own activities, named as the church-wide
+    // list and the class's own may not already be.
+    const key = activityKeyFor(reason)
+    if (save) {
+      const sameName = (a: { key: string; label: string }) => a.key === key || a.label.trim().toLowerCase() === reason.toLowerCase()
+      const listed = await prisma.pointActivity.findMany({
+        where: { isActive: true, OR: [{ classId: null }, { classId: cls.id }] },
+        select: { classId: true, key: true, label: true },
+      })
+      const everyClass = listed.find((a) => a.classId === null && sameName(a))
+      if (everyClass) throw new PortalError(`Every class already has "${everyClass.label}". Pick it from the list, or untick Save for next time.`)
+      const own = listed.find((a) => a.classId === cls.id && sameName(a))
+      if (own) throw new PortalError(`This class already has "${own.label}". Pick it from the list, or untick Save for next time.`)
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (save) {
+        // A removed activity of that name comes back, rather than a second.
+        const exists = await tx.pointActivity.findFirst({ where: { classId: cls.id, key }, select: { id: true } })
+        if (exists) await tx.pointActivity.update({ where: { id: exists.id }, data: { isActive: true, label: reason, points } })
+        else await tx.pointActivity.create({ data: { classId: cls.id, key, label: reason, points, icon: null, createdById: user.accountId } })
+      }
+      await tx.pointEntry.createMany({
+        data: students.map((s) => ({
+          studentId: s.id,
+          classId: cls.id,
+          points,
+          source: 'MANUAL' as const,
+          activityKey: save ? key : 'manual_custom',
+          activityLabel: reason.slice(0, LEDGER_LABEL_MAX),
+          reason: reason.length > LEDGER_LABEL_MAX ? reason : null,
+          createdById: user.accountId,
+        })),
+      })
+    })
+
+    if (save) await audit(user, 'activity.create', 'class', cls.id, `${cls.name}: activity "${reason}" (+${points}), saved while giving points`)
+    const who = students.length <= 3 ? students.map(studentName).join(', ') : `${students.length} students`
+    await audit(user, 'points.give', 'class', cls.id, `${cls.name}: +${points} "${reason.slice(0, LEDGER_LABEL_MAX)}" (custom) to ${who}`)
+
+    revalidatePath(`/portal/classes/${cls.id}`)
+    revalidatePath(`/portal/classes/${cls.id}/points`)
+    revalidatePath('/portal/leaderboard')
+    revalidatePath('/portal')
+    if (save) revalidateActivities(cls.id)
+    return { count: students.length, points, saved: save }
+  })
+}
+
 export async function undoPoints(entryId: string): Promise<ActionResult> {
   return runAction(async () => {
     const user = await requirePortalUser()
@@ -133,6 +228,11 @@ async function requireActivityScope(classId: string | null) {
   return { user, cls: null }
 }
 
+/** The stable key an activity is saved under, from its name. */
+function activityKeyFor(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `activity-${Date.now()}`
+}
+
 function revalidateActivities(classId: string | null): void {
   revalidatePath('/portal/admin/sessions')
   if (classId) revalidatePath(`/portal/classes/${classId}/points`)
@@ -153,7 +253,7 @@ export async function createActivity(raw: z.infer<typeof ActivitySchema>): Promi
     const input = ActivitySchema.parse(raw)
     const { user, cls } = await requireActivityScope(input.classId ?? null)
     const classId = cls?.id ?? null
-    const key = input.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `activity-${Date.now()}`
+    const key = activityKeyFor(input.label)
     // Matched by name as well as key: activities brought over from the old app
     // carry its random ids as keys, so "Homework" is not keyed "homework".
     const sameName = (a: { key: string; label: string }) => a.key === key || a.label.trim().toLowerCase() === input.label.toLowerCase()

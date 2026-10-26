@@ -19,7 +19,8 @@ import { cn } from '@/lib/utils'
  * Any servant of the class may do both, whoever's group the child is in.
  */
 export function KidCard({ card, today, canWrite }: { card: KidCardData; today: string; canWrite: boolean }) {
-  const primary = kidPhoneList({ fatherPhone: card.fatherPhone, motherPhone: card.motherPhone, ownPhone: card.ownPhone })[0] ?? null
+  // The mother's number, or the one a servant chose for this child (2026-10-25).
+  const primary = kidPhoneList({ fatherPhone: card.fatherPhone, motherPhone: card.motherPhone, ownPhone: card.ownPhone, callFirst: card.callFirst })[0] ?? null
   const wa = waLink(primary?.digits)
   const birthdayIn = card.dob ? daysUntilBirthday(card.dob, today) : null
   const last = card.lastContact
@@ -91,7 +92,7 @@ export function KidCard({ card, today, canWrite }: { card: KidCardData; today: s
           {card.member ? (
             <MemberPhone name={card.name} phone={card.ownPhone} className="mt-1.5" />
           ) : (
-            <KidPhones name={card.name} fatherPhone={card.fatherPhone} motherPhone={card.motherPhone} ownPhone={card.ownPhone} className="mt-1.5" />
+            <KidPhones name={card.name} fatherPhone={card.fatherPhone} motherPhone={card.motherPhone} ownPhone={card.ownPhone} callFirst={card.callFirst} className="mt-1.5" />
           )}
         </div>
       </div>

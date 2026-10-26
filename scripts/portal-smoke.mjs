@@ -111,6 +111,10 @@ const ROUTES = {
       '/portal/unassigned', '/portal/classes/kg/import',
       // Message families (2026-10-19).
       '/portal/classes/kg/message', '/portal/classes/kg/message?session=bible', '/portal/classes/kg/message?session=sunday&date=2026-09-20',
+      // Class photos (2026-10-25), and a paired class's register.
+      '/portal/classes/pre-k/photos', '/portal/classes/5th-6th-girls/attendance',
+      // Follow-ups narrowed to one class (2026-10-26).
+      '/portal/follow-ups?class=pre-k', '/portal/follow-ups?class=pre-k&show=done',
     ],
     gone: [],
   },
@@ -135,7 +139,8 @@ const ROUTES = {
       // UNASSIGNED is for the admin, stage overseers and class Coordinators.
       '/portal/unassigned',
     ],
-    notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123'],
+    // The pastor reads every class and takes no register, and sets no photos (2026-10-25).
+    notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123', '/portal/classes/kg/attendance', '/portal/classes/kg/photos'],
   },
   servant: {
     ok: [
@@ -151,6 +156,8 @@ const ROUTES = {
       '/portal/classes/high-school-girls/credentials',
       // …nor its families to message (2026-10-19).
       '/portal/classes/high-school-girls/message',
+      // …nor its children's photos (2026-10-25).
+      '/portal/classes/high-school-girls/photos',
       '/portal/students/nope123',
       '/portal/exams/nope123',
       '/portal/follow-ups/nope123',
@@ -165,6 +172,7 @@ const ROUTES = {
       '/portal/leaderboard', '/portal/leaderboard?class=kg',
       '/portal/my-group?tab=class', '/portal/my-group?tab=log',
       '/portal/reports/weekly', '/portal/classes/kg/message',
+      '/portal/classes/kg/photos', '/portal/classes/kg/attendance',
     ],
   },
 }
@@ -237,7 +245,8 @@ async function main() {
       ? String(account.classId).toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
       : null
     // …and messages its families (2026-10-19).
-    const own = ownClass ? [`/portal/classes/${ownClass}/credentials`, `/portal/classes/${ownClass}/message`] : []
+    // …and takes its children's photos (2026-10-25).
+    const own = ownClass ? [`/portal/classes/${ownClass}/credentials`, `/portal/classes/${ownClass}/message`, `/portal/classes/${ownClass}/photos`] : []
     const staff = account.role === 'student' ? [] : ROUTES.staffOnly
     for (const route of [...ROUTES.common, ...staff, ...plan.ok, ...(plan.ok2 || []), ...own]) await checkOk(jar, account.role, route)
     for (const route of plan.gone) await checkGone(jar, account.role, route)
