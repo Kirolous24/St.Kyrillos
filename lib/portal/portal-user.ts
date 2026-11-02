@@ -39,11 +39,22 @@ export async function loadPortalUser(where: Prisma.AccountWhereUniqueInput): Pro
   // their attendance has somewhere to live. It is never a portal user.
   if (account.role === 'MEMBER') return null
 
-  const classIds = account.servant
+  const own = account.servant
     ? account.servant.classes.map((c) => c.classId)
     : account.student?.classId
       ? [account.student.classId]
       : []
+  // "Coords and asst coords have FULL accessibility" to the other class of
+  // their 5th & 6th or 7th & 8th pair (2026-11-01): it counts as one of their
+  // classes, with the title they hold in theirs. Where they already serve it,
+  // their title there stands. Plain servants get its register only (below).
+  const titled = (title: 'COORDINATOR' | 'ASSISTANT_COORDINATOR') => {
+    const held = account.servant ? account.servant.classes.filter((c) => c.title === title) : []
+    return { held: held.map((c) => c.classId), partners: attendancePartners(held, own) }
+  }
+  const coordinator = titled('COORDINATOR')
+  const assistant = titled('ASSISTANT_COORDINATOR')
+  const classIds = Array.from(new Set([...own, ...coordinator.partners, ...assistant.partners]))
 
   return {
     accountId: account.id,
@@ -57,28 +68,16 @@ export async function loadPortalUser(where: Prisma.AccountWhereUniqueInput): Pro
     // a servant holding a student QR could scan themselves points.
     studentId: account.role === 'STUDENT' ? account.student?.id : undefined,
     classIds,
-    coordinatorOf: account.servant
-      ? account.servant.classes.filter((c) => c.title === 'COORDINATOR').map((c) => c.classId)
-      : [],
-    assistantOf: account.servant
-      ? account.servant.classes.filter((c) => c.title === 'ASSISTANT_COORDINATOR').map((c) => c.classId)
-      : [],
+    coordinatorOf: [...coordinator.held, ...coordinator.partners],
+    assistantOf: [...assistant.held, ...assistant.partners],
     stageOversight: account.servant?.stageOversight ?? null,
     // The meetings they serve (2026-10-24); the menu and the dashboard read it.
     fellowshipClassIds: account.servant
       ? account.servant.classes.filter((c) => c.class?.stage === 'FELLOWSHIP').map((c) => c.classId)
       : [],
-    // The registers they may also take: their classes' partners they do not
-    // serve themselves (2026-10-25).
+    // The registers they may also take: their classes' partners that are not
+    // already theirs (2026-10-25).
     attendanceOnly: account.servant ? attendancePartners(account.servant.classes, classIds) : [],
-    // The classes they may also post exams to: the partners of the classes
-    // they are Coordinator or Assistant Coordinator of (2026-10-26).
-    examPostOnly: account.servant
-      ? attendancePartners(
-          account.servant.classes.filter((c) => c.title === 'COORDINATOR' || c.title === 'ASSISTANT_COORDINATOR'),
-          classIds,
-        )
-      : [],
   }
 }
 

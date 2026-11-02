@@ -1,7 +1,7 @@
 'use client'
 
 import Link from '@/components/portal/Link'
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { Check, Keyboard, ListChecks, ScanLine, SlidersHorizontal, Undo2, X } from 'lucide-react'
 import { scanStudent, resolveScan, undoScan } from '@/lib/portal/actions/qr'
 import { QrScanner } from '@/components/portal/QrScanner'
@@ -10,6 +10,7 @@ import { SoundToggle } from '@/components/portal/SoundToggle'
 import { createLocalToggle } from '@/hooks/localToggle'
 import { Card, Field, EmptyState, Badge, Callout, buttonClass, checkboxClass, inputClass, selectClass } from '@/components/portal/ui'
 import { cn } from '@/lib/utils'
+import { AlsoSessions } from '@/components/portal/AlsoSessions'
 
 type Mode = 'ATTENDANCE' | 'POINTS'
 
@@ -102,6 +103,13 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
   // Points go only to a class this person gives points in.
   const shown = mode === 'POINTS' ? pointsClasses : classes
   const [sessionKey, setSessionKey] = useState(sessions.find((s) => s.key === 'sunday')?.key ?? sessions[0]?.key ?? '')
+  // Each scan records these sessions too (2026-11-01: "Sometimes vespers & hymns").
+  const [also, setAlso] = useState<string[]>([])
+  const alsoSessionKeys = useMemo(
+    () => (mode === 'ATTENDANCE' ? also.filter((k) => k !== sessionKey && sessions.some((s) => s.key === k)) : undefined),
+    [mode, also, sessionKey, sessions],
+  )
+  const alsoSignature = (alsoSessionKeys ?? []).join('+')
   const [activityId, setActivityId] = useState(activities[0]?.id ?? '')
   const [manual, setManual] = useState('')
   const [rows, setRows] = useState<Row[]>([])
@@ -178,6 +186,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
           code,
           mode,
           sessionKey: mode === 'ATTENDANCE' ? sessionKey : undefined,
+          alsoSessionKeys,
           activityId: mode === 'POINTS' ? activityId : undefined,
         })
         /**
@@ -202,13 +211,13 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
         busyRef.current = false
       })
     },
-    [classId, mode, sessionKey, activityId, queue, chime, showFlash],
+    [classId, mode, sessionKey, alsoSessionKeys, activityId, queue, chime, showFlash],
   )
 
   const submitCode = useCallback(
     (code: string) => {
       if (busyRef.current) return
-      const signature = `${classId}|${mode}|${mode === 'ATTENDANCE' ? sessionKey : activityId}`
+      const signature = `${classId}|${mode}|${mode === 'ATTENDANCE' ? [sessionKey, alsoSignature].filter(Boolean).join('+') : activityId}`
       if (signatureRef.current !== signature) {
         signatureRef.current = signature
         awardedRef.current = new Map()
@@ -235,6 +244,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
           code,
           mode,
           sessionKey: mode === 'ATTENDANCE' ? sessionKey : undefined,
+          alsoSessionKeys,
           activityId: mode === 'POINTS' ? activityId : undefined,
         })
         if (result.ok && result.data && mode === 'POINTS' && !result.data.already) {
@@ -264,7 +274,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
         busyRef.current = false
       })
     },
-    [classId, mode, sessionKey, activityId, pushRow],
+    [classId, mode, sessionKey, alsoSessionKeys, alsoSignature, activityId, pushRow],
   )
 
   /**
@@ -286,6 +296,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
           code: item.code,
           mode,
           sessionKey: mode === 'ATTENDANCE' ? sessionKey : undefined,
+          alsoSessionKeys,
           activityId: mode === 'POINTS' ? activityId : undefined,
         })
         if (!result.ok || !result.data) failed += 1
@@ -298,7 +309,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
                 undo: result.data.undo,
                 undone: false,
                 code: item.code,
-                signature: `${classId}|${mode}|${mode === 'ATTENDANCE' ? sessionKey : activityId}`,
+                signature: `${classId}|${mode}|${mode === 'ATTENDANCE' ? [sessionKey, alsoSignature].filter(Boolean).join('+') : activityId}`,
               }
             : {
                 name: item.name,
@@ -307,7 +318,7 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
                 undo: null,
                 undone: false,
                 code: item.code,
-                signature: `${classId}|${mode}|${mode === 'ATTENDANCE' ? sessionKey : activityId}`,
+                signature: `${classId}|${mode}|${mode === 'ATTENDANCE' ? [sessionKey, alsoSignature].filter(Boolean).join('+') : activityId}`,
               },
           { quiet: true },
         )
@@ -523,6 +534,9 @@ export function ScanPanel({ classes, sessions, activities, initialMode = 'ATTEND
                   <option key={s.key} value={s.key}>{s.label} (+{s.points})</option>
                 ))}
               </select>
+              <div className="mt-2">
+                <AlsoSessions options={sessions} primary={sessionKey} value={also} onChange={setAlso} disabled={pending} />
+              </div>
             </Field>
           ) : classActivities.length === 0 ? (
             /* F0015 — the message named the Points page without being one, so a

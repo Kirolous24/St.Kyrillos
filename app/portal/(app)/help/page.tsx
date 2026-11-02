@@ -157,7 +157,11 @@ export default async function HelpPage() {
               the pastor reads this page. */}
           <b className={S}>Cards printed from the old Sunday School app will not scan</b> — the code on them is a
           different format. Print a fresh set once from <b className={S}>Print QR cards</b> on the QR Check-in page and
-          hand them out; until a class has new cards, type the student&rsquo;s 4-digit ID instead.
+          hand them out; until a class has new cards, type the student&rsquo;s 4-digit ID instead.{' '}
+          {/* 2026-11-01 — several sessions at once. */}
+          When two sessions run together, such as Vespers and Hymns, tap the second one under{' '}
+          <b className={S}>Also record for</b>: one register, one code or one scan then counts for both, each with its
+          own points. It works the same on a class&rsquo;s attendance page and for servants&rsquo; meeting codes.
         </Topic>
 
         {/* 2026-10-24 — the Women's, Men's and Youth meetings. */}
@@ -184,7 +188,8 @@ export default async function HelpPage() {
           the Canva link for everyone serving the class. Once your part is ready, tap <b className={S}>Mark done</b>;
           until then you are reminded each evening, and on Saturday evening of everything for Sunday. The 5th &amp; 6th
           and 7th &amp; 8th boys&rsquo; and girls&rsquo; classes can also take each other&rsquo;s attendance: open{' '}
-          <b className={S}>Attendance</b> and pick the class.
+          <b className={S}>Attendance</b> and pick the class. Their Coordinators and Assistant Coordinators have the
+          other class as their own.
         </Topic>
 
         {/* 2026-10-25 — groups shuffled every two months; the sender's greeting. */}
@@ -201,9 +206,8 @@ export default async function HelpPage() {
         <Topic icon={<ClipboardCheck className={ICON} />} tone="#0E7490" title="Post one quiz to several classes" href="/portal/exams">
           On <b className={S}>Exams &amp; Quizzes</b>, write a quiz or import a sheet of them, then tick the other classes
           under <b className={S}>Also post to</b>. Each class gets its own copy, with its own results. You can post to
-          every class you serve; a Stage coordinator to their stage; the admin to any class. The 5th &amp; 6th and
-          7th &amp; 8th Coordinators and Assistant Coordinators can post to the other half of their pair too, though its
-          results stay with its own servants.
+          every class you serve (for the 5th &amp; 6th and 7th &amp; 8th Coordinators and Assistant Coordinators, that
+          includes the other class of their pair); a Stage coordinator to their stage; the admin to any class.
         </Topic>
 
         <Topic icon={<BookOpen className={ICON} />} tone="#6F1D1B" title="Find the curriculum" href="/portal/curriculum">

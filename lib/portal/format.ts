@@ -147,3 +147,9 @@ export function formatTimeOfDay(raw: string | null | undefined): string | null {
   const hour12 = h! % 12 === 0 ? 12 : h! % 12
   return `${hour12}:${String(m).padStart(2, '0')} ${mer}`
 }
+
+/** "a", "a and b", "a, b and c". */
+export function andList(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? ''
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}

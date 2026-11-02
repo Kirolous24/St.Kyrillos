@@ -23,7 +23,7 @@ export default async function AttendancePage({
   searchParams,
 }: {
   params: { id: string }
-  searchParams: { date?: string; session?: string }
+  searchParams: { date?: string; session?: string; also?: string }
 }) {
   const user = await requirePortalUser()
   // 'attendance.take' (2026-10-25): the servants of a class paired with this one
@@ -257,6 +257,7 @@ export default async function AttendancePage({
           existing={existing.map((e) => ({ studentId: e.studentId, status: e.status, reason: e.reason }))}
           lastSaved={lastSaved ? { at: lastSaved.at.toISOString(), by: lastSaved.by } : null}
           recentDates={recentDates.map((r) => r.date.toISOString().slice(0, 10))}
+          alsoKeys={(searchParams.also ?? '').split(',').filter(Boolean)}
         />
       )}
       {missedCount > 0 && (

@@ -65,17 +65,14 @@ const AlsoClassIds = z.array(z.string().min(1)).max(60).optional()
 
 /**
  * The classes a new exam goes to, every one checked before anything is
- * written: the class it is written in, which the poster must look after (they
- * land on it afterwards), then each other class once, which they may post to.
+ * written: the class it is written in, then each other class once. The poster
+ * looks after them all.
  */
 async function examTargets(user: PortalUser, classId: string, also: readonly string[] = []) {
-  const first = await assertClassAction(user, classId, EXAM_WRITE)
-  const rest = []
-  for (const id of Array.from(new Set(also))) {
-    if (id === first.id) continue
-    rest.push(await assertClassAction(user, id, 'exam.post'))
-  }
-  return [first, ...rest]
+  const ids = Array.from(new Set([classId, ...also]))
+  const targets = []
+  for (const id of ids) targets.push(await assertClassAction(user, id, EXAM_WRITE))
+  return targets
 }
 
 /**

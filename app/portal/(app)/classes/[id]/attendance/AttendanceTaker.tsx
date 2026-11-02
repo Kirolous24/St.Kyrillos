@@ -7,7 +7,8 @@ import { Check, X, Save, Pencil } from 'lucide-react'
 import { registerMarks, saveAttendance } from '@/lib/portal/actions/attendance'
 import { attendanceChanges, changedMarks, mergeRegister, registerBase, type RegisterMark } from '@/lib/portal/attendance-rules'
 import { Avatar, buttonClass, inputClass, Card } from '@/components/portal/ui'
-import { formatShortDate, formatDateTime } from '@/lib/portal/format'
+import { andList, formatShortDate, formatDateTime } from '@/lib/portal/format'
+import { AlsoSessions } from '@/components/portal/AlsoSessions'
 import { useChime } from '@/hooks/useChime'
 import { SoundToggle } from '@/components/portal/SoundToggle'
 import { cn } from '@/lib/utils'
@@ -26,6 +27,8 @@ interface Props {
   existing: Array<{ studentId: string; status: Status; reason: string | null }>
   lastSaved: { at: string; by: string } | null
   recentDates: string[]
+  /** Other sessions this register is also saved for, from the address (2026-11-01). */
+  alsoKeys?: string[]
 }
 
 const NEXT: Record<Status, Status> = { ABSENT: 'PRESENT', PRESENT: 'EXCUSED', EXCUSED: 'ABSENT' }
@@ -148,6 +151,12 @@ export function AttendanceTaker(props: Props) {
 
   const chime = useChime()
   const [confirming, setConfirming] = useState(false)
+  // "Sometimes vespers & hymns" (2026-11-01): the same register saved for other
+  // sessions too, each by its own rules.
+  const [also, setAlso] = useState<string[]>(() =>
+    (props.alsoKeys ?? []).filter((k) => k !== props.sessionKey && props.sessions.some((s) => s.key === k)),
+  )
+  const alsoSessions = props.sessions.filter((s) => also.includes(s.key) && s.key !== props.sessionKey)
   // createPortal needs document, absent during the server render.
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -197,7 +206,9 @@ export function AttendanceTaker(props: Props) {
   }, [roster, sheet.stored, changes])
 
   function navigate(date: string, sessionKey: string) {
-    router.push(`/portal/classes/${props.classId}/attendance?date=${date}&session=${sessionKey}`)
+    // The other sessions chosen go along to another day or session.
+    const keep = also.filter((k) => k !== sessionKey)
+    router.push(`/portal/classes/${props.classId}/attendance?date=${date}&session=${sessionKey}${keep.length ? `&also=${keep.join(',')}` : ''}`)
   }
 
   function cycle(id: string) {
@@ -254,6 +265,7 @@ export function AttendanceTaker(props: Props) {
         classId: props.classId,
         date: props.date,
         sessionKey: props.sessionKey,
+        alsoSessionKeys: alsoSessions.map((s) => s.key),
         // Only this servant's changes: the rest of the register may hold other
         // servants' marks that are newer than this screen.
         marks: changes.map((c) => ({ studentId: c.studentId, status: c.status, reason: c.reason as Reason | null })),
@@ -276,9 +288,10 @@ export function AttendanceTaker(props: Props) {
             : ` ${net} pts from ${lost} student${lost === 1 ? '' : 's'}.`
       // The register's totals from the server, so another servant's marks count.
       const t = result.data!
+      const others = t.also.map((o) => ` ${o.label}: ${o.present} present, ${o.excused} excused, ${o.absent} absent.`).join('')
       setMessage({
         kind: 'ok',
-        text: `Saved ${t.present} present, ${t.excused} excused, ${t.absent} absent.${points}${extra ? ` ${extra}.` : ''}`,
+        text: `Saved ${t.present} present, ${t.excused} excused, ${t.absent} absent.${points}${others}${extra ? ` ${extra}.` : ''}`,
       })
       ignoreBefore.current = Date.now()
       router.refresh()
@@ -325,6 +338,11 @@ export function AttendanceTaker(props: Props) {
               className={cn(inputClass, 'max-w-[190px]')}
             />
           </label>
+          {props.sessions.length > 1 && (
+            <div className="order-last w-full">
+              <AlsoSessions options={props.sessions} primary={props.sessionKey} value={also} onChange={setAlso} disabled={pending} />
+            </div>
+          )}
           {props.sessions.length > 1 && (
             <label className="min-w-[150px] flex-1 sm:hidden">
               <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.8px] text-parch-500">Session</span>
@@ -503,6 +521,7 @@ export function AttendanceTaker(props: Props) {
         >
           <Save className="h-[13px] w-[13px]" />
           {pending ? 'Saving…' : hasExisting ? 'Update attendance' : 'Save attendance'}
+          {!pending && alsoSessions.length > 0 && ` · ${alsoSessions.length + 1} sessions`}
         </button>
       </div>
 
@@ -522,7 +541,8 @@ export function AttendanceTaker(props: Props) {
               Save {formatShortDate(props.date)}?
             </h2>
             <p className="mb-3 text-[12px] text-parch-500">
-              {session?.label ?? props.sessionKey} · {diff.changed} change{diff.changed === 1 ? '' : 's'}
+              {andList([session?.label ?? props.sessionKey, ...alsoSessions.map((s) => s.label)])} · {diff.changed} change
+              {diff.changed === 1 ? '' : 's'}
             </p>
 
             {diff.createsEmptyRegister && (
@@ -565,6 +585,14 @@ export function AttendanceTaker(props: Props) {
                 </p>
                 <p className="text-[12.5px] text-parch-600">{diff.reasonOnly.map((r) => r.name).join(', ')}</p>
               </div>
+            )}
+
+            {alsoSessions.length > 0 && (
+              <p className="mb-2.5 rounded-[10px] border border-brand-gold/40 bg-brand-wash/40 p-2.5 text-[12px] text-parch-700" data-testid="also-note">
+                <strong>Also saved for {andList(alsoSessions.map((s) => s.label))}</strong>: the same marks, each with
+                that session&rsquo;s points. Anyone nobody has marked there yet gets the mark shown here; marks already
+                saved there are kept.
+              </p>
             )}
 
             {unmarked > 0 && (

@@ -150,6 +150,15 @@ export function isFutureDate(date: string, today: string): boolean {
   return date > today
 }
 
+/**
+ * The sessions one save records (2026-11-01: "Sometimes vespers & hymns"): the
+ * session being taken first, then each other one once. The same rule for the
+ * register, QR codes and card scans.
+ */
+export function sessionsToRecord(primary: string, also: readonly string[] | undefined): string[] {
+  return Array.from(new Set([primary, ...(also ?? [])]))
+}
+
 
 
 /* ── What a save would change ─────────────────────────────────────────────── */

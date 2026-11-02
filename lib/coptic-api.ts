@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { isUniqueViolation } from "@/lib/prisma-errors";
 
 const BASE_URL = "https://api.coptic.io/api";
 const FETCH_TIMEOUT = 5000; // 5 seconds
@@ -192,6 +193,47 @@ async function fetchCelebrationsForDate(
   }
 }
 
+/**
+ * Keep a fetched day in the cache. A cache that cannot be written must never
+ * cost the visitor the day (2026-11-01): two pages built at once both miss the
+ * cache and both write it, and the second write is refused as a duplicate,
+ * which used to land in the fetch's catch and return an empty day.
+ */
+async function writeCopticCache(date: string, result: CopticDayData): Promise<void> {
+  const dateObj = new Date(date + "T12:00:00Z");
+  try {
+    await prisma.copticDayCache.upsert({
+      where: { id: date },
+      create: {
+        id: date,
+        date: dateObj,
+        copticDate: result.copticDate,
+        season: result.season,
+        seasonDay: result.seasonDay,
+        isFasting: result.isFasting,
+        readings: result.readings as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        synaxarium: result.synaxarium as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        feasts: result.feasts as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        fetchedAt: new Date(),
+      },
+      update: {
+        copticDate: result.copticDate,
+        season: result.season,
+        seasonDay: result.seasonDay,
+        isFasting: result.isFasting,
+        readings: result.readings as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        synaxarium: result.synaxarium as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        feasts: result.feasts as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        fetchedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    // Another request cached the same day a moment earlier: nothing is lost.
+    if (isUniqueViolation(error)) return;
+    console.error(`[coptic-api] Could not cache ${date}:`, error);
+  }
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /** Get coptic day data for a single date (YYYY-MM-DD). Uses DB cache. */
@@ -260,33 +302,7 @@ export async function getCopticDayData(date: string): Promise<CopticDayData> {
       feasts: celebrations,
     };
 
-    // Write to cache
-    const dateObj = new Date(date + "T12:00:00Z");
-    await prisma.copticDayCache.upsert({
-      where: { id: date },
-      create: {
-        id: date,
-        date: dateObj,
-        copticDate: result.copticDate,
-        season: result.season,
-        seasonDay: result.seasonDay,
-        isFasting: result.isFasting,
-        readings: result.readings as unknown as import("@prisma/client").Prisma.InputJsonValue,
-        synaxarium: result.synaxarium as unknown as import("@prisma/client").Prisma.InputJsonValue,
-        feasts: result.feasts as unknown as import("@prisma/client").Prisma.InputJsonValue,
-        fetchedAt: new Date(),
-      },
-      update: {
-        copticDate: result.copticDate,
-        season: result.season,
-        seasonDay: result.seasonDay,
-        isFasting: result.isFasting,
-        readings: result.readings as unknown as import("@prisma/client").Prisma.InputJsonValue,
-        synaxarium: result.synaxarium as unknown as import("@prisma/client").Prisma.InputJsonValue,
-        feasts: result.feasts as unknown as import("@prisma/client").Prisma.InputJsonValue,
-        fetchedAt: new Date(),
-      },
-    });
+    await writeCopticCache(date, result);
 
     return result;
   } catch (error) {

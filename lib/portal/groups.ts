@@ -1,4 +1,5 @@
 import type { PortalUser, StageKey } from './permissions'
+import { andList } from './format'
 
 /**
  * Follow-up groups (2026-09-26): each class's kids are split evenly across the
@@ -279,12 +280,6 @@ export function planShuffle(kids: readonly GroupKid[], servants: readonly GroupS
     if (dest !== from) moves.push({ kidId: k.id, from, to: dest })
   }
   return moves
-}
-
-/** "a", "a and b", "a, b and c". */
-function andList(items: readonly string[]): string {
-  if (items.length <= 1) return items[0] ?? ''
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
 /** What a servant is told when their class's groups are shuffled (2026-10-25). */

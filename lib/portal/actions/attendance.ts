@@ -2,12 +2,14 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import type { AttendanceSession, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requirePortalUser } from '../session'
 import { assertClassAction } from '../data/classes'
 import { runAction, PortalError, type ActionResult } from '../action-result'
 import { parseDateOnly, toUTCDate, churchToday } from '../dates'
-import { isFutureDate, lastSavedOf } from '../attendance-rules'
+import { isFutureDate, lastSavedOf, sessionsToRecord } from '../attendance-rules'
+import { andList } from '../format'
 import { syncAutoFollowUps } from '../followup-sync'
 import { registerWhere } from '../class-members'
 import { awardAttendancePoints, reverseAttendancePoints } from '../attendance-award'
@@ -23,8 +25,119 @@ const SaveSchema = z.object({
   classId: z.string().min(1),
   date: z.string(),
   sessionKey: z.string().min(1),
+  // Other sessions the same register is saved for (2026-11-01: "Sometimes
+  // vespers & hymns").
+  alsoSessionKeys: z.array(z.string().min(1).max(64)).max(10).optional(),
   marks: z.array(MarkSchema).max(500),
 })
+
+type Mark = z.infer<typeof MarkSchema>
+type Fill = { status: 'PRESENT' | 'EXCUSED' | 'ABSENT'; reason: string | null }
+const ABSENT: Fill = { status: 'ABSENT', reason: null }
+
+/**
+ * Write one session's register: the marks this servant made, then everybody
+ * else on its list where nothing is stored yet, as `fill` says. The fill never
+ * overwrites (ON CONFLICT DO NOTHING): another servant's mark, or a scanned
+ * card, stays exactly as it is. A child filled in present earns the session's
+ * points like any other.
+ */
+async function writeRegister(
+  tx: Prisma.TransactionClient,
+  args: {
+    classId: string
+    session: { key: string; label: string; points: number }
+    roster: readonly string[]
+    marks: readonly Mark[]
+    fill: (studentId: string) => Fill
+    accountId: string
+    day: Date
+  },
+): Promise<void> {
+  const { classId, session, accountId, day } = args
+  const onRoster = new Set(args.roster)
+  const award = (studentId: string) => ({
+    studentId,
+    classId,
+    sessionKey: session.key,
+    sessionLabel: session.label,
+    sessionPoints: session.points,
+    accountId,
+  })
+  const mine = args.marks.filter((m) => onRoster.has(m.studentId))
+  for (const m of mine) {
+    const upserted = await tx.attendanceRecord.upsert({
+      where: { studentId_date_sessionKey: { studentId: m.studentId, date: day, sessionKey: session.key } },
+      create: {
+        studentId: m.studentId,
+        classId,
+        date: day,
+        sessionKey: session.key,
+        status: m.status,
+        reason: m.status === 'EXCUSED' ? m.reason ?? 'other' : null,
+        markedById: accountId,
+      },
+      update: {
+        classId,
+        status: m.status,
+        reason: m.status === 'EXCUSED' ? m.reason ?? 'other' : null,
+        markedById: accountId,
+      },
+      // Select only `id`: Prisma keeps a bare-id upsert as one
+      // INSERT ... ON CONFLICT DO UPDATE, but a nested read of pointEntry
+      // degrades it to SELECT-then-INSERT with no ON CONFLICT, so two
+      // servants saving the same class at once lose the race on the
+      // unique index and roll the whole class back with P2002.
+      select: { id: true },
+    })
+    const record = {
+      id: upserted.id,
+      pointEntry: await tx.pointEntry.findUnique({
+        where: { attendanceRecordId: upserted.id },
+        select: { id: true, points: true, undone: true },
+      }),
+    }
+    if (m.status === 'PRESENT') await awardAttendancePoints(tx, record, award(m.studentId))
+    else await reverseAttendancePoints(tx, record, award(m.studentId))
+  }
+
+  const marked = new Set(mine.map((m) => m.studentId))
+  const fills = args.roster.filter((id) => !marked.has(id)).map((id) => ({ studentId: id, ...args.fill(id) }))
+  if (fills.length === 0) return
+  // Who is filled in present onto nothing stored, read first: only they are
+  // owed this session's points from the fill.
+  const present = fills.filter((f) => f.status === 'PRESENT').map((f) => f.studentId)
+  const stored = present.length
+    ? new Set(
+        (
+          await tx.attendanceRecord.findMany({
+            where: { date: day, sessionKey: session.key, studentId: { in: present } },
+            select: { studentId: true },
+          })
+        ).map((r) => r.studentId),
+      )
+    : new Set<string>()
+  await tx.attendanceRecord.createMany({
+    data: fills.map((f) => ({
+      studentId: f.studentId,
+      classId,
+      date: day,
+      sessionKey: session.key,
+      status: f.status,
+      reason: f.status === 'EXCUSED' ? f.reason ?? 'other' : null,
+      markedById: accountId,
+    })),
+    skipDuplicates: true,
+  })
+  const owed = present.filter((id) => !stored.has(id))
+  if (owed.length > 0) {
+    const created = await tx.attendanceRecord.findMany({
+      where: { date: day, sessionKey: session.key, studentId: { in: owed }, status: 'PRESENT' },
+      select: { id: true, studentId: true, pointEntry: { select: { id: true, points: true, undone: true } } },
+    })
+    for (const r of created) await awardAttendancePoints(tx, r, award(r.studentId))
+  }
+}
 
 export type SaveAttendanceInput = z.infer<typeof SaveSchema>
 
@@ -40,7 +153,18 @@ export type SaveAttendanceInput = z.infer<typeof SaveSchema>
  */
 export async function saveAttendance(
   raw: SaveAttendanceInput,
-): Promise<ActionResult<{ saved: number; opened: number; closed: number; present: number; excused: number; absent: number }>> {
+): Promise<
+  ActionResult<{
+    saved: number
+    opened: number
+    closed: number
+    present: number
+    excused: number
+    absent: number
+    /** The other sessions it was saved for, each as it now stands (2026-11-01). */
+    also: Array<{ label: string; present: number; excused: number; absent: number }>
+  }>
+> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = SaveSchema.parse(raw)
@@ -51,14 +175,23 @@ export async function saveAttendance(
     if (isFutureDate(date, churchToday())) {
       throw new PortalError('You cannot take attendance for a day that has not happened yet.')
     }
-    const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
-    if (!session || !session.isActive) throw new PortalError('Unknown session.')
-    if (session.classId && session.classId !== cls.id) throw new PortalError('That meeting belongs to another class.')
+    // Every session this save covers, all checked before anything is written:
+    // the register's own first, then any others it is also saved for.
+    const sessions: AttendanceSession[] = []
+    for (const key of sessionsToRecord(input.sessionKey, input.alsoSessionKeys)) {
+      const session = await prisma.attendanceSession.findUnique({ where: { key } })
+      if (!session || !session.isActive) throw new PortalError('Unknown session.')
+      if (session.classId && session.classId !== cls.id) throw new PortalError('That meeting belongs to another class.')
+      sessions.push(session)
+    }
 
-    // Who this register may mark: the class's own children, and for its own
-    // meeting its members too (2026-09-28).
-    const classStudents = await prisma.student.findMany({ where: registerWhere(session, cls.id), select: { id: true } })
-    const allowed = new Set(classStudents.map((s) => s.id))
+    // Who each session's register lists: the class's own children, and for its
+    // own meeting its members too (2026-09-28).
+    const rosters = await Promise.all(
+      sessions.map(async (s) => (await prisma.student.findMany({ where: registerWhere(s, cls.id), select: { id: true } })).map((r) => r.id)),
+    )
+    // A servant marks the children on the register in front of them.
+    const allowed = new Set(rosters[0])
     const marks = input.marks.filter((m) => allowed.has(m.studentId))
     if (marks.length === 0) throw new PortalError('Nothing to save.')
 
@@ -66,67 +199,29 @@ export async function saveAttendance(
 
     await prisma.$transaction(
       async (tx) => {
-        for (const m of marks) {
-          const upserted = await tx.attendanceRecord.upsert({
-            where: { studentId_date_sessionKey: { studentId: m.studentId, date: day, sessionKey: session.key } },
-            create: {
-              studentId: m.studentId,
-              classId: cls.id,
-              date: day,
-              sessionKey: session.key,
-              status: m.status,
-              reason: m.status === 'EXCUSED' ? m.reason ?? 'other' : null,
-              markedById: user.accountId,
-            },
-            update: {
-              classId: cls.id,
-              status: m.status,
-              reason: m.status === 'EXCUSED' ? m.reason ?? 'other' : null,
-              markedById: user.accountId,
-            },
-            // Select only `id`: Prisma keeps a bare-id upsert as one
-            // INSERT ... ON CONFLICT DO UPDATE, but a nested read of pointEntry
-            // degrades it to SELECT-then-INSERT with no ON CONFLICT, so two
-            // servants saving the same class at once lose the race on the
-            // unique index and roll the whole class back with P2002.
-            select: { id: true },
-          })
-          const record = {
-            id: upserted.id,
-            pointEntry: await tx.pointEntry.findUnique({
-              where: { attendanceRecordId: upserted.id },
-              select: { id: true, points: true, undone: true },
-            }),
-          }
-
-          const award = {
-            studentId: m.studentId,
+        // The register's own session: everyone nobody has marked is absent.
+        await writeRegister(tx, { classId: cls.id, session: sessions[0]!, roster: rosters[0]!, marks, fill: () => ABSENT, accountId: user.accountId, day })
+        if (sessions.length === 1) return
+        // Every other session: the same marks, and for anyone nobody has
+        // marked there yet, the mark they now have in the register's own
+        // session — another servant's and a scanned card's included.
+        const first = new Map(
+          (
+            await tx.attendanceRecord.findMany({
+              where: { date: day, sessionKey: sessions[0]!.key, studentId: { in: rosters[0] } },
+              select: { studentId: true, status: true, reason: true },
+            })
+          ).map((r) => [r.studentId, { status: r.status, reason: r.reason }] as const),
+        )
+        for (let i = 1; i < sessions.length; i++) {
+          await writeRegister(tx, {
             classId: cls.id,
-            sessionKey: session.key,
-            sessionLabel: session.label,
-            sessionPoints: session.points,
+            session: sessions[i]!,
+            roster: rosters[i]!,
+            marks,
+            fill: (id) => first.get(id) ?? ABSENT,
             accountId: user.accountId,
-          }
-          if (m.status === 'PRESENT') await awardAttendancePoints(tx, record, award)
-          else await reverseAttendancePoints(tx, record, award)
-        }
-
-        // Everyone else on the register is recorded absent, but only where
-        // nothing is stored: ON CONFLICT DO NOTHING leaves another servant's
-        // mark, or a scanned card, exactly as it is.
-        const marked = new Set(marks.map((m) => m.studentId))
-        const unmarked = classStudents.filter((s) => !marked.has(s.id))
-        if (unmarked.length > 0) {
-          await tx.attendanceRecord.createMany({
-            data: unmarked.map((s) => ({
-              studentId: s.id,
-              classId: cls.id,
-              date: day,
-              sessionKey: session.key,
-              status: 'ABSENT' as const,
-              markedById: user.accountId,
-            })),
-            skipDuplicates: true,
+            day,
           })
         }
       },
@@ -134,48 +229,58 @@ export async function saveAttendance(
     )
 
     // The follow-up rule watches Sunday School, and a class's own meeting
-    // (2026-09-28). Shared with the QR check-in path so both stay in step (see
-    // lib/portal/followup-sync.ts).
-    // The whole register, as before: the children nobody marked were just
-    // recorded absent, and their streaks move too.
+    // (2026-09-28), for each session saved. Shared with the QR check-in path so
+    // both stay in step (see lib/portal/followup-sync.ts). The whole register,
+    // as before: the children nobody marked were just recorded, and their
+    // streaks move too.
     let opened = 0
     let closed = 0
-    if (session.key === 'sunday' || session.classId === cls.id) {
+    for (let i = 0; i < sessions.length; i++) {
+      const session = sessions[i]!
+      if (session.key !== 'sunday' && session.classId !== cls.id) continue
       const synced = await syncAutoFollowUps({
         classId: cls.id,
-        studentIds: classStudents.map((s) => s.id),
+        studentIds: rosters[i]!,
         threshold: cls.visitationThreshold,
         asOf: date,
         session: { key: session.key, label: session.label },
       })
-      opened = synced.opened
-      closed = synced.closed
+      opened += synced.opened
+      closed += synced.closed
     }
 
-    // The register as it now stands, everybody's marks included, for the
+    // Each register as it now stands, everybody's marks included, for the
     // confirmation and the audit line.
-    const totals = await prisma.attendanceRecord.groupBy({
-      by: ['status'],
-      where: { classId: cls.id, date: day, sessionKey: session.key, studentId: { in: classStudents.map((s) => s.id) } },
-      _count: { _all: true },
-    })
-    const count = (status: 'PRESENT' | 'EXCUSED') => totals.find((t) => t.status === status)?._count._all ?? 0
-    const present = count('PRESENT')
-    const excused = count('EXCUSED')
-    const absent = classStudents.length - present - excused
-    await audit(
-      user,
-      'attendance.save',
-      'class',
-      cls.id,
-      `${cls.name}: ${session.label} on ${date} — ${marks.length} changed; ${present}/${classStudents.length} present`,
+    const totals = await Promise.all(
+      sessions.map(async (session, i) => {
+        const rows = await prisma.attendanceRecord.groupBy({
+          by: ['status'],
+          where: { classId: cls.id, date: day, sessionKey: session.key, studentId: { in: rosters[i] } },
+          _count: { _all: true },
+        })
+        const count = (status: 'PRESENT' | 'EXCUSED') => rows.find((t) => t.status === status)?._count._all ?? 0
+        const present = count('PRESENT')
+        const excused = count('EXCUSED')
+        return { label: session.label, present, excused, absent: rosters[i]!.length - present - excused }
+      }),
     )
+    for (let i = 0; i < sessions.length; i++) {
+      const others = sessions.filter((_, j) => j !== i).map((s) => s.label)
+      await audit(
+        user,
+        'attendance.save',
+        'class',
+        cls.id,
+        `${cls.name}: ${sessions[i]!.label} on ${date} — ${marks.length} changed; ${totals[i]!.present}/${rosters[i]!.length} present${others.length ? ` (saved with ${andList(others)})` : ''}`,
+      )
+    }
 
     revalidatePath('/portal')
     revalidatePath(`/portal/classes/${cls.id}`)
     revalidatePath(`/portal/classes/${cls.id}/attendance`)
     revalidatePath('/portal/follow-ups')
-    return { saved: marks.length, opened, closed, present, excused, absent }
+    const [own, ...also] = totals
+    return { saved: marks.length, opened, closed, present: own!.present, excused: own!.excused, absent: own!.absent, also }
   })
 }
 

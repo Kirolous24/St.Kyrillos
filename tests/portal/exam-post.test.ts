@@ -1,51 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
-import path from 'node:path'
 import type { PortalUser } from '@/lib/portal/permissions'
 
 /**
  * One exam posted to several classes at once (2026-10-26): "if I'm the admin,
  * I can post in any classes. If I'm the coordinator, I can post the classes I'm
- * coordinating. Same thing with the assistant. And if I'm in the fifth and
- * sixth or seventh and eighth and I'm a coordinator, I can also post it to the
- * other version of the class." Each class gets its own copy, with its own
- * results. The other half of a pair is posted to and nothing else: its copy,
- * its results and its children stay with its own servants.
+ * coordinating. Same thing with the assistant." Each class gets its own copy,
+ * with its own results. A 5th & 6th or 7th & 8th Coordinator or Assistant
+ * Coordinator has the other class of the pair among theirs (2026-11-01), so
+ * they post there as anywhere else; a plain servant of the pair does not.
  *
  * Stand-ins: the signed-in user, the class check (with the real permission
  * rules) and the database.
  */
-const root = path.resolve(__dirname, '../..')
-
-function sources(dir: string): string[] {
-  const out: string[] = []
-  for (const name of readdirSync(dir)) {
-    const full = path.join(dir, name)
-    if (statSync(full).isDirectory()) out.push(...sources(full))
-    else if (/\.(ts|tsx)$/.test(name)) out.push(full)
-  }
-  return out
-}
-const files = ['app', 'components', 'lib'].flatMap((d) => sources(path.join(root, d)))
-const using = (needle: RegExp) =>
-  files.filter((f) => needle.test(readFileSync(f, 'utf8'))).map((f) => path.relative(root, f)).sort()
-
-describe('posting to the other half of a pair reaches nothing else', () => {
-  it('is asked for only where an exam is posted', () => {
-    expect(using(/'exam\.post'/)).toEqual(['lib/portal/actions/exams.ts', 'lib/portal/data/exams.ts', 'lib/portal/permissions.ts'])
-  })
-
-  it('the classes it adds are read only by the permission rules', () => {
-    expect(using(/examPostOnly/)).toEqual(['lib/portal/permissions.ts', 'lib/portal/portal-user.ts'])
-  })
-
-  it("the Exams list's students come from the classes a servant looks after, never from the ones they may only post to", () => {
-    const list = readFileSync(path.join(root, 'app/portal/(app)/exams/page.tsx'), 'utf8')
-    expect(list).toMatch(/assignableClasses\(user\)/)
-    expect(list).not.toMatch(/postableClasses/)
-  })
-})
-
 type Cls = { id: string; name: string; stage: string; isActive: boolean; sortOrder: number }
 
 const world = vi.hoisted(() => ({
@@ -96,12 +62,13 @@ vi.mock('@/lib/prisma', () => {
 })
 
 import { createExam, importExamsCsv } from '@/lib/portal/actions/exams'
-import { assignableClasses, postableClasses } from '@/lib/portal/data/exams'
+import { assignableClasses } from '@/lib/portal/data/exams'
 
 const base = { accountId: 'acc', role: 'SERVANT' as const, displayName: 'S', servantId: 'sv', coordinatorOf: [] as string[], assistantOf: [] as string[], stageOversight: null }
+// As loadPortalUser builds them (2026-11-01): the coordinator has the girls'
+// class as theirs; the plain servant takes its register and nothing else.
 const boysCoordinator: PortalUser = {
-  ...base, classIds: ['5th-6th-boys'], coordinatorOf: ['5th-6th-boys'],
-  attendanceOnly: ['5th-6th-girls'], examPostOnly: ['5th-6th-girls'],
+  ...base, classIds: ['5th-6th-boys', '5th-6th-girls'], coordinatorOf: ['5th-6th-boys', '5th-6th-girls'], attendanceOnly: [],
 }
 const boysServant: PortalUser = { ...base, classIds: ['5th-6th-boys'], attendanceOnly: ['5th-6th-girls'] }
 const stageCoordinator: PortalUser = { ...base, classIds: [], stageOversight: 'ELEMENTARY' }
@@ -133,31 +100,20 @@ beforeEach(() => {
 })
 
 describe('the classes a new exam is offered to', () => {
-  it('a pair’s Coordinator: their own class, and the other half to post to only', async () => {
-    expect((await postableClasses(boysCoordinator)).map((c) => [c.id, c.postOnly])).toEqual([
-      ['5th-6th-boys', false],
-      ['5th-6th-girls', true],
-    ])
-    // The classes they look after: the Exams list's students and the class an
-    // exam is written in come from these.
-    expect((await assignableClasses(boysCoordinator)).map((c) => c.id)).toEqual(['5th-6th-boys'])
+  it('a pair’s Coordinator: both classes of the pair', async () => {
+    expect((await assignableClasses(boysCoordinator)).map((c) => c.id)).toEqual(['5th-6th-boys', '5th-6th-girls'])
   })
 
   it('a servant of the pair without the title: their own class only', async () => {
-    expect((await postableClasses(boysServant)).map((c) => c.id)).toEqual(['5th-6th-boys'])
+    expect((await assignableClasses(boysServant)).map((c) => c.id)).toEqual(['5th-6th-boys'])
   })
 
   it('a Stage coordinator: every class of their stage', async () => {
-    expect((await postableClasses(stageCoordinator)).map((c) => [c.id, c.postOnly])).toEqual([
-      ['kg', false],
-      ['1st', false],
-    ])
     expect((await assignableClasses(stageCoordinator)).map((c) => c.id)).toEqual(['kg', '1st'])
   })
 
   it('the admin: every class, and no Fellowship meeting', async () => {
-    expect((await postableClasses(admin)).map((c) => c.id)).toEqual(['kg', '1st', '5th-6th-boys', '5th-6th-girls', '7th-8th-girls'])
-    expect((await postableClasses(admin)).every((c) => !c.postOnly)).toBe(true)
+    expect((await assignableClasses(admin)).map((c) => c.id)).toEqual(['kg', '1st', '5th-6th-boys', '5th-6th-girls', '7th-8th-girls'])
   })
 })
 
@@ -182,10 +138,10 @@ describe('createExam to several classes', () => {
     expect(world.created).toEqual([])
   })
 
-  it('the class it is written in is one the poster looks after, so they can open it afterwards', async () => {
+  it('a pair’s Coordinator may write it in the other class of the pair too', async () => {
     const r = await createExam({ ...exam, classId: '5th-6th-girls', alsoClassIds: ['5th-6th-boys'] })
-    expect(r.ok).toBe(false)
-    expect(world.created).toEqual([])
+    expect(r).toEqual({ ok: true, data: { id: 'exam-1', also: ['5th-6th-boys'] } })
+    expect(world.created.map((e) => e.classId)).toEqual(['5th-6th-girls', '5th-6th-boys'])
   })
 
   it('a class named twice, or named again, gets one copy', async () => {
@@ -200,7 +156,7 @@ describe('createExam to several classes', () => {
     expect(world.created).toHaveLength(1)
   })
 
-  it('a servant of the pair without the title cannot post to the other half', async () => {
+  it('a servant of the pair without the title cannot post to the other class', async () => {
     world.user = boysServant
     expect((await createExam({ ...exam, alsoClassIds: ['5th-6th-girls'] })).ok).toBe(false)
     expect(world.created).toEqual([])

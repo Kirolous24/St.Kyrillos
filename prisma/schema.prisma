@@ -948,7 +948,13 @@ model QrToken {
   kind          QrTokenKind
   classIds      String[]    @default([])
   sessionKey    String? // student attendance session
+  // Every session a code checks into, the first being sessionKey (2026-11-01:
+  // "Sometimes vespers & hymns"). Empty on older codes: sessionKey alone.
+  sessionKeys   String[]    @default([])
   activityKey   String? // point activity or servant activity
+  // Every servant activity a servants' meeting code records, the first being
+  // activityKey (2026-11-01). Empty on older codes: activityKey alone.
+  activityKeys  String[]    @default([])
   activityLabel String?
   points        Int?
   date          DateTime?   @db.Date

@@ -60,7 +60,10 @@ describe('getPortalUser', () => {
     expect((await getPortalUser())!.attendanceOnly).toEqual(['5th-6th-girls', '7th-8th-girls'])
   })
 
-  it('a Coordinator or Assistant Coordinator may also post exams to their class’s partner (2026-10-26)', async () => {
+  // "Coords and asst coords have FULL accessibility" to the other class of a
+  // 5th & 6th or 7th & 8th pair (2026-11-01): it is one of their classes,
+  // with the title they hold in theirs. Plain servants keep its register only.
+  it('a pair’s Coordinator or Assistant Coordinator has the other class as their own, with the same title', async () => {
     world.account = {
       id: 'acc-1',
       role: 'SERVANT',
@@ -74,13 +77,42 @@ describe('getPortalUser', () => {
         classes: [
           { classId: '5th-6th-boys', title: 'COORDINATOR', class: { stage: 'MIDDLE_SCHOOL', attendancePartnerId: '5th-6th-girls', attendancePartnerOf: [] } },
           { classId: '7th-8th-boys', title: 'ASSISTANT_COORDINATOR', class: { stage: 'MIDDLE_SCHOOL', attendancePartnerId: null, attendancePartnerOf: [{ id: '7th-8th-girls' }] } },
-          // Serving a paired class without a title: its partner's register, no exams.
+          // Serving a paired class without a title: its partner's register, nothing more.
           { classId: 'hs-boys', title: null, class: { stage: 'HIGH_SCHOOL', attendancePartnerId: 'hs-girls', attendancePartnerOf: [] } },
         ],
       },
     }
     const user = (await getPortalUser())!
-    expect(user.examPostOnly).toEqual(['5th-6th-girls', '7th-8th-girls'])
-    expect(user.attendanceOnly).toEqual(['5th-6th-girls', '7th-8th-girls', 'hs-girls'])
+    expect(user.classIds).toEqual(['5th-6th-boys', '7th-8th-boys', 'hs-boys', '5th-6th-girls', '7th-8th-girls'])
+    expect(user.coordinatorOf).toEqual(['5th-6th-boys', '5th-6th-girls'])
+    expect(user.assistantOf).toEqual(['7th-8th-boys', '7th-8th-girls'])
+    expect(user.attendanceOnly).toEqual(['hs-girls'])
+  })
+
+  it('where they already serve the other class, their title there stands', async () => {
+    const servantIn = (classes: unknown[]) => ({
+      id: 'acc-1', role: 'SERVANT', displayName: 'A Servant', photo: null, isActive: true, student: null,
+      servant: { id: 'sv-1', stageOversight: null, classes },
+    })
+    const boys = { stage: 'MIDDLE_SCHOOL', attendancePartnerId: '7th-8th-girls', attendancePartnerOf: [{ id: '7th-8th-girls' }] }
+    const girls = { stage: 'MIDDLE_SCHOOL', attendancePartnerId: '7th-8th-boys', attendancePartnerOf: [{ id: '7th-8th-boys' }] }
+
+    // Assistant Coordinator of the boys and Coordinator of the girls: no promotion either way.
+    world.account = servantIn([
+      { classId: '7th-8th-boys', title: 'ASSISTANT_COORDINATOR', class: boys },
+      { classId: '7th-8th-girls', title: 'COORDINATOR', class: girls },
+    ])
+    let user = (await getPortalUser())!
+    expect([user.classIds, user.coordinatorOf, user.assistantOf, user.attendanceOnly]).toEqual([
+      ['7th-8th-boys', '7th-8th-girls'], ['7th-8th-girls'], ['7th-8th-boys'], [],
+    ])
+
+    // Coordinator of the boys who the admin made a plain servant of the girls.
+    world.account = servantIn([
+      { classId: '7th-8th-boys', title: 'COORDINATOR', class: boys },
+      { classId: '7th-8th-girls', title: null, class: girls },
+    ])
+    user = (await getPortalUser())!
+    expect([user.classIds, user.coordinatorOf, user.assistantOf]).toEqual([['7th-8th-boys', '7th-8th-girls'], ['7th-8th-boys'], []])
   })
 })

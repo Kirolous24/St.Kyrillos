@@ -2,13 +2,11 @@
 
 import { checkboxClass } from '@/components/portal/ui'
 
-export type PostTarget = { id: string; name: string; postOnly: boolean }
+export type PostTarget = { id: string; name: string }
 
 /**
  * Post one exam to several classes at once (2026-10-26), on New exam and on
- * Import. Each class ticked gets its own copy with its own results. A class
- * the servant may only post to (the other half of their 5th & 6th or 7th & 8th
- * pair) says whose the results are, since the poster will not see them.
+ * Import. Each class ticked gets its own copy with its own results.
  */
 export function AlsoPostTo({
   classes,
@@ -59,10 +57,7 @@ export function AlsoPostTo({
                 className={checkboxClass}
                 data-also-class={c.id}
               />
-              <span>
-                {c.name}
-                {c.postOnly && <span className="font-normal text-parch-500"> · its own servants see the results</span>}
-              </span>
+              <span>{c.name}</span>
             </label>
           </li>
         ))}

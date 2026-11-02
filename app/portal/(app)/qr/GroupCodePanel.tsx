@@ -7,6 +7,7 @@ import { createGroupCode, createMeetingCode, codeStatus, endCode, type GroupCode
 import { secondsLeft } from '@/lib/portal/qr'
 import { Card, Callout, Field, buttonClass, selectClass, checkboxClass, Badge, Avatar } from '@/components/portal/ui'
 import { formatDateTime } from '@/lib/portal/format'
+import { AlsoSessions } from '@/components/portal/AlsoSessions'
 import { cn } from '@/lib/utils'
 
 type Mode = 'ATTENDANCE' | 'POINTS' | 'MEETING'
@@ -105,6 +106,10 @@ export function GroupCodePanel({
   const [sessionKey, setSessionKey] = useState(sessions.find((s) => s.key === 'sunday')?.key ?? sessions[0]?.key ?? '')
   const [activityId, setActivityId] = useState(activities[0]?.id ?? '')
   const [meetingKey, setMeetingKey] = useState(servantActivities.find((a) => a.key === 'servants_meeting')?.key ?? servantActivities[0]?.key ?? '')
+  // One code for several sessions or servant activities (2026-11-01: "Sometimes
+  // vespers & hymns").
+  const [alsoSessions, setAlsoSessions] = useState<string[]>([])
+  const [alsoMeeting, setAlsoMeeting] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [code, setCode] = useState<GroupCode | null>(null)
   const [left, setLeft] = useState(0)
@@ -190,7 +195,7 @@ export function GroupCodePanel({
     startTransition(async () => {
       if (mode === 'MEETING') {
         if (!meetingKey) return setError('Pick a servant activity.')
-        const result = await createMeetingCode({ activityKey: meetingKey })
+        const result = await createMeetingCode({ activityKey: meetingKey, alsoActivityKeys: alsoMeeting.filter((k) => k !== meetingKey) })
         if (!result.ok || !result.data) return setError(result.ok ? 'Could not open that code.' : result.error)
         setScanned([])
         return setCode(result.data)
@@ -201,6 +206,7 @@ export function GroupCodePanel({
         mode,
         classIds: chosen,
         sessionKey: mode === 'ATTENDANCE' ? sessionKey : undefined,
+        alsoSessionKeys: mode === 'ATTENDANCE' ? alsoSessions.filter((k) => k !== sessionKey) : undefined,
         activityId: mode === 'POINTS' ? activityId : undefined,
       })
       if (!result.ok || !result.data) return setError(result.ok ? 'Could not open that code.' : result.error)
@@ -354,6 +360,9 @@ export function GroupCodePanel({
                 <option key={a.key} value={a.key}>{a.label}</option>
               ))}
             </select>
+            <div className="mt-2">
+              <AlsoSessions options={servantActivities} primary={meetingKey} value={alsoMeeting} onChange={setAlsoMeeting} label="Also record" disabled={pending} />
+            </div>
           </Field>
         ) : (
           <>
@@ -393,6 +402,9 @@ export function GroupCodePanel({
                     <option key={s.key} value={s.key}>{s.label} (+{s.points})</option>
                   ))}
                 </select>
+                <div className="mt-2">
+                  <AlsoSessions options={sessions} primary={sessionKey} value={alsoSessions} onChange={setAlsoSessions} disabled={pending} />
+                </div>
               </Field>
             ) : activities.length === 0 ? (
               <div className="mb-3.5">

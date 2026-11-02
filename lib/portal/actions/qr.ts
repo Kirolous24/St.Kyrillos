@@ -4,7 +4,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import type { Prisma } from '@prisma/client'
+import type { AttendanceSession, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { isUniqueViolationOn } from '@/lib/prisma-errors'
 import { requirePortalUser } from '../session'
@@ -15,7 +15,8 @@ import { studentName } from '../data/students'
 import { awardAttendancePoints, type AttendanceAwardRecord } from '../attendance-award'
 import { undoPoints } from './points'
 import { formatDateOnly, mondayOf, parseDateOnly, churchToday, toUTCDate } from '../dates'
-import { formatLongDate } from '../format'
+import { andList, formatLongDate } from '../format'
+import { sessionsToRecord } from '../attendance-rules'
 import {
   buildTokenPayload,
   canRedeem,
@@ -62,7 +63,8 @@ export interface ScanOutcome {
   name: string
   message: string
   already: boolean
-  undo: { kind: 'ATTENDANCE' | 'POINTS'; id: string } | null
+  /** `ids`: every check-in one scan made, when it covered several sessions (2026-11-01). */
+  undo: { kind: 'ATTENDANCE' | 'POINTS'; id: string; ids?: string[] } | null
 }
 
 /**
@@ -84,6 +86,25 @@ function isAlreadyRedeemed(err: unknown): boolean {
  * the degraded SELECT-then-INSERT form loses the race between two people
  * checking the same student in at once.
  */
+/**
+ * The sessions one check-in covers, in order (2026-11-01: "Sometimes vespers &
+ * hymns"), every one still on; one that is not refuses the whole check-in.
+ */
+async function activeSessions(keys: readonly string[]): Promise<AttendanceSession[]> {
+  const out: AttendanceSession[] = []
+  for (const key of keys) {
+    const session = await prisma.attendanceSession.findUnique({ where: { key } })
+    if (!session || !session.isActive) throw new PortalError('That session is no longer available.')
+    out.push(session)
+  }
+  return out
+}
+
+/** The keys an older code names in its single column; a newer one lists them all. */
+function codeKeys(list: readonly string[], single: string | null): string[] {
+  return list.length > 0 ? [...list] : single ? [single] : []
+}
+
 async function withAward(tx: Prisma.TransactionClient, id: string): Promise<AttendanceAwardRecord> {
   return {
     id,
@@ -132,6 +153,8 @@ const GroupSchema = z.object({
   mode: z.enum(['ATTENDANCE', 'POINTS']),
   classIds: z.array(z.string().min(1).max(64)).min(1).max(30),
   sessionKey: z.string().min(1).max(64).optional(),
+  // Other sessions the same code checks into (2026-11-01).
+  alsoSessionKeys: z.array(z.string().min(1).max(64)).max(10).optional(),
   activityId: z.string().min(1).max(64).optional(),
   date: z.string().max(10).optional(),
 })
@@ -162,25 +185,29 @@ export async function createGroupCode(raw: CreateGroupCodeInput): Promise<Action
 
     if (input.mode === 'ATTENDANCE') {
       if (!input.sessionKey) throw new PortalError('Pick a session first.')
-      const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
-      if (!session || !session.isActive) throw new PortalError('That session is no longer available.')
+      const sessions = await activeSessions(sessionsToRecord(input.sessionKey, input.alsoSessionKeys))
       // A class's own meeting (2026-09-28) is checked into by that class alone.
-      if (session.classId && classIds.some((id) => id !== session.classId)) {
-        throw new PortalError(`${session.label} belongs to one class. Make its code for that class only.`)
+      for (const session of sessions) {
+        if (session.classId && classIds.some((id) => id !== session.classId)) {
+          throw new PortalError(`${session.label} belongs to one class. Make its code for that class only.`)
+        }
       }
+      const label = andList(sessions.map((s) => s.label))
+      const points = sessions.reduce((n, s) => n + s.points, 0)
       data = {
         token,
         kind: 'STUDENT_ATTENDANCE',
         classIds,
-        sessionKey: session.key,
-        activityLabel: session.label,
-        points: session.points,
+        sessionKey: sessions[0]!.key,
+        sessionKeys: sessions.map((s) => s.key),
+        activityLabel: label,
+        points,
         date: toUTCDate(date),
-        title: session.label,
+        title: label,
         expiresAt,
         createdById: user.accountId,
       }
-      subtitle = `${names.join(', ')} · ${formatLongDate(date)} · +${session.points} pts`
+      subtitle = `${names.join(', ')} · ${formatLongDate(date)} · +${points} pts`
     } else {
       if (!input.activityId) throw new PortalError('Pick an activity first.')
       const activity = await prisma.pointActivity.findUnique({ where: { id: input.activityId } })
@@ -215,6 +242,8 @@ export async function createGroupCode(raw: CreateGroupCodeInput): Promise<Action
 
 const MeetingSchema = z.object({
   activityKey: z.string().min(1).max(64),
+  // Other servant activities the same code records (2026-11-01).
+  alsoActivityKeys: z.array(z.string().min(1).max(64)).max(10).optional(),
   weekStart: z.string().max(10).optional(),
 })
 
@@ -225,8 +254,13 @@ export async function createMeetingCode(raw: z.infer<typeof MeetingSchema>): Pro
     if (user.role !== 'ADMIN' && user.role !== 'SERVANT') {
       throw new PortalError('Only servants and admins can open a servants-meeting code.')
     }
-    const activity = await prisma.servantActivity.findUnique({ where: { key: input.activityKey } })
-    if (!activity || !activity.isActive) throw new PortalError('That servant activity no longer exists.')
+    const activities = []
+    for (const key of sessionsToRecord(input.activityKey, input.alsoActivityKeys)) {
+      const activity = await prisma.servantActivity.findUnique({ where: { key } })
+      if (!activity || !activity.isActive) throw new PortalError('That servant activity no longer exists.')
+      activities.push(activity)
+    }
+    const label = andList(activities.map((a) => a.label))
 
     const weekStart = mondayOf(parseDateOnly(input.weekStart) ?? churchToday())
     const row = await prisma.qrToken.create({
@@ -234,15 +268,16 @@ export async function createMeetingCode(raw: z.infer<typeof MeetingSchema>): Pro
         token: generateToken(),
         kind: 'SERVANT_MEETING',
         classIds: [],
-        activityKey: activity.key,
-        activityLabel: activity.label,
+        activityKey: activities[0]!.key,
+        activityKeys: activities.map((a) => a.key),
+        activityLabel: label,
         weekStart: toUTCDate(weekStart),
-        title: activity.label,
+        title: label,
         expiresAt: expiryFrom(new Date(), MEETING_CODE_TTL_MS),
         createdById: user.accountId,
       },
     })
-    await audit(user, 'qr.meeting.create', 'qrToken', row.token, `${activity.label} check-in code for week of ${weekStart} (10 min)`)
+    await audit(user, 'qr.meeting.create', 'qrToken', row.token, `${label} check-in code for week of ${weekStart} (10 min)`)
     return toGroupCode(
       { token: row.token, kind: row.kind, expiresAt: row.expiresAt, title: row.title, activityLabel: row.activityLabel },
       `Servants only · week of ${formatLongDate(weekStart)}`,
@@ -308,7 +343,9 @@ type TokenRow = {
   kind: QrKind
   classIds: string[]
   sessionKey: string | null
+  sessionKeys: string[]
   activityKey: string | null
+  activityKeys: string[]
   activityLabel: string | null
   points: number | null
   date: Date | null
@@ -323,7 +360,9 @@ const tokenSelect = {
   kind: true,
   classIds: true,
   sessionKey: true,
+  sessionKeys: true,
   activityKey: true,
+  activityKeys: true,
   activityLabel: true,
   points: true,
   date: true,
@@ -382,80 +421,11 @@ async function redeemStudent(accountId: string, studentId: string, name: string,
   })
   const childClassIds = student ? studentClassIds(student) : []
   if (!student || childClassIds.length === 0) throw new PortalError('You are not in a class yet, so this code cannot check you in.')
-  const codeSession =
-    token.kind === 'STUDENT_ATTENDANCE' ? await prisma.attendanceSession.findUnique({ where: { key: token.sessionKey ?? '' } }) : null
-  // Which of the child's classes this lands in: their own for a church session,
-  // the class whose meeting it is for a class's own meeting (2026-09-28).
-  const recordIn = redeemClassFor({ childClassIds, codeClassIds: token.classIds, kind: token.kind as 'STUDENT_ATTENDANCE' | 'STUDENT_POINTS', session: codeSession })
-  if (!recordIn) throw new PortalError('This code is for a different class.')
-  const classId = recordIn
+  if (token.kind === 'STUDENT_ATTENDANCE') return redeemAttendance(accountId, name, token, student.id, childClassIds)
 
-  if (token.kind === 'STUDENT_ATTENDANCE') {
-    const session = codeSession
-    if (!session || !session.isActive) throw new PortalError('That session is no longer available.')
-    const date = token.date ? formatDateOnly(token.date) : churchToday()
-    const day = toUTCDate(date)
-
-    const outcome: RedeemOutcome = {
-      title: session.label,
-      detail: `You are marked present for ${session.label} on ${formatLongDate(date)}.`,
-      points: session.points > 0 ? session.points : null,
-      already: false,
-    }
-
-    try {
-      await prisma.$transaction(async (tx) => {
-        await tx.qrRedemption.create({ data: { tokenId: token.token, accountId, name } })
-        const record = await tx.attendanceRecord.upsert({
-          where: { studentId_date_sessionKey: { studentId: student.id, date: day, sessionKey: session.key } },
-          create: {
-            studentId: student.id,
-            classId,
-            date: day,
-            sessionKey: session.key,
-            status: 'PRESENT',
-            note: 'QR check-in',
-            markedById: accountId,
-          },
-          update: { classId, status: 'PRESENT', reason: null, note: 'QR check-in', markedById: accountId },
-          select: { id: true },
-        })
-        await awardAttendancePoints(tx, await withAward(tx, record.id), {
-          studentId: student.id,
-          classId,
-          sessionKey: session.key,
-          sessionLabel: session.label,
-          sessionPoints: session.points,
-          accountId,
-        })
-      })
-    } catch (err) {
-      if (!isAlreadyRedeemed(err)) throw err
-      outcome.already = true
-      outcome.detail = `You already checked in for ${session.label} on ${formatLongDate(date)}.`
-    }
-
-    // A student who scans in is attending again, so an open case should close.
-    // The port synced cases only from the manual Save-attendance button, so a
-    // class checking in by group QR never had its follow-ups updated at all.
-    if ((session.key === 'sunday' || session.classId === classId) && !outcome.already) {
-      const cls = await prisma.schoolClass.findUnique({
-        where: { id: classId },
-        select: { visitationThreshold: true },
-      })
-      await syncAutoFollowUps({
-        classId,
-        studentIds: [student.id],
-        threshold: cls?.visitationThreshold ?? 1,
-        asOf: date,
-        session: { key: session.key, label: session.label },
-      })
-      revalidatePath('/portal/follow-ups')
-    }
-
-    revalidatePath(`/portal/classes/${classId}/attendance`)
-    return outcome
-  }
+  // Points go to the first of the child's classes the code covers.
+  const classId = redeemClassFor({ childClassIds, codeClassIds: token.classIds, kind: 'STUDENT_POINTS', session: null })
+  if (!classId) throw new PortalError('This code is for a different class.')
 
   // STUDENT_POINTS
   const points = token.points ?? 0
@@ -494,16 +464,111 @@ async function redeemStudent(accountId: string, studentId: string, name: string,
   return outcome
 }
 
+/**
+ * A child checking in with a code: present for every session it covers
+ * (2026-11-01: "Sometimes vespers & hymns"), each recorded where it belongs —
+ * their own class for a church session, the class whose meeting it is for a
+ * class's own meeting (2026-09-28). One redemption per code, as always.
+ */
+async function redeemAttendance(
+  accountId: string,
+  name: string,
+  token: TokenRow,
+  studentId: string,
+  childClassIds: string[],
+): Promise<RedeemOutcome> {
+  const keys = codeKeys(token.sessionKeys, token.sessionKey)
+  const found = keys.length ? await prisma.attendanceSession.findMany({ where: { key: { in: keys } } }) : []
+  const sessions = keys.map((k) => found.find((s) => s.key === k)).filter((s): s is AttendanceSession => !!s && s.isActive)
+  if (sessions.length === 0) throw new PortalError('That session is no longer available.')
+  const targets = sessions.flatMap((session) => {
+    const classId = redeemClassFor({ childClassIds, codeClassIds: token.classIds, kind: 'STUDENT_ATTENDANCE', session })
+    return classId ? [{ session, classId }] : []
+  })
+  if (targets.length === 0) throw new PortalError('This code is for a different class.')
+
+  const date = token.date ? formatDateOnly(token.date) : churchToday()
+  const day = toUTCDate(date)
+  const label = andList(targets.map((t) => t.session.label))
+  const points = targets.reduce((n, t) => n + Math.max(0, t.session.points), 0)
+  const outcome: RedeemOutcome = {
+    title: label,
+    detail: `You are marked present for ${label} on ${formatLongDate(date)}.`,
+    points: points > 0 ? points : null,
+    already: false,
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.qrRedemption.create({ data: { tokenId: token.token, accountId, name } })
+      for (const { session, classId } of targets) {
+        const record = await tx.attendanceRecord.upsert({
+          where: { studentId_date_sessionKey: { studentId, date: day, sessionKey: session.key } },
+          create: {
+            studentId,
+            classId,
+            date: day,
+            sessionKey: session.key,
+            status: 'PRESENT',
+            note: 'QR check-in',
+            markedById: accountId,
+          },
+          update: { classId, status: 'PRESENT', reason: null, note: 'QR check-in', markedById: accountId },
+          select: { id: true },
+        })
+        await awardAttendancePoints(tx, await withAward(tx, record.id), {
+          studentId,
+          classId,
+          sessionKey: session.key,
+          sessionLabel: session.label,
+          sessionPoints: session.points,
+          accountId,
+        })
+      }
+    })
+  } catch (err) {
+    if (!isAlreadyRedeemed(err)) throw err
+    outcome.already = true
+    outcome.detail = `You already checked in for ${label} on ${formatLongDate(date)}.`
+  }
+
+  // A student who scans in is attending again, so an open case should close.
+  // The port synced cases only from the manual Save-attendance button, so a
+  // class checking in by group QR never had its follow-ups updated at all.
+  if (!outcome.already) {
+    let synced = false
+    for (const { session, classId } of targets) {
+      if (session.key !== 'sunday' && session.classId !== classId) continue
+      const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { visitationThreshold: true } })
+      await syncAutoFollowUps({
+        classId,
+        studentIds: [studentId],
+        threshold: cls?.visitationThreshold ?? 1,
+        asOf: date,
+        session: { key: session.key, label: session.label },
+      })
+      synced = true
+    }
+    if (synced) revalidatePath('/portal/follow-ups')
+  }
+
+  for (const classId of Array.from(new Set(targets.map((t) => t.classId)))) revalidatePath(`/portal/classes/${classId}/attendance`)
+  return outcome
+}
+
 async function redeemMeeting(accountId: string, servantId: string, name: string, token: TokenRow): Promise<RedeemOutcome> {
-  const activityKey = token.activityKey
-  if (!activityKey) throw new PortalError('This code is not tied to a servant activity.')
-  const activity = await prisma.servantActivity.findUnique({ where: { key: activityKey } })
-  if (!activity || !activity.isActive) throw new PortalError('That servant activity no longer exists.')
+  // Every activity the code covers (2026-11-01), in order, each still on.
+  const keys = codeKeys(token.activityKeys, token.activityKey)
+  if (keys.length === 0) throw new PortalError('This code is not tied to a servant activity.')
+  const found = await prisma.servantActivity.findMany({ where: { key: { in: keys } } })
+  const activities = keys.map((k) => found.find((a) => a.key === k)).filter((a): a is NonNullable<typeof a> => !!a && a.isActive)
+  if (activities.length === 0) throw new PortalError('That servant activity no longer exists.')
   const weekStart = token.weekStart ? formatDateOnly(token.weekStart) : mondayOf(churchToday())
+  const label = andList(activities.map((a) => a.label))
 
   const outcome: RedeemOutcome = {
-    title: activity.label,
-    detail: `You are marked attended for ${activity.label}, week of ${formatLongDate(weekStart)}.`,
+    title: label,
+    detail: `You are marked attended for ${label}, week of ${formatLongDate(weekStart)}.`,
     points: null,
     already: false,
   }
@@ -511,23 +576,25 @@ async function redeemMeeting(accountId: string, servantId: string, name: string,
   try {
     await prisma.$transaction(async (tx) => {
       await tx.qrRedemption.create({ data: { tokenId: token.token, accountId, name } })
-      await tx.servantAttendance.upsert({
-        where: { servantId_activityKey_weekStart: { servantId, activityKey, weekStart: toUTCDate(weekStart) } },
-        create: {
-          servantId,
-          activityKey,
-          weekStart: toUTCDate(weekStart),
-          status: 'PRESENT',
-          reason: null,
-          markedById: accountId,
-        },
-        update: { status: 'PRESENT', reason: null, markedById: accountId },
-      })
+      for (const activity of activities) {
+        await tx.servantAttendance.upsert({
+          where: { servantId_activityKey_weekStart: { servantId, activityKey: activity.key, weekStart: toUTCDate(weekStart) } },
+          create: {
+            servantId,
+            activityKey: activity.key,
+            weekStart: toUTCDate(weekStart),
+            status: 'PRESENT',
+            reason: null,
+            markedById: accountId,
+          },
+          update: { status: 'PRESENT', reason: null, markedById: accountId },
+        })
+      }
     })
   } catch (err) {
     if (!isAlreadyRedeemed(err)) throw err
     outcome.already = true
-    outcome.detail = `You already checked in for ${activity.label} this week.`
+    outcome.detail = `You already checked in for ${label} this week.`
   }
   return outcome
 }
@@ -539,11 +606,48 @@ const ScanSchema = z.object({
   code: z.string().min(1).max(500),
   mode: z.enum(['ATTENDANCE', 'POINTS']),
   sessionKey: z.string().min(1).max(64).optional(),
+  // Other sessions each scan also records (2026-11-01).
+  alsoSessionKeys: z.array(z.string().min(1).max(64)).max(10).optional(),
   activityId: z.string().min(1).max(64).optional(),
   date: z.string().max(10).optional(),
 })
 
 export type ScanStudentInput = z.infer<typeof ScanSchema>
+
+/** The sessions a card scan records, every one this class's (2026-11-01). */
+async function scanSessions(classId: string, input: ScanStudentInput): Promise<AttendanceSession[]> {
+  if (!input.sessionKey) throw new PortalError('Pick a session first.')
+  const sessions = await activeSessions(sessionsToRecord(input.sessionKey, input.alsoSessionKeys))
+  for (const s of sessions) if (s.classId && s.classId !== classId) throw new PortalError('That meeting belongs to another class.')
+  return sessions
+}
+
+/**
+ * Of those, the ones whose register lists this child: the first always (the
+ * card was found on it), another only if its register lists them too — a
+ * member is marked for a church session in their own class (2026-09-28).
+ */
+async function listedIn(classId: string, studentId: string, sessions: AttendanceSession[]): Promise<AttendanceSession[]> {
+  const out = sessions.slice(0, 1)
+  for (const s of sessions.slice(1)) {
+    const on = await prisma.student.findFirst({ where: { AND: [scanWhere(classId, 'ATTENDANCE', s), { id: studentId }] }, select: { id: true } })
+    if (on) out.push(s)
+  }
+  return out
+}
+
+/** Which of them already have this child present that day. */
+async function presentIn(studentId: string, day: Date, sessions: AttendanceSession[]): Promise<Set<string>> {
+  const present = new Set<string>()
+  for (const s of sessions) {
+    const record = await prisma.attendanceRecord.findUnique({
+      where: { studentId_date_sessionKey: { studentId, date: day, sessionKey: s.key } },
+      select: { status: true },
+    })
+    if (record?.status === 'PRESENT') present.add(s.key)
+  }
+  return present
+}
 
 export interface ResolvedScan {
   studentId: string
@@ -595,13 +699,9 @@ export async function resolveScan(raw: ScanStudentInput): Promise<ActionResult<R
     const date = parseDateOnly(input.date) ?? churchToday()
     let already = false
     if (input.mode === 'ATTENDANCE' && input.sessionKey) {
-      const existing = await prisma.attendanceRecord.findUnique({
-        where: {
-          studentId_date_sessionKey: { studentId: student.id, date: toUTCDate(date), sessionKey: input.sessionKey },
-        },
-        select: { status: true },
-      })
-      already = existing?.status === 'PRESENT'
+      // Already here means here for every session this scan records.
+      const sessions = await listedIn(cls.id, student.id, await scanSessions(cls.id, input))
+      already = (await presentIn(student.id, toUTCDate(date), sessions)).size === sessions.length
     }
 
     return { studentId: student.id, name: studentName(student), already }
@@ -626,54 +726,57 @@ export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<S
     const date = parseDateOnly(input.date) ?? churchToday()
 
     if (input.mode === 'ATTENDANCE') {
-      if (!input.sessionKey) throw new PortalError('Pick a session first.')
-      const session = await prisma.attendanceSession.findUnique({ where: { key: input.sessionKey } })
-      if (!session || !session.isActive) throw new PortalError('That session is no longer available.')
+      // Every session this scan records (2026-11-01), less any the child is
+      // already present for.
+      const sessions = await listedIn(cls.id, student.id, await scanSessions(cls.id, input))
       const day = toUTCDate(date)
-
-      const existing = await prisma.attendanceRecord.findUnique({
-        where: { studentId_date_sessionKey: { studentId: student.id, date: day, sessionKey: session.key } },
-        select: { id: true, status: true },
-      })
-      if (existing?.status === 'PRESENT') {
+      const present = await presentIn(student.id, day, sessions)
+      const toMark = sessions.filter((s) => !present.has(s.key))
+      if (toMark.length === 0) {
         return { studentId: student.id, name, message: `${name} was already present.`, already: true, undo: null }
       }
 
-      const recordId = await prisma.$transaction(async (tx) => {
-        const record = await tx.attendanceRecord.upsert({
-          where: { studentId_date_sessionKey: { studentId: student.id, date: day, sessionKey: session.key } },
-          create: {
+      const recordIds = await prisma.$transaction(async (tx) => {
+        const ids: string[] = []
+        for (const session of toMark) {
+          const record = await tx.attendanceRecord.upsert({
+            where: { studentId_date_sessionKey: { studentId: student.id, date: day, sessionKey: session.key } },
+            create: {
+              studentId: student.id,
+              classId: cls.id,
+              date: day,
+              sessionKey: session.key,
+              status: 'PRESENT',
+              note: 'Scanned in',
+              markedById: user.accountId,
+            },
+            update: { classId: cls.id, status: 'PRESENT', reason: null, note: 'Scanned in', markedById: user.accountId },
+            select: { id: true },
+          })
+          await awardAttendancePoints(tx, await withAward(tx, record.id), {
             studentId: student.id,
             classId: cls.id,
-            date: day,
             sessionKey: session.key,
-            status: 'PRESENT',
-            note: 'Scanned in',
-            markedById: user.accountId,
-          },
-          update: { classId: cls.id, status: 'PRESENT', reason: null, note: 'Scanned in', markedById: user.accountId },
-          select: { id: true },
-        })
-        await awardAttendancePoints(tx, await withAward(tx, record.id), {
-          studentId: student.id,
-          classId: cls.id,
-          sessionKey: session.key,
-          sessionLabel: session.label,
-          sessionPoints: session.points,
-          accountId: user.accountId,
-        })
-        return record.id
+            sessionLabel: session.label,
+            sessionPoints: session.points,
+            accountId: user.accountId,
+          })
+          ids.push(record.id)
+        }
+        return ids
       })
 
-      await audit(user, 'qr.scan.attendance', 'student', student.id, `${cls.name}: scanned ${name} present for ${session.label} on ${date}`)
+      const label = andList(toMark.map((s) => s.label))
+      const points = toMark.reduce((n, s) => n + Math.max(0, s.points), 0)
+      await audit(user, 'qr.scan.attendance', 'student', student.id, `${cls.name}: scanned ${name} present for ${label} on ${date}`)
       revalidatePath(`/portal/classes/${cls.id}/attendance`)
       revalidatePath('/portal')
       return {
         studentId: student.id,
         name,
-        message: `${name} marked present${session.points > 0 ? ` · +${session.points}` : ''}`,
+        message: `${name} marked present${sessions.length > 1 ? ` for ${label}` : ''}${points > 0 ? ` · +${points}` : ''}`,
         already: false,
-        undo: { kind: 'ATTENDANCE' as const, id: recordId },
+        undo: { kind: 'ATTENDANCE' as const, id: recordIds[0]!, ids: recordIds },
       }
     }
 
@@ -711,6 +814,8 @@ export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<S
 const UndoSchema = z.object({
   kind: z.enum(['ATTENDANCE', 'POINTS']),
   id: z.string().min(1).max(64),
+  // Every check-in one scan made, when it covered several sessions (2026-11-01).
+  ids: z.array(z.string().min(1).max(64)).max(10).optional(),
 })
 
 export async function undoScan(raw: z.infer<typeof UndoSchema>): Promise<ActionResult> {
@@ -724,22 +829,27 @@ export async function undoScan(raw: z.infer<typeof UndoSchema>): Promise<ActionR
       return undefined
     }
 
-    const record = await prisma.attendanceRecord.findUnique({
-      where: { id: input.id },
-      select: { id: true, classId: true, sessionKey: true, date: true, student: { select: { firstName: true, lastName: true } } },
-    })
-    if (!record) throw new PortalError('That check-in is already gone.')
-    const cls = await assertClassAction(user, record.classId, 'attendance.take')
-    // The linked PointEntry is removed by the cascade on attendanceRecordId.
-    await prisma.attendanceRecord.delete({ where: { id: record.id } })
-    await audit(
-      user,
-      'qr.scan.undo',
-      'student',
-      record.id,
-      `${cls.name}: undid ${record.sessionKey} check-in for ${studentName(record.student)} on ${formatDateOnly(record.date)}`,
-    )
-    revalidatePath(`/portal/classes/${cls.id}/attendance`)
+    let undone = 0
+    for (const id of input.ids?.length ? Array.from(new Set(input.ids)) : [input.id]) {
+      const record = await prisma.attendanceRecord.findUnique({
+        where: { id },
+        select: { id: true, classId: true, sessionKey: true, date: true, student: { select: { firstName: true, lastName: true } } },
+      })
+      if (!record) continue
+      const cls = await assertClassAction(user, record.classId, 'attendance.take')
+      // The linked PointEntry is removed by the cascade on attendanceRecordId.
+      await prisma.attendanceRecord.delete({ where: { id: record.id } })
+      await audit(
+        user,
+        'qr.scan.undo',
+        'student',
+        record.id,
+        `${cls.name}: undid ${record.sessionKey} check-in for ${studentName(record.student)} on ${formatDateOnly(record.date)}`,
+      )
+      revalidatePath(`/portal/classes/${cls.id}/attendance`)
+      undone++
+    }
+    if (undone === 0) throw new PortalError('That check-in is already gone.')
     revalidatePath('/portal/leaderboard')
     return undefined
   })

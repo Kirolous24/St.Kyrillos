@@ -110,10 +110,12 @@ function teachingClasses() {
 }
 
 /**
- * Classes the user looks after the exams of: writes them, edits them, reopens
- * them, sees their results. A Stage coordinator's are their stage's
- * (2026-10-26; before, only the classes they were assigned to were offered,
- * though they could already edit the rest).
+ * Classes the user looks after the exams of: writes them (one class or several
+ * at once, 2026-10-26), edits them, reopens them, sees their results. A Stage
+ * coordinator's are their stage's (2026-10-26; before, only the classes they
+ * were assigned to were offered, though they could already edit the rest). A
+ * pair's Coordinators and Assistant Coordinators have the other class of the
+ * pair among theirs (2026-11-01).
  */
 export async function assignableClasses(user: PortalUser) {
   // Pastors and students may not author exams at all, so there is nothing to
@@ -122,19 +124,6 @@ export async function assignableClasses(user: PortalUser) {
   return (await teachingClasses()).filter((c) => can(user, EXAM_WRITE, { classId: c.id, classStage: c.stage }))
 }
 
-/**
- * Classes a new exam may be posted to (2026-10-26): the ones above, and for a
- * Coordinator or Assistant Coordinator of the 5th & 6th or 7th & 8th boys' or
- * girls' class, the other half of the pair, `postOnly`: posted to and nothing
- * else. Never a source of children or results — the Exams list and the class
- * an exam is written in come from assignableClasses.
- */
-export async function postableClasses(user: PortalUser) {
-  if (!mayAuthorExams(user)) return []
-  return (await teachingClasses())
-    .filter((c) => can(user, 'exam.post', { classId: c.id, classStage: c.stage }))
-    .map((c) => ({ ...c, postOnly: !can(user, EXAM_WRITE, { classId: c.id, classStage: c.stage }) }))
-}
 
 /* ── Staff list ───────────────────────────────────────────────────────────── */
 
