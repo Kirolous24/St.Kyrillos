@@ -14,6 +14,15 @@ import { formatLongDate, formatMonthDay, formatShortDate } from './format'
  */
 export const TEACHING_WRITE: Action = 'attendance.write'
 
+/**
+ * F0227 — the two rails name the Schedule differently, both in the prototype's
+ * own words: a servant's says "Lesson Preparation", an admin's "Schedule of the
+ * Year". The heading follows the viewer on every one of its tabs.
+ */
+export function agendaPageTitle(role: string): string {
+  return role === 'SERVANT' ? 'Lesson Preparation' : 'Schedule of the Year'
+}
+
 /* ── The ten fixed activities ─────────────────────────────────────────────── */
 
 export type AgendaActivityKey =
@@ -246,6 +255,64 @@ export function isWeekEmpty(week: {
   if (blank(week.slideLink) || blank(week.notes)) return false
   if (blank(week.leadServantName) || blank(week.backupServantName)) return false
   return !week.items.some((i) => blank(i.topic) || blank(i.servantName))
+}
+
+/** A stored week as the copy reads it: the plan and the people on it. */
+export interface WeekPlan {
+  slideLink: string | null
+  notes: string | null
+  leadServantId: string | null
+  backupServantId: string | null
+  items: ReadonlyArray<{ activityKey: string; topic: string | null; servantId: string | null }>
+}
+
+/**
+ * What copying one class's week into another leaves there (2026-11-01). The
+ * plan comes over, the people never do: a coordinator copied 5th & 6th Girls'
+ * week into Boys and Boys' servants were replaced by the Girls'. So each part
+ * keeps the other class's servant (or stays unassigned), and its lead and
+ * backup stay. A part the source left empty keeps its own topic. The slides
+ * and notes come over only where the other class has none, so its own deck is
+ * never lost. `topics` counts the parts whose topic was copied.
+ */
+export function shareWeekPlan(
+  source: WeekPlan,
+  target: WeekPlan | null,
+): {
+  week: { slideLink: string | null; notes: string | null; leadServantId: string | null; backupServantId: string | null }
+  items: Array<{ activityKey: AgendaActivityKey; topic: string | null; servantId: string | null }>
+  topics: number
+} {
+  const byKey = (items: WeekPlan['items']) => {
+    const out = new Map<AgendaActivityKey, WeekPlan['items'][number]>()
+    for (const item of items) {
+      const key = resolveActivityKey(item.activityKey)
+      if (key && !out.has(key)) out.set(key, item)
+    }
+    return out
+  }
+  const from = byKey(source.items)
+  const own = byKey(target?.items ?? [])
+  let topics = 0
+  const items = AGENDA_ACTIVITIES.map((a) => {
+    const copied = blank(from.get(a.key)?.topic)
+    if (copied) topics += 1
+    return {
+      activityKey: a.key,
+      topic: copied ?? blank(own.get(a.key)?.topic),
+      servantId: blank(own.get(a.key)?.servantId),
+    }
+  })
+  return {
+    week: {
+      slideLink: blank(target?.slideLink) ?? blank(source.slideLink),
+      notes: blank(target?.notes) ?? blank(source.notes),
+      leadServantId: blank(target?.leadServantId),
+      backupServantId: blank(target?.backupServantId),
+    },
+    items,
+    topics,
+  }
 }
 
 /* ── CSV round-trip ───────────────────────────────────────────────────────── */
@@ -649,6 +716,28 @@ export function groupAssignmentsByWeek(
     past: weeks.filter(isPast).sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1)),
     undated: [...undated].sort(sortWithinWeek),
   }
+}
+
+/**
+ * My Assignments as a calendar (2026-11-01): each assignment on the day it
+ * falls, a lesson on its own date and anything else on its week's Sunday,
+ * within `start`–`end`. Undated lessons have no day. Each day is ordered as
+ * the list orders a week.
+ */
+export function assignmentsByDay(assignments: readonly Assignment[], start: string, end: string): Map<string, Assignment[]> {
+  const byDay = new Map<string, Assignment[]>()
+  for (const a of assignments) {
+    const day = a.date ?? (a.weekStart ? sundayOfWeek(a.weekStart) : null)
+    if (!day || day < start || day > end) continue
+    const list = byDay.get(day)
+    if (list) list.push(a)
+    else byDay.set(day, [a])
+  }
+  return new Map(
+    Array.from(byDay.entries())
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([day, items]) => [day, [...items].sort(sortWithinWeek)]),
+  )
 }
 
 /* ── The church's own week names ──────────────────────────────────────────── */

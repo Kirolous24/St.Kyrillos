@@ -19,6 +19,7 @@ import {
   normaliseWeekStart,
   resolveActivityKey,
   safeUrl,
+  shareWeekPlan,
   sundayOfWeek,
   weekLabel,
   TEACHING_WRITE,
@@ -269,13 +270,15 @@ const ShareSchema = z.object({
 })
 
 /**
- * Copy this week's agenda into another class. The prototype swapped the two
- * documents (ANALYSIS §6), which wiped the source; this only reads the source.
- * Servant assignments carry over only for servants who also serve the target.
+ * Copy one week's plan into another class (2026-11-01): its topics, plus the
+ * slides and notes where that class has none (`shareWeekPlan`). Who is on each
+ * part never comes over, so nobody gains or loses a duty and nobody is told.
+ * The prototype swapped the two documents (ANALYSIS §6), which wiped the
+ * source; this only reads it.
  */
 export async function shareAgendaWeek(
   raw: z.infer<typeof ShareSchema>,
-): Promise<ActionResult<{ carried: number; dropped: number }>> {
+): Promise<ActionResult<{ topics: number }>> {
   return runAction(async () => {
     const user = await requirePortalUser()
     const input = ShareSchema.parse(raw)
@@ -286,58 +289,33 @@ export async function shareAgendaWeek(
     const monday = normaliseWeekStart(input.weekStart)
     if (!monday) throw new PortalError('Pick a valid week.')
 
-    const week = await prisma.agendaWeek.findUnique({
-      where: { classId_weekStart: { classId: source.id, weekStart: toUTCDate(monday) } },
-      select: {
-        slideLink: true,
-        notes: true,
-        leadServantId: true,
-        backupServantId: true,
-        items: { select: { activityKey: true, topic: true, servantId: true } },
-      },
-    })
-    if (!week) throw new PortalError(`${source.name} has no agenda saved for that week.`)
+    const planSelect = {
+      slideLink: true,
+      notes: true,
+      leadServantId: true,
+      backupServantId: true,
+      items: { select: { activityKey: true, topic: true, servantId: true } },
+    } as const
+    const at = (classId: string) => ({ classId_weekStart: { classId, weekStart: toUTCDate(monday) } })
+    const [week, own] = await Promise.all([
+      prisma.agendaWeek.findUnique({ where: at(source.id), select: planSelect }),
+      prisma.agendaWeek.findUnique({ where: at(target.id), select: planSelect }),
+    ])
+    const planned = !!week && (week.items.some((i) => (i.topic ?? '').trim()) || !!(week.slideLink ?? '').trim() || !!(week.notes ?? '').trim())
+    if (!week || !planned) throw new PortalError(`${source.name} has nothing planned for that week yet.`)
 
-    const allowed = await assignableServantIds(target.id)
-    const keep = (id: string | null) => (id && allowed.has(id) ? id : null)
-    let carried = 0
-    let dropped = 0
+    const copy = shareWeekPlan(week, own)
+    await writeWeek(target.id, monday, copy.week, copy.items)
 
-    const byKey = new Map<AgendaActivityKey, ResolvedItem>()
-    for (const item of week.items) {
-      const key = resolveActivityKey(item.activityKey)
-      if (!key) continue
-      const servantId = keep(item.servantId)
-      if (item.servantId) {
-        if (servantId) carried++
-        else dropped++
-      }
-      byKey.set(key, { activityKey: key, topic: item.topic, servantId })
-    }
-    const items: ResolvedItem[] = AGENDA_ACTIVITIES.map(
-      (a) => byKey.get(a.key) ?? { activityKey: a.key, topic: null, servantId: null },
+    await audit(
+      user,
+      'agenda.share',
+      'class',
+      target.id,
+      `Copied ${source.name}'s plan for ${weekLabel(monday)} into ${target.name} (${copy.topics} topic${copy.topics === 1 ? '' : 's'}; servants unchanged)`,
     )
-
-    await withDutyNotices(
-      () => weekDuties(target.id, [monday]),
-      user.servantId ?? null,
-      () =>
-        writeWeek(
-          target.id,
-          monday,
-          {
-            slideLink: week.slideLink,
-            notes: week.notes,
-            leadServantId: keep(week.leadServantId),
-            backupServantId: keep(week.backupServantId),
-          },
-          items,
-        ),
-    )
-
-    await audit(user, 'agenda.share', 'class', target.id, `Copied ${source.name}'s agenda for ${weekLabel(monday)} into ${target.name}`)
     revalidateAgenda(target.id)
-    return { carried, dropped }
+    return { topics: copy.topics }
   })
 }
 

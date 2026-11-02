@@ -7,11 +7,13 @@ import { assignmentsForServant, presentationRows } from '@/lib/portal/data/agend
 import { plannerLink } from '@/lib/portal/data/planner'
 import { PlannerCard } from '@/components/portal/PlannerCard'
 import { PresentationLinks } from '@/components/portal/PresentationLinks'
-import { groupAssignmentsByWeek, weekDistanceLabel, type Assignment, type AssignmentWeek } from '@/lib/portal/agenda'
+import { assignmentsByDay, groupAssignmentsByWeek, weekDistanceLabel, type Assignment, type AssignmentWeek } from '@/lib/portal/agenda'
+import { calendarSpan } from '@/lib/portal/calendar-spans'
 import { mondayOf, churchToday } from '@/lib/portal/dates'
 import { formatLongDate } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
-import { PageHeader, Card, Badge, EmptyState, StatCard, LinkButton, IconTile } from '@/components/portal/ui'
+import { PageHeader, Card, Badge, EmptyState, StatCard, LinkButton, IconTile, TabLink, Tabs } from '@/components/portal/ui'
+import { AssignmentsCalendar } from './AssignmentsCalendar'
 import { prisma } from '@/lib/prisma'
 import { isLiveSite } from '@/lib/portal/login-email'
 
@@ -36,7 +38,11 @@ function GroupTitle({ children }: { children: React.ReactNode }) {
   return <span className="text-[12px] font-bold uppercase tracking-[0.5px] text-parch-500">{children}</span>
 }
 
-export default async function AssignmentsPage() {
+export default async function AssignmentsPage({
+  searchParams = {},
+}: {
+  searchParams?: { view?: string; span?: string; month?: string; term?: string }
+}) {
   const user = await requirePortalUser()
   // A staff screen: students have no business here, so it is simply not there
   // for them (same treatment as /portal/exams/new).
@@ -58,6 +64,33 @@ export default async function AssignmentsPage() {
   }
 
   const today = churchToday()
+  // The list, or the same assignments as a calendar of a month or a semester (2026-11-01).
+  const calendar = searchParams.view === 'calendar'
+  const views = (
+    <Tabs>
+      <TabLink href="/portal/assignments" active={!calendar}>
+        List
+      </TabLink>
+      <TabLink href="/portal/assignments?view=calendar" active={calendar}>
+        Calendar
+      </TabLink>
+    </Tabs>
+  )
+  if (calendar) {
+    const span = calendarSpan(searchParams, today)
+    const mine = await assignmentsForServant(user.servantId, span.start, 0)
+    return (
+      <>
+        <PageHeader
+          title="My Assignments"
+          icon={<ClipboardList className="h-5 w-5" aria-hidden />}
+          subtitle="What you are preparing, a month or a semester at a time."
+        />
+        {views}
+        <AssignmentsCalendar span={span} days={assignmentsByDay(mine, span.start, span.end)} today={today} />
+      </>
+    )
+  }
   const fellowship = new Set(user.fellowshipClassIds ?? [])
   const [all, account, phones, planner, presentations] = await Promise.all([
     assignmentsForServant(user.servantId, today),
@@ -87,6 +120,7 @@ export default async function AssignmentsPage() {
     return (
       <>
         <PageHeader title="My Assignments" icon={<ClipboardList className="h-5 w-5" aria-hidden />} />
+        {views}
         {links}
         <EmptyState
           title="Nothing assigned to you yet"
@@ -104,6 +138,8 @@ export default async function AssignmentsPage() {
         icon={<ClipboardList className="h-5 w-5" aria-hidden />}
         subtitle="Everything you are down to lead, teach or prepare."
       />
+
+      {views}
 
       <div className="mb-5 grid grid-cols-2 gap-3.5 sm:grid-cols-3">
         <StatCard

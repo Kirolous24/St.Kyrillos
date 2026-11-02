@@ -85,16 +85,16 @@ export function AgendaTools({
 
   function share() {
     if (!shareTo) return
+    const to = shareTargets.find((c) => c.id === shareTo)?.name ?? 'the other class'
+    if (!window.confirm(`Copy this week's plan into ${to}? Its topics replace ${to}'s for that Sunday. Who is assigned stays as ${to} has it.`)) return
     setMessage(null)
     startTransition(async () => {
       const result = await shareAgendaWeek({ classId, weekStart, toClassId: shareTo })
       if (!result.ok) return setMessage({ kind: 'err', text: result.error })
-      const dropped = result.data?.dropped ?? 0
+      const topics = result.data?.topics ?? 0
       setMessage({
         kind: 'ok',
-        text: `Copied this week into ${shareTargets.find((c) => c.id === shareTo)?.name ?? 'the other class'}.${
-          dropped > 0 ? ` ${dropped} assignment${dropped === 1 ? '' : 's'} left blank — those servants do not serve there.` : ''
-        }`,
+        text: `Copied this week's plan into ${to}: ${topics} topic${topics === 1 ? '' : 's'}. ${to} keeps its own servants.`,
       })
       router.refresh()
     })
@@ -320,7 +320,7 @@ export function AgendaTools({
                 <Share2 className="h-4 w-4" aria-hidden /> Copy this week over
               </button>
               <p className="mt-2 text-[11px] text-parch-500">
-                {className} keeps its own agenda — sharing copies, it never moves anything.
+                Copies the topics, and the slides and notes where the other class has none. Each class keeps its own servants, and {className} keeps its own week.
               </p>
             </div>
           )}

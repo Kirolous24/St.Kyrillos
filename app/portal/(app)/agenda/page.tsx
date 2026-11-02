@@ -10,7 +10,7 @@ import { PlannerCard } from '@/components/portal/PlannerCard'
 import { can } from '@/lib/portal/permissions'
 import { areLinked, linkedWith } from '@/lib/portal/lesson-links'
 import { formatLongDate } from '@/lib/portal/format'
-import { TEACHING_WRITE, normaliseWeekStart, weekDistanceLabel, agendaBlankTemplateRows, schoolYearWeeks, sundayOfWeek, weekLabel } from '@/lib/portal/agenda'
+import { TEACHING_WRITE, agendaPageTitle, normaliseWeekStart, weekDistanceLabel, agendaBlankTemplateRows, schoolYearWeeks, sundayOfWeek, weekLabel } from '@/lib/portal/agenda'
 import { toCsv } from '@/lib/portal/csv'
 import { addDays, mondayOf, churchToday } from '@/lib/portal/dates'
 import {
@@ -33,15 +33,6 @@ import { ArchiveSearch } from './ArchiveSearch'
 import { ClearWeeksPanel } from './ClearWeeksPanel'
 
 export const metadata = { title: 'Schedule of the Year' }
-
-/**
- * F0227 — the two rails name this page differently and both are the prototype's
- * own wording: a servant's rail says "Lesson Preparation" (index.stripped.html
- * L4021, where it pointed at exactly this page) and an admin's says "Schedule of
- * the Year". A single fixed heading makes one of the two rails a lie, so the
- * heading follows the viewer. The browser-tab title stays the neutral one.
- */
-const agendaTitle = (role: string) => (role === 'SERVANT' ? 'Lesson Preparation' : 'Schedule of the Year')
 
 /** The prototype's week-navigation pills (`padding:9px 16px;border-radius:20px`). */
 function pillClass(active: boolean) {
@@ -67,7 +58,7 @@ export default async function AgendaPage({
   if (classes.length === 0) {
     return (
       <>
-        <PageHeader title={agendaTitle(user.role)} icon={<CalendarDays className="h-5 w-5" aria-hidden />} />
+        <PageHeader title={agendaPageTitle(user.role)} icon={<CalendarDays className="h-5 w-5" aria-hidden />} />
         <EmptyState title="No classes yet" hint="Ask the Sunday School admin to add you to a class." />
       </>
     )
@@ -117,7 +108,7 @@ export default async function AgendaPage({
   return (
     <>
       <PageHeader
-        title={agendaTitle(user.role)}
+        title={agendaPageTitle(user.role)}
         icon={<CalendarDays className="h-5 w-5" aria-hidden />}
         subtitle={`${cls.name} · Sunday, ${formatLongDate(sundayOfWeek(view.weekStart))}`}
         actions={
@@ -138,6 +129,10 @@ export default async function AgendaPage({
         <TabLink href={`/portal/agenda/week?class=${encodeURIComponent(cls.id)}&week=${week}`} active={false}>
           Weekly assignments
         </TabLink>
+        {/* A month or a semester at once, and the rotation (2026-11-01). */}
+        <TabLink href={`/portal/agenda/calendar?class=${encodeURIComponent(cls.id)}&month=${sundayOfWeek(week).slice(0, 7)}`} active={false}>
+          Calendar
+        </TabLink>
         <TabLink href={`/portal/agenda?class=${encodeURIComponent(cls.id)}&week=${week}&view=archive`} active={mode === 'archive'}>
           Archive
         </TabLink>
@@ -157,6 +152,7 @@ export default async function AgendaPage({
 
       {viaLink ? (
         <LinkedPlan
+          key={`${cls.id}:${view.weekStart}`}
           weekStart={view.weekStart}
           weekLabel={view.label}
           source={{ id: cls.id, name: cls.name }}
@@ -164,7 +160,7 @@ export default async function AgendaPage({
         />
       ) : (
         links.length > 0 && (
-          <LinkedWith classId={cls.id} weekStart={view.weekStart} weekLabel={view.label} links={links} canWrite={canWrite} />
+          <LinkedWith key={`${cls.id}:${view.weekStart}`} classId={cls.id} weekStart={view.weekStart} weekLabel={view.label} links={links} canWrite={canWrite} />
         )
       )}
 
@@ -217,12 +213,16 @@ export default async function AgendaPage({
         </div>
 
         <div className="space-y-4 lg:col-span-2">
+          {/* Keyed on the class: Next keeps a component's state when only ?class=
+              changes, so a pick or an import preview made for one class could
+              otherwise act on the next (2026-11-01). */}
           {canWrite && (
-            <AgendaTools classId={cls.id} className={cls.name} weekStart={view.weekStart} csv={csv} blankCsv={blankCsv} shareTargets={shareTargets} />
+            <AgendaTools key={cls.id} classId={cls.id} className={cls.name} weekStart={view.weekStart} csv={csv} blankCsv={blankCsv} shareTargets={shareTargets} />
           )}
 
           {canWrite && (
             <LinkedClasses
+              key={cls.id}
               classId={cls.id}
               className={cls.name}
               links={links}
@@ -238,6 +238,7 @@ export default async function AgendaPage({
               tiles are links, and this deletes lesson planning. */}
           {canWrite && (
             <ClearWeeksPanel
+              key={cls.id}
               classId={cls.id}
               className={cls.name}
               weeks={archive

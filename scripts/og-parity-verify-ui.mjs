@@ -1879,6 +1879,28 @@ try {
     await slideField.fill('')
   }
 
+  // 2026-11-01 — switching class on the Schedule shows that class's own week.
+  // The editor used to keep the first class's servants and topics (Next keeps
+  // a component's state when only ?class= changes), and Save wrote them into
+  // the second class. Checked with unsaved typing on a far-off week that
+  // neither class has saved, so nothing is written.
+  const w23Pair = await prisma.schoolClass.findMany({ where: { isActive: true, stage: { not: 'FELLOWSHIP' } }, orderBy: { sortOrder: 'asc' }, take: 2, select: { id: true } })
+  const w23Week = '2031-06-02'
+  const w23Saved = w23Pair.length === 2
+    ? await prisma.agendaWeek.count({ where: { classId: { in: w23Pair.map((c) => c.id) }, weekStart: new Date(`${w23Week}T00:00:00Z`) } })
+    : 1
+  if (w23Saved === 0) {
+    await go(`/portal/agenda?class=${encodeURIComponent(w23Pair[0].id)}&week=${w23Week}`)
+    await page.locator('#topic-lesson').fill('zz unsaved topic')
+    await page.locator('main label:has-text("Class") select').first().selectOption(w23Pair[1].id)
+    await page.waitForURL((u) => u.searchParams.get('class') === w23Pair[1].id, { timeout: 30000 }).catch(() => {})
+    await page.waitForTimeout(1200)
+    check('switching class on the Schedule shows that class’s own week, not what was typed for the other',
+      (await page.locator('#topic-lesson').inputValue()) === '', await page.locator('#topic-lesson').inputValue())
+  } else {
+    console.log('        (a far-off week is saved for one of the first two classes — class-switch check skipped, counts as neither pass nor fail)')
+  }
+
   // The week sheet can be steered without going back to the schedule.
   await go(`/portal/agenda/week?class=${encodeURIComponent(w23Class.id)}`)
   const weekSelect = page.locator('main select').last()

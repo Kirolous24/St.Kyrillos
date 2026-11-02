@@ -115,6 +115,9 @@ const ROUTES = {
       '/portal/classes/pre-k/photos', '/portal/classes/5th-6th-girls/attendance',
       // Follow-ups narrowed to one class (2026-10-26).
       '/portal/follow-ups?class=pre-k', '/portal/follow-ups?class=pre-k&show=done',
+      // The Schedule's calendar and rotation (2026-11-01); a bad month falls back to this one.
+      '/portal/agenda/calendar', '/portal/agenda/calendar?class=5th-6th-girls&month=2027-05',
+      '/portal/agenda/calendar?class=kg&span=semester&term=2027-spring', '/portal/agenda/calendar?month=nope',
     ],
     gone: [],
   },
@@ -147,6 +150,9 @@ const ROUTES = {
       '/portal/classes', '/portal/follow-ups', '/portal/exams', '/portal/lessons', '/portal/agenda',
       '/portal/assignments', '/portal/qr', '/portal/servant-attendance', '/portal/my-attendance',
       '/portal/announcements', '/portal/reports', '/portal/reports?view=all', '/portal/readings', '/portal/photo', '/portal/my-group',
+      // My Assignments as a calendar, and the class calendar (2026-11-01).
+      '/portal/assignments?view=calendar', '/portal/assignments?view=calendar&span=semester',
+      '/portal/assignments?view=calendar&month=2027-05', '/portal/agenda/calendar', '/portal/agenda/calendar?span=semester',
     ],
     gone: ['/portal/admin/data', '/portal/admin/servants', '/portal/admin/servants/logins', '/portal/admin/students', '/portal/admin/audit', '/portal/admin/sessions'],
     notFound: [
@@ -169,6 +175,7 @@ const ROUTES = {
       '/portal/admin/data', '/portal/admin/students', '/portal/admin/servants', '/portal/admin/servants/logins', '/portal/admin/audit',
       '/portal/exams', '/portal/exams/new', '/portal/qr', '/portal/reports', '/portal/servant-attendance',
       '/portal/agenda', '/portal/lessons', '/portal/assignments', '/portal/my-group', '/portal/unassigned',
+      '/portal/agenda/calendar', '/portal/assignments?view=calendar',
       '/portal/leaderboard', '/portal/leaderboard?class=kg',
       '/portal/my-group?tab=class', '/portal/my-group?tab=log',
       '/portal/reports/weekly', '/portal/classes/kg/message',

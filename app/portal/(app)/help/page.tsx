@@ -1,6 +1,6 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen, HeartHandshake, ClipboardList, ClipboardCheck, UsersRound } from 'lucide-react'
+import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen, HeartHandshake, ClipboardList, ClipboardCheck, UsersRound, CalendarRange } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { PageHeader, Card, IconTile } from '@/components/portal/ui'
 
@@ -190,6 +190,18 @@ export default async function HelpPage() {
           and 7th &amp; 8th boys&rsquo; and girls&rsquo; classes can also take each other&rsquo;s attendance: open{' '}
           <b className={S}>Attendance</b> and pick the class. Their Coordinators and Assistant Coordinators have the
           other class as their own.
+        </Topic>
+
+        {/* 2026-11-01 — a month or a semester at once; copying a week. */}
+        <Topic icon={<CalendarRange className={ICON} />} tone="#9A3412" title="Assign a month or a semester at once" href="/portal/agenda/calendar">
+          The Schedule&rsquo;s <b className={S}>Calendar</b> tab shows a class&rsquo;s month or semester: who is on each part,
+          Sunday by Sunday. A class&rsquo;s Coordinator or Assistant Coordinator can fill those Sundays in one go with{' '}
+          <b className={S}>Make the rotation</b>: pick the parts and who takes turns, and everyone has each part once before
+          anyone has it again, with every Sunday shared out evenly. Look it over, press <b className={S}>Shuffle again</b> if
+          you like, then <b className={S}>Save</b>. Parts that already have someone stay as they are unless you untick that,
+          and each servant gets one notice. <b className={S}>My Assignments</b> has a <b className={S}>Calendar</b> too, to see
+          what you are preparing over a month or a semester. Copying a week into another class brings its topics, never its
+          servants.
         </Topic>
 
         {/* 2026-10-25 — groups shuffled every two months; the sender's greeting. */}

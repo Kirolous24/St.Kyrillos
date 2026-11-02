@@ -56,14 +56,15 @@ export function LinkedPlan({
               disabled={pending || !to}
               className={buttonClass('secondary', 'sm')}
               onClick={() => {
-                if (!window.confirm(`Copy ${source.name}'s ${weekLabel} into ${toName}? Anything already filled in for that week is replaced.`)) return
+                if (!window.confirm(`Copy ${source.name}'s plan for ${weekLabel} into ${toName}? Its topics replace ${toName}'s for that Sunday. Who is assigned stays as ${toName} has it.`)) return
                 setMessage(null)
                 startTransition(async () => {
                   const r = await shareAgendaWeek({ classId: source.id, toClassId: to, weekStart })
                   if (!r.ok) return setMessage({ kind: 'err', text: r.error })
+                  const topics = r.data?.topics ?? 0
                   setMessage({
                     kind: 'ok',
-                    text: `Copied ${weekLabel} into ${toName}${r.data && r.data.dropped > 0 ? ` — ${r.data.dropped} assignment${r.data.dropped === 1 ? '' : 's'} left blank` : ''}.`,
+                    text: `Copied the plan for ${weekLabel} into ${toName}: ${topics} topic${topics === 1 ? '' : 's'}. ${toName} keeps its own servants.`,
                   })
                   router.refresh()
                 })

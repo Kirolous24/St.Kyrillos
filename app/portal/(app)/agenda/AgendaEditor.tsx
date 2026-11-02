@@ -56,17 +56,27 @@ export function AgendaEditor({
 }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  // Keyed on the week so navigating to another week resets the form.
-  const [formKey, setFormKey] = useState(weekStart)
+  // The form shows what is saved for this class and week. Next keeps this
+  // component's state when only the address's ?class= or ?week= changes, so
+  // the form resets on another class, another week, or a new save (a week
+  // copied into this class included). It used to follow the week alone: after
+  // switching class it kept the first class's servants, and Save wrote them
+  // into the second (2026-11-01).
+  const formKey = `${classId}|${weekStart}|${savedAt ?? ''}`
+  const [shownKey, setShownKey] = useState(formKey)
   const [form, setForm] = useState(initial)
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
 
-  if (formKey !== weekStart) {
-    setFormKey(weekStart)
+  if (shownKey !== formKey) {
+    const sameWeek = shownKey.startsWith(`${classId}|${weekStart}|`)
+    setShownKey(formKey)
     setForm(initial)
-    setMessage(null)
-    setConfirmClear(false)
+    // A save keeps its "Saved" note; another class or week starts clean.
+    if (!sameWeek) {
+      setMessage(null)
+      setConfirmClear(false)
+    }
   }
 
   const filled = form.rows.filter((r) => r.topic.trim() || r.servantId).length

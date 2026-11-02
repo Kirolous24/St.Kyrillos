@@ -53,14 +53,15 @@ export function LinkedWith({
                   disabled={pending}
                   className={buttonClass('secondary', 'sm')}
                   onClick={() => {
-                    if (!window.confirm(`Copy ${l.name}'s ${weekLabel} into this class? Anything already filled in for that week is replaced.`)) return
+                    if (!window.confirm(`Copy ${l.name}'s plan for ${weekLabel} into this class? Its topics replace this class's for that Sunday. Who is assigned here stays as it is.`)) return
                     setMessage(null)
                     startTransition(async () => {
                       const r = await shareAgendaWeek({ classId: l.id, toClassId: classId, weekStart })
                       if (!r.ok) return setMessage({ kind: 'err', text: r.error })
+                      const topics = r.data?.topics ?? 0
                       setMessage({
                         kind: 'ok',
-                        text: `Copied ${weekLabel} from ${l.name}${r.data && r.data.dropped > 0 ? ` — ${r.data.dropped} assignment${r.data.dropped === 1 ? '' : 's'} left blank` : ''}.`,
+                        text: `Copied ${l.name}'s plan for ${weekLabel}: ${topics} topic${topics === 1 ? '' : 's'}. Your servants stay as they were.`,
                       })
                       router.refresh()
                     })
