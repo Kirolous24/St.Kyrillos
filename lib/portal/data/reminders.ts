@@ -1,8 +1,8 @@
 import { prisma } from '@/lib/prisma'
-import { NOTICE_DAYS, comingSunday, dailyReminderNotice, notDoneNotice, reminderNotice, type Duty } from '../assignment-notices'
-import { addDays, churchToday, mondayOf } from '../dates'
+import { NOTICE_AHEAD_DAYS, NOTICE_DAYS, assignedNotice, comingSunday, dailyReminderNotice, notDoneNotice, reminderNotice, type Duty } from '../assignment-notices'
+import { addDays, churchToday, mondayOf, toUTCDate } from '../dates'
 import { deliverNotices, type OutgoingNotice } from '../notice-delivery'
-import { dutiesDueOn } from './duties'
+import { dutiesDueOn, dutiesForSlots } from './duties'
 
 /**
  * The evening reminders, run once a day by Vercel's scheduler at about 6 PM
@@ -21,6 +21,12 @@ import { dutiesDueOn } from './duties'
  * for the evening before; and this one stays in the bell and on the phone, not
  * in email.
  *
+ * A week before (2026-11-01): a part given out more than a week ahead was
+ * held rather than announced that day (lib/portal/notify-duties.ts). Each
+ * evening the held parts now a week or less away are announced to whoever
+ * holds them, once per servant, and left out of that evening's daily reminder
+ * so nobody hears of one part twice in an evening.
+ *
  * The keys are per servant per day, so a second run the same evening sends
  * nothing new. It also clears out notices older than 60 days, with their
  * dismissals.
@@ -30,6 +36,7 @@ export async function sendDailyReminders(now: Date = new Date()): Promise<{
   servants: number
   coordinators: number
   daily: number
+  announced: number
   stored: number
   pushed: number
   emailed: number
@@ -84,10 +91,11 @@ export async function sendDailyReminders(now: Date = new Date()): Promise<{
     }
     coordinators = byHead.size
   }
+  const announced = await announceHeldParts(today, notices)
   // Every other evening, the coming Sunday's parts not marked done yet.
   const dailyByServant = new Map<string, Duty[]>()
   for (const d of ahead) {
-    if (d.kind !== 'activity' || d.done) continue
+    if (d.kind !== 'activity' || d.done || announced.has(d.slot)) continue
     dailyByServant.set(d.servantId, [...(dailyByServant.get(d.servantId) ?? []), d])
   }
   for (const [servantId, duties] of Array.from(dailyByServant.entries())) {
@@ -107,9 +115,44 @@ export async function sendDailyReminders(now: Date = new Date()): Promise<{
     servants: byServant.size,
     coordinators,
     daily: dailyByServant.size,
+    announced: new Set(notices.filter((n) => n.dedupeKey.startsWith('ahead:')).map((n) => n.servantId)).size,
     stored: report.stored,
     pushed: report.pushed,
     emailed: report.emailed,
     pruned: pruned.count,
   }
+}
+
+/**
+ * Add tonight's "a week before" notices to `notices`: the held parts due within
+ * the week, told to the servant who holds each now. A part that changed hands
+ * or went since is told to nobody; its hold goes either way. Returns the slots
+ * announced. A failure here never stops the evening's reminders: the holds stay
+ * and the next evening tries again.
+ */
+export async function announceHeldParts(today: string, notices: OutgoingNotice[]): Promise<Set<string>> {
+  const announced = new Set<string>()
+  try {
+    const horizon = toUTCDate(addDays(today, NOTICE_AHEAD_DAYS))
+    const holds = await prisma.dutyNoticeHold.findMany({ where: { due: { lte: horizon } }, select: { slot: true, servantId: true } })
+    if (holds.length === 0) return announced
+    const now = new Map((await dutiesForSlots(holds.map((h) => h.slot))).map((d) => [d.slot, d]))
+    const byServant = new Map<string, Duty[]>()
+    for (const h of holds) {
+      const d = now.get(h.slot)
+      if (!d || d.servantId !== h.servantId || !d.due || d.due <= today) continue
+      byServant.set(h.servantId, [...(byServant.get(h.servantId) ?? []), d])
+      announced.add(d.slot)
+    }
+    // Cleared before anything is queued: a hold that cannot be cleared must
+    // not be announced tonight and again tomorrow.
+    await prisma.dutyNoticeHold.deleteMany({ where: { due: { lte: horizon } } })
+    for (const [servantId, duties] of Array.from(byServant.entries())) {
+      notices.push({ servantId, kind: 'assigned', ...assignedNotice(duties), dedupeKey: `ahead:${servantId}:${today}` })
+    }
+  } catch (err) {
+    console.error('Week-ahead assignment notices failed:', err)
+    announced.clear()
+  }
+  return announced
 }

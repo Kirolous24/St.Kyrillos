@@ -65,6 +65,37 @@ export async function lessonDuties(lessonIds: readonly string[]): Promise<Duty[]
 }
 
 /**
+ * The parts behind these slots as they stand now (2026-11-01), for announcing
+ * a part a week before it is due to whoever holds it then. A slot whose part
+ * is gone, or nobody's, comes back as nothing.
+ */
+export async function dutiesForSlots(slots: readonly string[]): Promise<Duty[]> {
+  const weeks = new Map<string, Set<string>>()
+  const lessonIds: string[] = []
+  for (const slot of slots) {
+    const [kind, a, b] = slot.split(':')
+    if (kind === 'lesson' && a) lessonIds.push(a)
+    else if ((kind === 'item' || kind === 'lead' || kind === 'backup') && a && b) weeks.set(a, (weeks.get(a) ?? new Set()).add(b))
+  }
+  const [weekRows, lessonRows] = await Promise.all([
+    weeks.size > 0
+      ? prisma.agendaWeek.findMany({
+          where: {
+            class: { isActive: true },
+            OR: Array.from(weeks.entries()).map(([classId, mondays]) => ({ classId, weekStart: { in: Array.from(mondays).map((m) => toUTCDate(m)) } })),
+          },
+          select: WEEK_SELECT,
+        })
+      : Promise.resolve([]),
+    lessonIds.length > 0
+      ? prisma.lesson.findMany({ where: { id: { in: lessonIds }, class: { isActive: true } }, select: LESSON_SELECT })
+      : Promise.resolve([]),
+  ])
+  const wanted = new Set(slots)
+  return [...weekRows.flatMap(weekToDuties), ...lessonRows.flatMap(lessonToDuties)].filter((d) => wanted.has(d.slot))
+}
+
+/**
  * Everything due on one day, in every active class: on a Sunday, that week's
  * Schedule; on any day, the lessons dated then.
  */

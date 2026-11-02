@@ -267,9 +267,10 @@ export function DangerZone({ classes, studentCount }: Props) {
           <p className="mt-0.5 text-[12px] text-parch-600">Resets the leaderboard for one class.</p>
         </div>
         <Callout tone="bad" title="This permanently deletes">
-          Every point entry for every student in the chosen class.
+          Every point entry for every child on the chosen class&rsquo;s list, members from other classes too: each child
+          has one total. The class page has the same reset as a button.
           <p className="mt-1.5 font-bold">Kept:</p>
-          attendance records, the students themselves, and the class.
+          attendance records, quiz results, the children themselves, and the class.
         </Callout>
         <label className="block">
           <span className={CAPTION}>Class</span>

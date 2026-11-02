@@ -47,6 +47,19 @@ export interface NoticeText {
   href: string
 }
 
+/**
+ * How far ahead a part is news (2026-11-01): one given out further off than
+ * this is not announced that day; its servant is told this many days before
+ * it is due, by the evening job ("assignment notifications for future dates
+ * past a week … starting a week before").
+ */
+export const NOTICE_AHEAD_DAYS = 7
+
+/** Whether a part is told now, or waits until a week before it is due. A lesson with no date is told now. */
+export function announceNow(duty: Pick<Duty, 'due'>, today: string): boolean {
+  return duty.due === null || duty.due <= addDays(today, NOTICE_AHEAD_DAYS)
+}
+
 /** My Assignments, opened at the week of the day. */
 export function dutyHref(due: string | null): string {
   return due ? `/portal/assignments#week-${mondayOf(due)}` : '/portal/assignments'

@@ -10,6 +10,7 @@ import { runAction, PortalError, type ActionResult } from '../action-result'
 import { ACTIVITY_POINTS_MAX, ACTIVITY_POINTS_MIN, canUndo, capDeduction, resolveManualPoints } from '../points-math'
 import { audit } from '../audit'
 import { studentName } from '../data/students'
+import { resetPointsOf } from '../data/points-reset'
 
 /**
  * Give: a church-wide activity or one of the class's own, at its set value.
@@ -329,5 +330,60 @@ export async function removeActivity(activityId: string): Promise<ActionResult> 
     await audit(user, 'activity.remove', cls ? 'class' : 'portal', act.classId, `${cls ? `${cls.name}: ` : ''}Removed point activity "${act.label}"`)
     revalidateActivities(act.classId)
     return undefined
+  })
+}
+
+/** Everywhere a child's total shows. */
+function revalidatePoints(classId: string | null): void {
+  if (classId) {
+    revalidatePath(`/portal/classes/${classId}`)
+    revalidatePath(`/portal/classes/${classId}/points`)
+  }
+  revalidatePath('/portal/leaderboard')
+  revalidatePath('/portal/reports')
+  revalidatePath('/portal')
+}
+
+/**
+ * Reset one child's points to 0 (2026-11-02: "go into children's profiles and
+ * reset points for them. Individually."). The admin only. Their attendance,
+ * quiz results and profile stay.
+ */
+export async function resetStudentPoints(studentId: string): Promise<ActionResult<{ points: number }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    if (user.role !== 'ADMIN') throw new PortalError('Only the Sunday School admin can reset points.')
+    const s = await prisma.student.findUnique({
+      where: { id: String(studentId ?? '') },
+      select: { id: true, firstName: true, lastName: true, classId: true },
+    })
+    if (!s) throw new PortalError('That child was not found.')
+    const { points } = await resetPointsOf([s.id])
+    await audit(user, 'points.reset', 'student', s.id, `${studentName(s)}: points reset to 0 (had ${points})`)
+    revalidatePoints(s.classId)
+    revalidatePath(`/portal/students/${s.id}`)
+    return { points }
+  })
+}
+
+/**
+ * Reset a whole class's points to 0 (2026-11-02: "go into a certain class and
+ * have a button to reset all points"). The admin only. Everyone on the class's
+ * list goes back to 0: its own children, and members from other classes, who
+ * have one total like everyone else.
+ */
+export async function resetClassPoints(classId: string): Promise<ActionResult<{ children: number; points: number }>> {
+  return runAction(async () => {
+    const user = await requirePortalUser()
+    if (user.role !== 'ADMIN') throw new PortalError('Only the Sunday School admin can reset points.')
+    const cls = await prisma.schoolClass.findUnique({ where: { id: String(classId ?? '') }, select: { id: true, name: true } })
+    if (!cls) throw new PortalError('Class not found.')
+    const roster = await prisma.student.findMany({ where: rosterWhere(cls.id), select: { id: true } })
+    if (roster.length === 0) throw new PortalError(`${cls.name} has no children to reset.`)
+    const { points } = await resetPointsOf(roster.map((s) => s.id))
+    const n = roster.length
+    await audit(user, 'points.reset', 'class', cls.id, `${cls.name}: points reset to 0 for ${n} child${n === 1 ? '' : 'ren'} (had ${points})`)
+    revalidatePoints(cls.id)
+    return { children: n, points }
   })
 }

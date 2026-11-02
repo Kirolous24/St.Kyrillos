@@ -83,7 +83,7 @@ export function RotationPanel({
       setPreview(null)
       setMessage({
         kind: 'ok',
-        text: `Saved ${saved} part${saved === 1 ? '' : 's'} over ${weeks} Sunday${weeks === 1 ? '' : 's'}. Each servant gets one notice with their new parts.${
+        text: `Saved ${saved} part${saved === 1 ? '' : 's'} over ${weeks} Sunday${weeks === 1 ? '' : 's'}. Each servant is told a week before each of their Sundays, or now for this coming week.${
           kept > 0 ? ` ${kept} part${kept === 1 ? ' was' : 's were'} filled by someone in the meantime and left as ${kept === 1 ? 'it was' : 'they were'}.` : ''
         }`,
       })

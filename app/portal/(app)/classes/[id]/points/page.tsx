@@ -8,6 +8,7 @@ import { rankStudents, canUndo } from '@/lib/portal/points-math'
 import { Trophy } from 'lucide-react'
 import { PageHeader } from '@/components/portal/ui'
 import { PointsPanel } from './PointsPanel'
+import { ResetPointsButton } from '@/components/portal/ResetPointsButton'
 
 export const metadata = { title: 'Points' }
 
@@ -20,7 +21,7 @@ export default async function PointsPage({ params }: { params: { id: string } })
     prisma.student.findMany({
       where: rosterWhere(cls.id),
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-      select: { id: true, firstName: true, lastName: true, account: { select: { photo: true } } },
+      select: { id: true, firstName: true, lastName: true, classId: true, account: { select: { photo: true } } },
     }),
     // The activities every class has, then this class's own (2026-09-28).
     prisma.pointActivity.findMany({
@@ -53,6 +54,21 @@ export default async function PointsPage({ params }: { params: { id: string } })
         icon={<Trophy className="h-5 w-5" />}
         back={{ href: `/portal/classes/${cls.id}`, label: cls.name }}
       />
+      {/* The admin resets the whole class's points from here too (2026-11-02). */}
+      {user.role === 'ADMIN' && (
+        <div className="mb-4 print:hidden">
+          <ResetPointsButton
+            target={{
+              kind: 'class',
+              id: cls.id,
+              name: cls.name,
+              points: ranked.reduce((n, r) => n + r.total, 0),
+              children: students.length,
+              members: students.filter((st) => st.classId !== cls.id).length,
+            }}
+          />
+        </div>
+      )}
       <PointsPanel
         classId={cls.id}
         classLabel={cls.name}

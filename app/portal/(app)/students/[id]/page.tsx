@@ -31,6 +31,7 @@ import { excusesByStudent } from '@/lib/portal/data/excuses'
 import { excuseState, withExcusedDates, type ExcuseView } from '@/lib/portal/excuses'
 import { GroupPicker } from './GroupPicker'
 import { UndoEntryButton } from './PointsLedgerRow'
+import { ResetPointsButton } from '@/components/portal/ResetPointsButton'
 import { cn } from '@/lib/utils'
 import { redirect } from 'next/navigation'
 import { isFellowship } from '@/lib/portal/fellowship'
@@ -434,6 +435,11 @@ export default async function StudentPage({ params }: { params: { id: string } }
       <div className="grid gap-3.5 lg:grid-cols-3">
         <div className="space-y-3.5 lg:col-span-2">
           <Card title="Points ledger" icon={<History className="h-[15px] w-[15px]" />}>
+            {s.pointsResetAt && (
+              <p className="mb-2 text-[11.5px] text-parch-500" data-testid="points-reset-note">
+                Points were reset to 0 on {formatLongDate(churchToday(s.pointsResetAt))}.
+              </p>
+            )}
             {visibleEntries.length === 0 ? <p className="text-[12.5px] text-parch-500">No points yet.</p> : (
               <ul className="divide-y divide-[#F5F2ED]">
                 {visibleEntries.map((e) => (
@@ -491,6 +497,12 @@ export default async function StudentPage({ params }: { params: { id: string } }
                 {correctedHidden === 2 ? 'One entry was' : `${correctedHidden / 2} entries were`} corrected by a
                 servant and cancelled out. Your total already allows for that.
               </p>
+            )}
+            {/* The admin resets one child's points from here (2026-11-02). */}
+            {isAdmin && (
+              <div className="mt-3 border-t border-[#F0EEE8] pt-3">
+                <ResetPointsButton target={{ kind: 'student', id: s.id, name: studentName(s), points: total }} />
+              </div>
             )}
           </Card>
 

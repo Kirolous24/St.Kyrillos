@@ -22,10 +22,17 @@ export interface AttendanceAwardContext {
   sessionPoints: number
   /** Account credited with making the change. */
   accountId: string
+  /**
+   * When the admin last reset this child's points (2026-11-02), or null. A
+   * record made before then earns nothing again: its points were reset.
+   */
+  pointsResetAt: Date | null
 }
 
 export interface AttendanceAwardRecord {
   id: string
+  /** When the record was first made; saving the register again keeps it. */
+  createdAt: Date
   pointEntry: { id: string; points: number; undone: boolean } | null
 }
 
@@ -38,6 +45,8 @@ export async function awardAttendancePoints(
   const award = record.pointEntry
   if (!award) {
     if (ctx.sessionPoints <= 0) return
+    // Made before the child's points were reset: those points are gone on purpose.
+    if (ctx.pointsResetAt && record.createdAt <= ctx.pointsResetAt) return
     await tx.pointEntry.create({
       data: {
         studentId: ctx.studentId,

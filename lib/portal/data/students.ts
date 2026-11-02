@@ -26,6 +26,8 @@ const studentSelect = {
   unassignedAt: true,
   unassignedReason: true,
   unassignedBy: { select: { displayName: true } },
+  // When the admin last reset this child's points to 0 (2026-11-02).
+  pointsResetAt: true,
 } as const
 
 export type StudentDetail = NonNullable<Awaited<ReturnType<typeof loadStudent>>>

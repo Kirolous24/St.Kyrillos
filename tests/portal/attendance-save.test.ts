@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 //
 // Stand-ins: the signed-in servant, the class check, the follow-up rule, and a
 // database that records the writes a save makes.
-type Row = { id: string; studentId: string; sessionKey: string; status: string; reason: string | null; points: number[] }
+type Row = { id: string; studentId: string; sessionKey: string; status: string; reason: string | null; points: number[]; createdAt: Date }
 
 const world = vi.hoisted(() => ({
   roster: ['k1', 'k2', 'k3', 'k4'],
@@ -20,6 +20,8 @@ const world = vi.hoisted(() => ({
   fills: [] as Array<{ studentIds: string[]; statuses: string[]; skipDuplicates: boolean }>,
   synced: null as string[] | null,
   syncedSessions: [] as string[],
+  // When the admin reset each child's points (2026-11-02).
+  resets: new Map<string, Date>(),
 }))
 
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
@@ -50,6 +52,10 @@ vi.mock('@/lib/prisma', () => {
         (!where.status || r.status === where.status),
     )
   const tx = {
+    student: {
+      findMany: async (args: { where: { id: { in: string[] } } }) =>
+        args.where.id.in.filter((id) => world.resets.has(id)).map((id) => ({ id, pointsResetAt: world.resets.get(id)! })),
+    },
     attendanceRecord: {
       upsert: async (args: {
         where: { studentId_date_sessionKey: { studentId: string; sessionKey: string } }
@@ -62,8 +68,9 @@ vi.mock('@/lib/prisma', () => {
         const had = world.store.get(k)
         const id = had?.id ?? `rec-${k}`
         const data = had ? args.update : args.create
-        world.store.set(k, { id, studentId, sessionKey, status: data.status, reason: data.reason ?? null, points: had?.points ?? [] })
-        return { id }
+        const createdAt = had?.createdAt ?? new Date()
+        world.store.set(k, { id, studentId, sessionKey, status: data.status, reason: data.reason ?? null, points: had?.points ?? [], createdAt })
+        return { id, createdAt }
       },
       createMany: async (args: { data: Array<{ studentId: string; sessionKey: string; status: string; reason?: string | null }>; skipDuplicates?: boolean }) => {
         world.fills.push({
@@ -75,7 +82,7 @@ vi.mock('@/lib/prisma', () => {
         for (const d of args.data) {
           const k = key(d.sessionKey, d.studentId)
           if (world.store.has(k)) continue
-          world.store.set(k, { id: `rec-${k}`, studentId: d.studentId, sessionKey: d.sessionKey, status: d.status, reason: d.reason ?? null, points: [] })
+          world.store.set(k, { id: `rec-${k}`, studentId: d.studentId, sessionKey: d.sessionKey, status: d.status, reason: d.reason ?? null, points: [], createdAt: new Date() })
           count++
         }
         return { count }
@@ -127,6 +134,7 @@ beforeEach(() => {
   world.fills = []
   world.synced = null
   world.syncedSessions = []
+  world.resets = new Map()
 })
 
 const stored = (sessionKey: string) =>
@@ -136,8 +144,8 @@ const stored = (sessionKey: string) =>
       .sort((a, b) => a.studentId.localeCompare(b.studentId))
       .map((r) => [r.studentId, `${r.status}${r.points.length ? ` +${r.points.reduce((n, p) => n + p, 0)}` : ''}`]),
   )
-const seed = (sessionKey: string, studentId: string, status: string, points: number[] = []) =>
-  world.store.set(`${sessionKey}:${studentId}`, { id: `old-${sessionKey}-${studentId}`, studentId, sessionKey, status, reason: null, points })
+const seed = (sessionKey: string, studentId: string, status: string, points: number[] = [], createdAt = new Date('2026-08-30T15:00:00Z')) =>
+  world.store.set(`${sessionKey}:${studentId}`, { id: `old-${sessionKey}-${studentId}`, studentId, sessionKey, status, reason: null, points, createdAt })
 
 describe('saveAttendance with two servants on one register', () => {
   it("writes the children this servant changed, and only fills in the others where nothing is stored", async () => {
@@ -230,5 +238,22 @@ describe('saveAttendance for several sessions at once', () => {
       expect(r.ok, also[0]).toBe(false)
     }
     expect(world.store.size).toBe(0)
+  })
+})
+
+// The admin reset a child's points (2026-11-02): a register from before then,
+// saved again, must not bring them back; anything marked after earns as always.
+describe('saveAttendance after a child’s points were reset', () => {
+  it('a register from before the reset, saved again, gives the child nothing back', async () => {
+    seed('liturgy', 'k2', 'ABSENT', [], new Date('2026-08-30T15:00:00Z'))
+    world.resets.set('k2', new Date('2026-09-01T18:00:00Z'))
+    await saveAttendance({ classId: 'kg', date: '2026-08-30', sessionKey: 'liturgy', marks: [{ studentId: 'k2', status: 'PRESENT', reason: null }] })
+    expect(stored('liturgy').k2).toBe('PRESENT')
+  })
+
+  it('a child marked for the first time after the reset earns as always', async () => {
+    world.resets.set('k2', new Date('2026-09-01T18:00:00Z'))
+    await saveAttendance({ classId: 'kg', date: '2026-09-06', sessionKey: 'liturgy', marks: [{ studentId: 'k2', status: 'PRESENT', reason: null }] })
+    expect(stored('liturgy').k2).toBe('PRESENT +5')
   })
 })

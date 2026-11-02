@@ -15,12 +15,18 @@ const world = vi.hoisted(() => ({
   deleted: { notices: null as null | Record<string, unknown>, reads: null as null | Record<string, unknown> },
   coordinators: [] as Array<{ classId: string; servantId: string }>,
   names: [] as Array<{ id: string; account: { displayName: string } }>,
+  // Parts given out more than a week ahead, and who holds them now (2026-11-01).
+  holds: [] as Array<{ slot: string; servantId: string; due: Date }>,
+  current: [] as Duty[],
+  holdsDeleted: null as null | Record<string, unknown>,
+  holdsFail: false,
 }))
 vi.mock('@/lib/portal/data/duties', () => ({
   dutiesDueOn: async (date: string) => {
     world.asked.push(date)
     return world.byDate[date] ?? world.duties
   },
+  dutiesForSlots: async (slots: string[]) => world.current.filter((d) => slots.includes(d.slot)),
 }))
 vi.mock('@/lib/portal/notice-delivery', () => ({
   deliverNotices: async (notices: Array<Record<string, unknown>>) => {
@@ -37,6 +43,14 @@ vi.mock('@/lib/prisma', () => ({
       },
     },
     classServant: { findMany: async () => world.coordinators },
+    dutyNoticeHold: {
+      findMany: async (args: { where: { due: { lte: Date } } }) => world.holds.filter((h) => h.due <= args.where.due.lte),
+      deleteMany: async (args: Record<string, unknown>) => {
+        if (world.holdsFail) throw new Error('database went away')
+        world.holdsDeleted = args
+        return { count: 1 }
+      },
+    },
     servant: { findMany: async () => world.names },
     notificationRead: {
       deleteMany: async (args: Record<string, unknown>) => {
@@ -72,6 +86,10 @@ beforeEach(() => {
   world.deleted = { notices: null, reads: null }
   world.coordinators = []
   world.names = []
+  world.holds = []
+  world.current = []
+  world.holdsDeleted = null
+  world.holdsFail = false
 })
 
 describe('sendDailyReminders', () => {
@@ -217,5 +235,67 @@ describe('daily reminders (2026-10-25)', () => {
     world.coordinators = [{ classId: 'boys', servantId: 'C' }]
     await sendDailyReminders(WEDNESDAY_6_30_PM_CDT)
     expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('notdone:'))).toEqual([])
+  })
+})
+
+describe('a week before, parts given out further ahead (2026-11-01)', () => {
+  const SUNDAY_7_30_PM_CDT = new Date('2026-10-26T00:30:00Z') // Sunday, Oct 25
+  const coptic = duty('A', 'Coptic', 'Joseph', { slot: 'item:5th-6th-boys:2026-10-26:coptic', due: '2026-11-01', href: '/portal/assignments#week-2026-10-26' })
+
+  it('tells the servant who holds the part, a week before it is due', async () => {
+    world.holds = [{ slot: coptic.slot, servantId: 'A', due: new Date('2026-11-01T00:00:00Z') }]
+    world.current = [coptic]
+    const r = await sendDailyReminders(SUNDAY_7_30_PM_CDT)
+    expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('ahead:'))).toEqual([
+      {
+        servantId: 'A',
+        kind: 'assigned',
+        title: 'New assignment',
+        body: 'You’re on Coptic for Sunday, Nov 1 · 5th & 6th Boys',
+        href: '/portal/assignments#week-2026-10-26',
+        dedupeKey: 'ahead:A:2026-10-25',
+      },
+    ])
+    // Told once: the holds a week or less away are cleared.
+    expect(world.holdsDeleted).toEqual({ where: { due: { lte: new Date('2026-11-01T00:00:00Z') } } })
+    expect(r).toMatchObject({ announced: 1 })
+  })
+
+  it('a part that has changed hands since is announced to nobody, and its hold goes', async () => {
+    world.holds = [{ slot: coptic.slot, servantId: 'A', due: new Date('2026-11-01T00:00:00Z') }]
+    world.current = [{ ...coptic, servantId: 'B' }]
+    const r = await sendDailyReminders(SUNDAY_7_30_PM_CDT)
+    expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('ahead:'))).toEqual([])
+    expect(world.holdsDeleted).not.toBeNull()
+    expect(r).toMatchObject({ announced: 0 })
+  })
+
+  it('parts further off keep waiting', async () => {
+    world.holds = [{ slot: 'item:5th-6th-boys:2026-11-02:coptic', servantId: 'A', due: new Date('2026-11-08T00:00:00Z') }]
+    world.current = [{ ...coptic, slot: 'item:5th-6th-boys:2026-11-02:coptic', due: '2026-11-08' }]
+    await sendDailyReminders(SUNDAY_7_30_PM_CDT)
+    expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('ahead:'))).toEqual([])
+    expect(world.holdsDeleted).toBeNull()
+  })
+
+  it('that evening’s daily reminder leaves out the part it has just announced', async () => {
+    const verse = duty('A', 'Verse', null, { slot: 'item:5th-6th-boys:2026-10-26:verse', due: '2026-11-01', href: '/portal/assignments#week-2026-10-26' })
+    world.byDate['2026-11-01'] = [coptic, verse]
+    world.holds = [{ slot: coptic.slot, servantId: 'A', due: new Date('2026-11-01T00:00:00Z') }]
+    world.current = [coptic]
+    await sendDailyReminders(SUNDAY_7_30_PM_CDT)
+    const daily = world.delivered.filter((n) => String(n.dedupeKey).startsWith('daily:'))
+    expect(daily).toEqual([expect.objectContaining({ servantId: 'A', body: 'Verse · 5th & 6th Boys. Tap Mark done once it’s ready.' })])
+  })
+
+  it('when the holds cannot be cleared, nothing is announced and the reminders still go', async () => {
+    world.byDate['2026-11-01'] = [coptic]
+    world.holds = [{ slot: coptic.slot, servantId: 'A', due: new Date('2026-11-01T00:00:00Z') }]
+    world.current = [coptic]
+    world.holdsFail = true
+    const r = await sendDailyReminders(SUNDAY_7_30_PM_CDT)
+    expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('ahead:'))).toEqual([])
+    expect(world.delivered.filter((n) => String(n.dedupeKey).startsWith('daily:'))).toEqual([expect.objectContaining({ servantId: 'A' })])
+    expect(r).toMatchObject({ announced: 0 })
   })
 })

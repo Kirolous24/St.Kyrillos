@@ -15,6 +15,7 @@ import { can } from '@/lib/portal/permissions'
 import { rankStudents } from '@/lib/portal/points-math'
 import { attendanceRate, heldOccasions, headlineSession, headlineRows, monthOf, type AttendanceRow } from '@/lib/portal/reports'
 import { PageHeader, Card, StatCard, Avatar, Badge, EmptyState, LinkButton, SectionTitle } from '@/components/portal/ui'
+import { ResetPointsButton } from '@/components/portal/ResetPointsButton'
 import { STAGE_LABEL, TITLE_LABEL, timeAgo } from '@/lib/portal/format'
 import { accentFor } from '@/lib/portal/accents'
 import { RosterExportButton } from './RosterExportButton'
@@ -121,6 +122,8 @@ export default async function ClassPage({ params, searchParams }: { params: { id
   const ranked = new Map(
     rankStudents(students.map((s) => ({ studentId: s.id, name: studentName(s), total: totals.get(s.id) ?? 0 }))).map((r) => [r.studentId, r]),
   )
+  // Everyone on the list, one total each: what the admin's reset clears (2026-11-02).
+  const classPoints = students.reduce((n, st) => n + (totals.get(st.id) ?? 0), 0)
   const openSet = new Set(openCases.map((c) => c.studentId))
   const today = churchToday()
   // Follow-up excuses (2026-10-19): an excused child wears "Excused", not the
@@ -612,6 +615,26 @@ export default async function ClassPage({ params, searchParams }: { params: { id
                 </Link>
               </Card>
             ))}
+
+          {/* The admin resets the whole class's points from here (2026-11-02). */}
+          {user.role === 'ADMIN' && (
+            <Card title="Points" icon={<Trophy className="h-[15px] w-[15px]" />}>
+              <p className="mb-2.5 text-[12.5px] text-parch-600">
+                {classPoints.toLocaleString()} points between {students.length}{' '}
+                {students.length === 1 ? 'child' : 'children'}.
+              </p>
+              <ResetPointsButton
+                target={{
+                  kind: 'class',
+                  id: cls.id,
+                  name: cls.name,
+                  points: classPoints,
+                  children: students.length,
+                  members: students.filter((st) => st.classId !== cls.id).length,
+                }}
+              />
+            </Card>
+          )}
 
           <Card title="Servants" icon={<UserCog className="h-[15px] w-[15px]" />}>
             {servants.length === 0 ? (

@@ -5,7 +5,8 @@ import { z } from 'zod'
 import { randomInt } from 'node:crypto'
 import { Prisma, PortalRole, type ClassTitle, type Stage } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { importJoinDecision } from '../class-members'
+import { importJoinDecision, rosterWhere } from '../class-members'
+import { resetPointsOf } from '../data/points-reset'
 import { isFellowship, withoutMembers } from '../fellowship'
 import { assertNotMemberOf, syncMemberFromServant } from '../data/fellowship'
 import { requirePortalUser } from '../session'
@@ -1646,6 +1647,13 @@ export async function deleteClassStudents(classId: string, confirm: string): Pro
   })
 }
 
+/**
+ * The Danger Zone's "Clear a class's points": the same reset as the class
+ * page's button (2026-11-02), everyone on the class's list back to 0 and
+ * stamped, so a register from before then does not bring points back. It used
+ * to delete the points earned in the class, which left a member's other
+ * points on the leaderboard and came back when an old register was saved.
+ */
 export async function clearClassPoints(classId: string, confirm: string): Promise<ActionResult<DangerResult>> {
   return runAction(async () => {
     const user = await requireAdmin()
@@ -1653,11 +1661,9 @@ export async function clearClassPoints(classId: string, confirm: string): Promis
     const cls = await prisma.schoolClass.findUnique({ where: { id: classId }, select: { id: true, name: true } })
     if (!cls) throw new PortalError('Class not found.')
 
-    const deleted = await prisma.$transaction(async (tx) => {
-      const points = await tx.pointEntry.count({ where: { classId: cls.id } })
-      await tx.pointEntry.deleteMany({ where: { classId: cls.id } })
-      return [{ table: 'pointEntries', rows: points }] satisfies BackupTableCount[]
-    }, { timeout: 120_000, maxWait: 20_000 })
+    const roster = await prisma.student.findMany({ where: rosterWhere(cls.id), select: { id: true } })
+    const { entries } = await resetPointsOf(roster.map((s) => s.id))
+    const deleted = [{ table: 'pointEntries', rows: entries }] satisfies BackupTableCount[]
 
     await audit(user, 'data.clearPoints', 'class', cls.id, `${cls.name}: deleted ${deleted[0]!.rows} point entries`)
     revalidatePath(`/portal/classes/${cls.id}`)

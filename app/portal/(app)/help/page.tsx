@@ -131,6 +131,8 @@ export default async function HelpPage() {
           {user.role === 'ADMIN' ? (
             <>
               You set the session values and the church&rsquo;s activities in <b className={S}>Sessions &amp; Points</b>.
+              To start a class over, open the class and press <b className={S}>Reset points</b> in its Points card; for
+              one child, the same button is at the bottom of their Points ledger. Attendance and quiz results stay.
             </>
           ) : (
             <>The admin sets the session values and the church&rsquo;s activities in Sessions &amp; Points.</>
@@ -185,7 +187,8 @@ export default async function HelpPage() {
         <Topic icon={<ClipboardList className={ICON} />} tone="#B45309" title="Your assignments, the planner and the presentation" href="/portal/assignments">
           <b className={S}>My Assignments</b> lists what you are down for, with the <b className={S}>Planner</b> every
           class uses, and each of your classes&rsquo; presentation for this Sunday and next: open it, or add or change
-          the Canva link for everyone serving the class. Once your part is ready, tap <b className={S}>Mark done</b>;
+          the Canva link for everyone serving the class. You are told about a part when it is given to you, or a week
+          before it is due if that is further off. Once your part is ready, tap <b className={S}>Mark done</b>;
           until then you are reminded each evening, and on Saturday evening of everything for Sunday. The 5th &amp; 6th
           and 7th &amp; 8th boys&rsquo; and girls&rsquo; classes can also take each other&rsquo;s attendance: open{' '}
           <b className={S}>Attendance</b> and pick the class. Their Coordinators and Assistant Coordinators have the
@@ -198,8 +201,8 @@ export default async function HelpPage() {
           Sunday by Sunday. A class&rsquo;s Coordinator or Assistant Coordinator can fill those Sundays in one go with{' '}
           <b className={S}>Make the rotation</b>: pick the parts and who takes turns, and everyone has each part once before
           anyone has it again, with every Sunday shared out evenly. Look it over, press <b className={S}>Shuffle again</b> if
-          you like, then <b className={S}>Save</b>. Parts that already have someone stay as they are unless you untick that,
-          and each servant gets one notice. <b className={S}>My Assignments</b> has a <b className={S}>Calendar</b> too, to see
+          you like, then <b className={S}>Save</b>. Parts that already have someone stay as they are unless you untick that.
+          Each servant is told a week before each Sunday they are on (straight away for anything in the coming week). <b className={S}>My Assignments</b> has a <b className={S}>Calendar</b> too, to see
           what you are preparing over a month or a semester. Copying a week into another class brings its topics, never its
           servants.
         </Topic>

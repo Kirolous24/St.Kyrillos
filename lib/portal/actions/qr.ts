@@ -105,11 +105,11 @@ function codeKeys(list: readonly string[], single: string | null): string[] {
   return list.length > 0 ? [...list] : single ? [single] : []
 }
 
-async function withAward(tx: Prisma.TransactionClient, id: string): Promise<AttendanceAwardRecord> {
+async function withAward(tx: Prisma.TransactionClient, record: { id: string; createdAt: Date }): Promise<AttendanceAwardRecord> {
   return {
-    id,
+    ...record,
     pointEntry: await tx.pointEntry.findUnique({
-      where: { attendanceRecordId: id },
+      where: { attendanceRecordId: record.id },
       select: { id: true, points: true, undone: true },
     }),
   }
@@ -501,6 +501,8 @@ async function redeemAttendance(
   try {
     await prisma.$transaction(async (tx) => {
       await tx.qrRedemption.create({ data: { tokenId: token.token, accountId, name } })
+      // When the admin last reset this child's points (2026-11-02).
+      const pointsResetAt = (await tx.student.findUnique({ where: { id: studentId }, select: { pointsResetAt: true } }))?.pointsResetAt ?? null
       for (const { session, classId } of targets) {
         const record = await tx.attendanceRecord.upsert({
           where: { studentId_date_sessionKey: { studentId, date: day, sessionKey: session.key } },
@@ -514,15 +516,16 @@ async function redeemAttendance(
             markedById: accountId,
           },
           update: { classId, status: 'PRESENT', reason: null, note: 'QR check-in', markedById: accountId },
-          select: { id: true },
+          select: { id: true, createdAt: true },
         })
-        await awardAttendancePoints(tx, await withAward(tx, record.id), {
+        await awardAttendancePoints(tx, await withAward(tx, record), {
           studentId,
           classId,
           sessionKey: session.key,
           sessionLabel: session.label,
           sessionPoints: session.points,
           accountId,
+          pointsResetAt,
         })
       }
     })
@@ -719,7 +722,7 @@ export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<S
 
     const student = await prisma.student.findFirst({
       where: { AND: [await scanRoster(cls.id, input.mode, input.sessionKey), { account: { loginId, isActive: true } }] },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, pointsResetAt: true },
     })
     if (!student) throw new PortalError(`No student with ID ${loginId} in ${cls.name}.`)
     const name = studentName(student)
@@ -751,15 +754,16 @@ export async function scanStudent(raw: ScanStudentInput): Promise<ActionResult<S
               markedById: user.accountId,
             },
             update: { classId: cls.id, status: 'PRESENT', reason: null, note: 'Scanned in', markedById: user.accountId },
-            select: { id: true },
+            select: { id: true, createdAt: true },
           })
-          await awardAttendancePoints(tx, await withAward(tx, record.id), {
+          await awardAttendancePoints(tx, await withAward(tx, record), {
             studentId: student.id,
             classId: cls.id,
             sessionKey: session.key,
             sessionLabel: session.label,
             sessionPoints: session.points,
             accountId: user.accountId,
+            pointsResetAt: student.pointsResetAt,
           })
           ids.push(record.id)
         }

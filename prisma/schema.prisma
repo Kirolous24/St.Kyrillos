@@ -352,6 +352,9 @@ model Student {
   unassignedBy          Account?       @relation("StudentUnassignedBy", fields: [unassignedById], references: [id], onDelete: SetNull)
   unassignedReason      String?
   unassignedFromClassId String?
+  // When the admin last reset this child's points to 0 (2026-11-02). A register
+  // from before then, saved again, does not bring them back.
+  pointsResetAt         DateTime?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -391,10 +394,12 @@ model Servant {
   // Contact notes written about a child in this servant's group (2026-10-19).
   groupCaseLogs FollowUpLog[] @relation("CaseLogGroup")
 
-  agendaLead   AgendaWeek[] @relation("AgendaLead")
-  agendaBackup AgendaWeek[] @relation("AgendaBackup")
-  agendaItems  AgendaItem[] @relation("AgendaItemServant")
-  lessonsOwned Lesson[]     @relation("LessonAssignedTo")
+  agendaLead   AgendaWeek[]     @relation("AgendaLead")
+  agendaBackup AgendaWeek[]     @relation("AgendaBackup")
+  agendaItems  AgendaItem[]     @relation("AgendaItemServant")
+  lessonsOwned Lesson[]         @relation("LessonAssignedTo")
+  // Parts given to this servant more than a week ahead, not yet announced (2026-11-01).
+  noticeHolds  DutyNoticeHold[]
 }
 
 model ClassServant {
@@ -1036,6 +1041,22 @@ model Notice {
   createdAt DateTime @default(now())
 
   @@index([accountId, createdAt(sort: Desc)])
+}
+
+/// A part of a Sunday given to a servant more than a week before it is due
+/// (2026-11-01): they are told a week before, by the evening job, not the day
+/// it was given. `slot` is the Duty slot (item:{classId}:{monday}:{activity},
+/// lead:…, backup:…, lesson:{id}). Gone once announced, or once the part
+/// changes hands before then.
+model DutyNoticeHold {
+  slot      String
+  servantId String
+  servant   Servant  @relation(fields: [servantId], references: [id], onDelete: Cascade)
+  due       DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@id([slot, servantId])
+  @@index([due])
 }
 
 // Portal-wide key/value settings (church contact card, end-of-year bookkeeping,

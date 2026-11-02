@@ -56,6 +56,16 @@ async function writeRegister(
 ): Promise<void> {
   const { classId, session, accountId, day } = args
   const onRoster = new Set(args.roster)
+  // When the admin last reset each child's points (2026-11-02): a record made
+  // before then earns nothing again when the register is saved.
+  const resets = new Map(
+    (
+      await tx.student.findMany({
+        where: { id: { in: [...args.roster] }, pointsResetAt: { not: null } },
+        select: { id: true, pointsResetAt: true },
+      })
+    ).map((s) => [s.id, s.pointsResetAt]),
+  )
   const award = (studentId: string) => ({
     studentId,
     classId,
@@ -63,6 +73,7 @@ async function writeRegister(
     sessionLabel: session.label,
     sessionPoints: session.points,
     accountId,
+    pointsResetAt: resets.get(studentId) ?? null,
   })
   const mine = args.marks.filter((m) => onRoster.has(m.studentId))
   for (const m of mine) {
@@ -83,15 +94,16 @@ async function writeRegister(
         reason: m.status === 'EXCUSED' ? m.reason ?? 'other' : null,
         markedById: accountId,
       },
-      // Select only `id`: Prisma keeps a bare-id upsert as one
+      // Select only the row's own columns: Prisma keeps such an upsert as one
       // INSERT ... ON CONFLICT DO UPDATE, but a nested read of pointEntry
       // degrades it to SELECT-then-INSERT with no ON CONFLICT, so two
       // servants saving the same class at once lose the race on the
       // unique index and roll the whole class back with P2002.
-      select: { id: true },
+      select: { id: true, createdAt: true },
     })
     const record = {
       id: upserted.id,
+      createdAt: upserted.createdAt,
       pointEntry: await tx.pointEntry.findUnique({
         where: { attendanceRecordId: upserted.id },
         select: { id: true, points: true, undone: true },
@@ -133,7 +145,7 @@ async function writeRegister(
   if (owed.length > 0) {
     const created = await tx.attendanceRecord.findMany({
       where: { date: day, sessionKey: session.key, studentId: { in: owed }, status: 'PRESENT' },
-      select: { id: true, studentId: true, pointEntry: { select: { id: true, points: true, undone: true } } },
+      select: { id: true, studentId: true, createdAt: true, pointEntry: { select: { id: true, points: true, undone: true } } },
     })
     for (const r of created) await awardAttendancePoints(tx, r, award(r.studentId))
   }
