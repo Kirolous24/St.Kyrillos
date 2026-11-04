@@ -3,13 +3,15 @@ import { Bus } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import {
   defaultServiceFor,
+  reservationApprovers,
   reservationItems,
   reservationServantChoices,
   reservationServiceOptions,
   reservationsBetween,
 } from '@/lib/portal/data/reservations'
 import { churchToday, parseDateOnly } from '@/lib/portal/dates'
-import { BOOK_AHEAD_DAYS, MAX_RESERVATION_DAYS, canReserve } from '@/lib/portal/reservations'
+import { andList } from '@/lib/portal/format'
+import { BOOK_AHEAD_DAYS, MAX_RESERVATION_DAYS, canReserve, mayDecideReservation } from '@/lib/portal/reservations'
 import { Card, EmptyState, PageHeader } from '@/components/portal/ui'
 import { ReservationForm } from '../ReservationForm'
 import { takenSlots } from '../taken'
@@ -25,13 +27,17 @@ export default async function NewReservationPage({ searchParams = {} }: { search
 
   const now = new Date()
   const today = churchToday(now)
-  const [items, servants, services, service, upcoming] = await Promise.all([
+  const [items, servants, services, service, upcoming, approvers] = await Promise.all([
     reservationItems(),
     reservationServantChoices(),
     reservationServiceOptions(),
     defaultServiceFor(user),
     reservationsBetween(now, new Date(now.getTime() + (BOOK_AHEAD_DAYS + MAX_RESERVATION_DAYS) * DAY_MS)),
+    reservationApprovers(),
   ])
+  // 2026-11-04: it goes to the approvers, unless the one asking is one.
+  const decides = mayDecideReservation(user, approvers.map((a) => a.servantId))
+  const approverNames = approvers.length > 0 ? andList(approvers.map((a) => a.name)) : 'the admin'
   const asked = parseDateOnly(searchParams.date ?? '')
   const itemId = items.find((i) => i.id === searchParams.item)?.id ?? (items.length === 1 ? items[0]!.id : '')
 
@@ -41,7 +47,7 @@ export default async function NewReservationPage({ searchParams = {} }: { search
         title="Reserve a van"
         icon={<Bus className="h-5 w-5" aria-hidden />}
         back={{ href: '/portal/reservations', label: 'Reservations' }}
-        subtitle="Pick the van, the day and the hours, who is taking it, and what for."
+        subtitle="Pick the van, the day and the hours, who is taking it, where it is going and what for."
       />
       {items.length === 0 ? (
         <EmptyState title="No vans to reserve yet" hint="The Sunday School admin adds the vans that can be reserved." />
@@ -53,7 +59,8 @@ export default async function NewReservationPage({ searchParams = {} }: { search
             services={services}
             taken={takenSlots(upcoming)}
             today={today}
-            submitLabel="Reserve"
+            submitLabel={decides ? 'Reserve' : 'Send for approval'}
+            approval={decides ? undefined : `It goes to ${approverNames} for approval, and you will be told the answer.`}
             initial={{
               itemId,
               date: asked && asked >= today ? asked : '',
@@ -62,7 +69,7 @@ export default async function NewReservationPage({ searchParams = {} }: { search
               untilDate: '',
               servantIds: user.servantId ? [user.servantId] : [],
               service: services.includes(service) ? service : '',
-              note: '',
+              reason: '',
             }}
           />
         </Card>

@@ -225,14 +225,18 @@ export default async function HelpPage() {
           includes the other class of their pair); a Stage coordinator to their stage; the admin to any class.
         </Topic>
 
-        {/* 2026-11-02 — van reservations. */}
+        {/* 2026-11-02 — van reservations; 2026-11-04 — each one is approved first. */}
         <Topic icon={<Bus className={ICON} />} tone="#1F2937" title="Reserve a van" href="/portal/reservations">
           Open <b className={S}>Reservations</b> and press <b className={S}>Reserve a van</b> (or tap a free day on the
           calendar). Pick the van, the day, <b className={S}>From</b> and <b className={S}>Until</b> (tick the box if it
-          comes back on a later day), the servants taking it, and what it is for. A van cannot be reserved twice for the
-          same time: you are shown who already has it. The calendar shows who has each van, day by day, and each van says
-          whether it is out right now. Whoever made a reservation, the servants on it and the admin can change or cancel
-          it, and the servants put on it by someone else are told.{isAdmin && <> The admin keeps the list of vans, their colors and pictures, under <b className={S}>Manage vans</b>.</>}
+          comes back on a later day), the servants taking it and the service, and write the <b className={S}>Reason</b>:
+          where the van is going and what for, then press <b className={S}>Send for approval</b>. The one who approves van
+          requests is told on the phone and by email, and approves or rejects it; you are told the answer the same way.
+          While it waits, the van is held for you and the calendar shows it hollow. A van cannot be reserved twice for the
+          same time: you are shown who already has it. The calendar shows who has each van and why, who asked for it and who
+          approved it, day by day, and each van says whether it is out right now. Whoever made a reservation, the servants on
+          it and the admin can change or cancel it; changing the van, the time, the service or the reason sends it for
+          approval again.{isAdmin && <> The admin keeps the list of vans, their colors and pictures, and who approves the requests, under <b className={S}>Manage vans</b>.</>}
         </Topic>
 
         <Topic icon={<BookOpen className={ICON} />} tone="#6F1D1B" title="Find the curriculum" href="/portal/curriculum">

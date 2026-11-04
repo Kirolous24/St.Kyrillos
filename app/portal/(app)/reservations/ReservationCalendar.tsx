@@ -2,10 +2,10 @@ import Link from '@/components/portal/Link'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { monthGrid, type CalendarSpan } from '@/lib/portal/calendar-spans'
 import { andList, formatShortDate } from '@/lib/portal/format'
-import { colorOf, dayLabel, formatReservationTime, reservationDays, reservationPurpose } from '@/lib/portal/reservations'
+import { colorOf, dayLabel, formatReservationTime, reservationDays } from '@/lib/portal/reservations'
 import type { ReservationRow } from '@/lib/portal/data/reservations'
 import { cn } from '@/lib/utils'
-import { VanChip, VanSwatch } from './parts'
+import { StatusBadge, VanChip, VanSwatch } from './parts'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -14,8 +14,12 @@ const navLink = 'inline-flex min-h-[40px] items-center rounded-[20px] border bor
 /**
  * Who has which van when (2026-11-02): "a calendar on who using what". A month
  * as a grid, colored by van (dots on a phone, the vans named on a wider
- * screen), then every day that has a reservation, with who has it. Tapping a
- * busy day jumps to it; tapping a free day from today on starts a reservation.
+ * screen), then every day that has a reservation, with who has it and the
+ * reason (where it is going and what for). Tapping a busy day jumps to it;
+ * tapping a free day from today on starts a reservation. Since 2026-11-04 a
+ * request still waiting for approval is drawn hollow, and an approved one says
+ * who asked for it and who approved it: "who requests, approved, when, and
+ * what for".
  */
 export function ReservationCalendar({
   span,
@@ -28,6 +32,7 @@ export function ReservationCalendar({
   today: string
   items: Array<{ id: string; name: string; color: string }>
 }) {
+  const now = new Date()
   const href = (month: string) => `/portal/reservations?month=${month}`
   const listed = Array.from(days.keys()).sort()
   const count = new Set(Array.from(days.values()).flat().map((r) => r.id)).size
@@ -43,6 +48,10 @@ export function ReservationCalendar({
                 {item.name}
               </li>
             ))}
+            <li className="flex items-center gap-1.5 text-[12px] text-parch-600">
+              <span aria-hidden className="inline-block h-3 w-3 shrink-0 rounded-full border-[1.5px] border-parch-500 bg-white" />
+              Waiting for approval
+            </li>
           </ul>
         )}
         <span className="ml-auto flex items-center gap-1.5">
@@ -84,13 +93,20 @@ export function ReservationCalendar({
                     <span className="mt-0.5 flex flex-wrap gap-0.5 sm:hidden" aria-hidden>
                       {booked.slice(0, 4).map((r) => {
                         const c = colorOf(r.itemColor)
-                        return <span key={r.id} className="h-2 w-2 rounded-full border" style={{ backgroundColor: c.bg, borderColor: c.border }} />
+                        const waiting = r.status === 'PENDING'
+                        return (
+                          <span
+                            key={r.id}
+                            className={cn('h-2 w-2 rounded-full', waiting ? 'border-[1.5px]' : 'border')}
+                            style={{ backgroundColor: waiting ? '#FFFFFF' : c.bg, borderColor: waiting && c.bg === '#FFFFFF' ? '#64748B' : c.border }}
+                          />
+                        )
                       })}
                     </span>
                   )}
                   <span className="mt-0.5 hidden space-y-0.5 sm:block">
                     {booked.slice(0, 3).map((r) => (
-                      <VanChip key={r.id} name={r.itemName} color={r.itemColor} className="flex w-full px-1 py-px text-[10px]">
+                      <VanChip key={r.id} name={r.itemName} color={r.itemColor} waiting={r.status === 'PENDING'} clock={false} className="flex w-full px-1 py-px text-[10px]">
                         <span className="shrink-0 font-semibold opacity-80">{dayLabel(r, day)}</span>
                       </VanChip>
                     ))}
@@ -158,11 +174,16 @@ export function ReservationCalendar({
                 {days.get(day)!.map((r) => (
                   <li key={r.id} className="border-b-[0.5px] border-[#F0EEE8] last:border-b-0">
                     <Link href={`/portal/reservations/${r.id}`} data-reservation={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-[18px] py-2.5 hover:bg-brand-wash">
-                      <VanChip name={r.itemName} color={r.itemColor} />
+                      <VanChip name={r.itemName} color={r.itemColor} waiting={r.status === 'PENDING'} />
                       <span className="text-[12.5px] font-bold text-parch-900">{dayLabel(r, day)}</span>
-                      <span className="text-[12.5px] text-parch-700">{reservationPurpose(r)}</span>
+                      <span className="text-[12.5px] text-parch-700">{r.service}</span>
+                      {r.status !== 'APPROVED' && <StatusBadge status={r.status} endsAt={r.endsAt} now={now} />}
                       <span className="w-full text-[12px] text-parch-500 sm:w-auto sm:flex-1">
                         {r.servants.length > 0 ? andList(r.servants.map((s) => s.name)) : (r.createdByName ?? '')}
+                      </span>
+                      {r.reason && <span className="line-clamp-2 w-full text-[12px] text-parch-600">{r.reason}</span>}
+                      <span className="w-full text-[11.5px] text-parch-500" data-testid="reservation-who">
+                        {whoAsked(r)}
                       </span>
                       {reservationDays(r).length > 1 && <span className="w-full text-[11.5px] text-parch-500">{formatReservationTime(r)}</span>}
                     </Link>
@@ -175,4 +196,12 @@ export function ReservationCalendar({
       )}
     </section>
   )
+}
+
+/** Who asked for it, and who approved it: "Requested by Pat E · approved by Abe A". */
+function whoAsked(r: ReservationRow): string {
+  const asker = r.createdByName ?? 'someone no longer here'
+  if (r.status !== 'APPROVED') return `Requested by ${asker}`
+  // One made before approvals were needed has nobody who approved it.
+  return r.decidedByName ? `Requested by ${asker} · approved by ${r.decidedByName}` : `Reserved by ${asker}`
 }

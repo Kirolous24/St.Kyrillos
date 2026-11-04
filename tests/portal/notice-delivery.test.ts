@@ -8,11 +8,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  * push sender and Resend.
  */
 type Sub = { id: string; endpoint: string; p256dh: string; auth: string }
+type Acct = { id: string; isActive: boolean; email: string | null; noticeEmails: boolean; pushSubscriptions: Sub[] }
 const world = vi.hoisted(() => ({
-  servants: [] as Array<{
-    id: string
-    account: { id: string; isActive: boolean; email: string | null; noticeEmails: boolean; pushSubscriptions: Sub[] }
-  }>,
+  servants: [] as Array<{ id: string; account: Acct }>,
+  /** Accounts reached by their own id: the pastor or the admin, who are not servants. */
+  accounts: [] as Acct[],
   subsQuery: null as null | Record<string, unknown>,
   notices: [] as Array<Record<string, unknown>>,
   duplicate: false,
@@ -35,6 +35,9 @@ vi.mock('@/lib/prisma', () => ({
         world.subsQuery = args.select.account.select.pushSubscriptions
         return world.servants
       },
+    },
+    account: {
+      findMany: async (args: { where: { id: { in: string[] } } }) => world.accounts.filter((a) => args.where.id.in.includes(a.id)),
     },
     notice: {
       create: async (args: { data: Record<string, unknown> }) => {
@@ -91,7 +94,8 @@ import { deliverNotices, type OutgoingNotice } from '@/lib/portal/notice-deliver
 const LIVE = { VERCEL_ENV: 'production', RESEND_API_KEY: 'k', WEB_PUSH_PUBLIC_KEY: 'pub', WEB_PUSH_PRIVATE_KEY: 'priv' }
 const DEV = { DATABASE_URL: 'postgresql://u:p@dev-branch.example/db', RESEND_API_KEY: 'k', WEB_PUSH_PUBLIC_KEY: 'pub', WEB_PUSH_PRIVATE_KEY: 'priv' }
 
-const notice = (over: Partial<OutgoingNotice> = {}): OutgoingNotice => ({
+type ToServant = Extract<OutgoingNotice, { servantId: string }>
+const notice = (over: Partial<ToServant> = {}): ToServant => ({
   servantId: 'sv-mina',
   kind: 'assigned',
   title: 'New assignment',
@@ -108,6 +112,7 @@ const servant = (subs: Sub[], over: Partial<(typeof world.servants)[number]['acc
 
 beforeEach(() => {
   world.servants = []
+  world.accounts = []
   world.subsQuery = null
   world.notices = []
   world.duplicate = false
@@ -222,6 +227,50 @@ describe('deliverNotices', () => {
     world.servants = [servant([], { noticeEmails: false })]
     await deliverNotices([notice()], LIVE)
     expect(world.emails).toEqual([])
+  })
+
+  // 2026-11-04 — van approvals: "make sure he gets notifications on this and emails of the details".
+  it('a notice marked email-too is emailed even when a phone was reached', async () => {
+    world.servants = [servant([sub('s1')])]
+    const r = await deliverNotices([notice({ kind: 'reservation', email: 'always' })], LIVE)
+    expect(r).toEqual({ stored: 1, pushed: 1, emailed: 1, skipped: 0 })
+    expect(world.emails).toEqual([expect.objectContaining({ to: 'mina@example.com', subject: 'New assignment' })])
+  })
+
+  it('email-too still leaves out a servant who turned emails off, and stays off outside production', async () => {
+    world.servants = [servant([sub('s1')], { noticeEmails: false })]
+    await deliverNotices([notice({ email: 'always' })], LIVE)
+    expect(world.emails).toEqual([])
+    world.servants = [servant([sub('s1')])]
+    await deliverNotices([notice({ email: 'always', dedupeKey: 'k2' })], DEV)
+    expect(world.emails).toEqual([])
+  })
+
+  it('puts the details in the email, between the message and the link, and not on the bell or the phone', async () => {
+    world.servants = [servant([sub('s1')])]
+    await deliverNotices([notice({ email: 'always', details: ['Van: Black Van', 'Reason: Taking the youth to the park'] })], LIVE)
+    expect(String(world.emails[0]!.text)).toMatch(
+      /^You’re on Coptic for Sunday, Oct 25 · 5th & 6th Boys\n\nVan: Black Van\nReason: Taking the youth to the park\n\nOpen it: https:\/\/stkyrillostn\.org\/portal\/assignments#week-2026-10-19\n/,
+    )
+    expect(world.notices[0]).not.toHaveProperty('details')
+    expect(world.push[0]!.payload).not.toHaveProperty('details')
+  })
+
+  it('reaches an account that is not a servant, such as the pastor', async () => {
+    world.accounts = [{ id: 'acc-pastor', isActive: true, email: 'abouna@example.com', noticeEmails: true, pushSubscriptions: [] }]
+    const toPastor: OutgoingNotice = {
+      accountId: 'acc-pastor',
+      kind: 'reservation',
+      title: 'Black Van request approved',
+      body: 'Approved.',
+      href: '/portal/reservations/r1',
+      dedupeKey: 'reservation:acc-pastor:1',
+      email: 'always',
+    }
+    const r = await deliverNotices([toPastor, { ...toPastor, accountId: 'acc-gone', dedupeKey: 'reservation:acc-gone:1' }], LIVE)
+    expect(r).toEqual({ stored: 1, pushed: 0, emailed: 1, skipped: 1 })
+    expect(world.notices).toEqual([expect.objectContaining({ accountId: 'acc-pastor', kind: 'reservation', title: 'Black Van request approved' })])
+    expect(world.emails).toEqual([expect.objectContaining({ to: 'abouna@example.com' })])
   })
 })
 

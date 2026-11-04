@@ -8,8 +8,7 @@ import { Field, InlineNotice, buttonClass, checkboxClass, inputClass, selectClas
 import { weekdayName } from '@/lib/portal/dates'
 import {
   MAX_RESERVATION_SERVANTS,
-  RESERVATION_NOTE_MAX,
-  SERVICE_OTHER,
+  RESERVATION_REASON_MAX,
   formatReservationTime,
   overlaps,
   readReservationTimes,
@@ -47,7 +46,8 @@ export interface ReservationFormValues {
   untilDate: string
   servantIds: string[]
   service: string
-  note: string
+  /** Where it is going and what for. */
+  reason: string
 }
 
 /**
@@ -63,6 +63,7 @@ export function ReservationForm({
   initial,
   today,
   submitLabel,
+  approval,
 }: {
   items: FormItem[]
   servants: Array<{ id: string; name: string }>
@@ -71,6 +72,8 @@ export function ReservationForm({
   initial: ReservationFormValues
   today: string
   submitLabel: string
+  /** Who it goes to for approval (2026-11-04), said above the button; none for someone who approves. */
+  approval?: string
 }) {
   const router = useRouter()
   const [form, setForm] = useState(initial)
@@ -115,7 +118,7 @@ export function ReservationForm({
         untilDate: laterDay ? form.untilDate : undefined,
         servantIds: form.servantIds,
         service: form.service,
-        note: form.note,
+        reason: form.reason,
       })
       if (!result.ok) {
         setError(result.error)
@@ -288,21 +291,23 @@ export function ReservationForm({
         </select>
       </Field>
 
-      <Field
-        label={form.service === SERVICE_OTHER ? 'What it is for' : 'Note (optional)'}
-        htmlFor={`res-note-${key}`}
-        hint={form.service === SERVICE_OTHER ? 'Say what the van is for.' : 'Where it is going, or anything the next person should know.'}
-      >
+      <Field label="Reason" htmlFor={`res-reason-${key}`} hint="Where the van is going and what for.">
         <textarea
-          id={`res-note-${key}`}
-          value={form.note}
-          onChange={(e) => set('note', e.target.value)}
+          id={`res-reason-${key}`}
+          value={form.reason}
+          onChange={(e) => set('reason', e.target.value)}
           className={textareaClass}
-          maxLength={RESERVATION_NOTE_MAX}
-          required={form.service === SERVICE_OTHER}
+          maxLength={RESERVATION_REASON_MAX}
+          placeholder="e.g. Taking the 7th graders to the retreat center"
+          required
         />
       </Field>
 
+      {approval && (
+        <p className="mb-2 text-[12px] text-parch-600" data-testid="approval-note">
+          {approval}
+        </p>
+      )}
       {error && <InlineNotice tone="bad">{error}</InlineNotice>}
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button type="submit" className={buttonClass('primary')} disabled={pending || !!clash || form.servantIds.length === 0 || !form.itemId}>

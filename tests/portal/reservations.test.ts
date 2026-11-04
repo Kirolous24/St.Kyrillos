@@ -8,14 +8,22 @@ import {
   formatBackAt,
   formatReservationTime,
   mayCancelReservation,
+  mayDecideReservation,
   mayEditReservation,
+  needsNewApproval,
   overlaps,
   readReservationTimes,
   reservationDays,
   reservationNotices,
+  reservationPurpose,
+  reservationStatusLabel,
   reservationsByDay,
   serviceOptions,
+  statusAfterSave,
+  type ReservationNotice,
+  type ReservationRecipient,
   type ReservationSnapshot,
+  type ReservationStatus,
 } from '@/lib/portal/reservations'
 
 /**
@@ -155,6 +163,19 @@ describe('defaultService', () => {
   })
 })
 
+describe('reservationPurpose', () => {
+  it('is the service; the reason is shown on its own', () => {
+    expect(reservationPurpose({ service: 'Youth Meeting', reason: 'Taking the youth to the park' })).toBe('Youth Meeting')
+  })
+  it('is the reason when the service is Other, cut short past 60 letters', () => {
+    expect(reservationPurpose({ service: 'Other', reason: '  Airport\n  pickup ' })).toBe('Airport pickup')
+    expect(reservationPurpose({ service: 'Other', reason: 'a'.repeat(70) })).toBe(`${'a'.repeat(59)}…`)
+  })
+  it('is Other for an Other made before the reason was needed', () => {
+    expect(reservationPurpose({ service: 'Other', reason: null })).toBe('Other')
+  })
+})
+
 describe('colorOf', () => {
   it('knows black and white, and falls back to blue', () => {
     expect(colorOf('black').bg).toBe('#1F2937')
@@ -186,62 +207,254 @@ describe('who may change a reservation', () => {
   })
 })
 
+describe('who may approve a van request', () => {
+  const servant = (servantId: string) => ({ role: 'SERVANT', accountId: `acc-${servantId}`, servantId })
+  it('is a servant the admin named, and the admin', () => {
+    expect(mayDecideReservation(servant('sv-ap'), ['sv-ap'])).toBe(true)
+    expect(mayDecideReservation(servant('sv-me'), ['sv-ap'])).toBe(false)
+    expect(mayDecideReservation({ role: 'ADMIN' }, ['sv-ap'])).toBe(true)
+    expect(mayDecideReservation({ role: 'PASTOR' }, ['sv-ap'])).toBe(false)
+  })
+  it('is the admin alone while nobody is named', () => {
+    expect(mayDecideReservation(servant('sv-ap'), [])).toBe(false)
+    expect(mayDecideReservation({ role: 'ADMIN' }, [])).toBe(true)
+  })
+})
+
+describe('needsNewApproval', () => {
+  const r = { itemId: 'black-van', startsAt: at('2026-11-07T15:00:00.000Z'), endsAt: at('2026-11-07T18:00:00.000Z'), service: 'Youth Meeting', reason: 'Taking the youth to the park' }
+  it('is another van, time, service or reason', () => {
+    expect(needsNewApproval(r, { ...r, itemId: 'white-van' })).toBe(true)
+    expect(needsNewApproval(r, { ...r, endsAt: at('2026-11-07T19:00:00.000Z') })).toBe(true)
+    expect(needsNewApproval(r, { ...r, service: 'High School' })).toBe(true)
+    expect(needsNewApproval(r, { ...r, reason: 'Taking the youth to the lake' })).toBe(true)
+  })
+  it('is not the same reservation saved again, or spaces around the reason', () => {
+    expect(needsNewApproval(r, { ...r })).toBe(false)
+    expect(needsNewApproval(r, { ...r, reason: '  Taking the youth to the park ' })).toBe(false)
+  })
+})
+
+describe('statusAfterSave', () => {
+  const servant = { accountId: 'acc-me', decides: false }
+  const approver = { accountId: 'acc-ap', decides: true }
+  const mine = (status: ReservationStatus) => ({ status, createdById: 'acc-me' })
+  it('waits for approval when someone who cannot approve asks; one who can gets it at once', () => {
+    expect(statusAfterSave(null, false, servant)).toEqual({ status: 'PENDING', stamp: 'clear' })
+    expect(statusAfterSave(null, false, approver)).toEqual({ status: 'APPROVED', stamp: 'now' })
+  })
+  it('keeps an approved one approved when only its servants change, and asks again when more does', () => {
+    expect(statusAfterSave(mine('APPROVED'), false, servant)).toEqual({ status: 'APPROVED', stamp: 'keep' })
+    expect(statusAfterSave(mine('APPROVED'), true, servant)).toEqual({ status: 'PENDING', stamp: 'clear' })
+  })
+  it('asks again when a waiting or rejected one is saved by one who cannot approve', () => {
+    expect(statusAfterSave(mine('PENDING'), false, servant)).toEqual({ status: 'PENDING', stamp: 'clear' })
+    expect(statusAfterSave(mine('REJECTED'), false, servant)).toEqual({ status: 'PENDING', stamp: 'clear' })
+  })
+  it('lets an approver’s change to an approved one stand, approved by them when it needed approval', () => {
+    expect(statusAfterSave(mine('APPROVED'), true, approver)).toEqual({ status: 'APPROVED', stamp: 'now' })
+    expect(statusAfterSave(mine('APPROVED'), false, approver)).toEqual({ status: 'APPROVED', stamp: 'keep' })
+  })
+  it('approves an approver’s own waiting request when they save it, but leaves someone else’s to the buttons', () => {
+    expect(statusAfterSave({ status: 'PENDING', createdById: 'acc-ap' }, false, approver)).toEqual({ status: 'APPROVED', stamp: 'now' })
+    expect(statusAfterSave(mine('PENDING'), true, approver)).toEqual({ status: 'PENDING', stamp: 'keep' })
+    expect(statusAfterSave(mine('REJECTED'), true, approver)).toEqual({ status: 'REJECTED', stamp: 'keep' })
+  })
+})
+
+describe('reservationStatusLabel', () => {
+  const soon = at('2026-11-07T18:00:00.000Z')
+  it('names where it stands', () => {
+    expect(reservationStatusLabel('PENDING', soon, NOW)).toBe('Waiting for approval')
+    expect(reservationStatusLabel('APPROVED', soon, NOW)).toBe('Approved')
+    expect(reservationStatusLabel('REJECTED', soon, NOW)).toBe('Not approved')
+  })
+  it('says a request was not answered once its time has passed', () => {
+    expect(reservationStatusLabel('PENDING', at('2026-10-31T18:00:00.000Z'), NOW)).toBe('Not answered')
+  })
+})
+
 describe('reservationNotices', () => {
-  const base: ReservationSnapshot = {
+  const approved: ReservationSnapshot = {
     id: 'res-1',
     itemName: 'Black Van',
     startsAt: at('2026-11-07T15:00:00.000Z'),
     endsAt: at('2026-11-07T18:00:00.000Z'),
     service: 'Youth Meeting',
-    note: null,
+    reason: 'Taking the youth to the park',
+    status: 'APPROVED',
     servantIds: ['sv-me', 'sv-a', 'sv-b'],
+    servantNames: ['Mina S', 'Pat E', 'Sara M'],
+    requester: { accountId: 'acc-me', servantId: 'sv-me', name: 'Pat E' },
+    decidedById: 'acc-ap',
+    decidedByName: 'Abe A',
+    decidedAt: at('2026-11-04T21:15:00.000Z'),
+    decisionNote: null,
   }
-  const me = { servantId: 'sv-me', name: 'Pat' }
+  const waiting: ReservationSnapshot = { ...approved, status: 'PENDING', decidedById: null, decidedByName: null, decidedAt: null }
+  const me = { accountId: 'acc-me', servantId: 'sv-me', name: 'Pat E' }
+  const approver = { accountId: 'acc-ap', servantId: 'sv-ap', name: 'Abe A' }
+  const admin = { accountId: 'acc-admin', servantId: null, name: 'Admin' }
+  const told = (actor: { accountId: string; servantId: string | null; name: string }, over: { approvers?: ReservationRecipient[]; now?: Date } = {}) => ({
+    actor,
+    approvers: over.approvers ?? [{ servantId: 'sv-ap' }],
+    now: over.now ?? NOW,
+  })
+  const who = (notices: ReservationNotice[]) => notices.map((n) => ['servantId' in n.to ? n.to.servantId : n.to.accountId, n.title])
+  const DETAILS = [
+    'Van: Black Van',
+    'When: Sat, Nov 7 · 9:00 AM – 12:00 PM',
+    'For: Youth Meeting',
+    'Reason: Taking the youth to the park',
+    'Servants: Mina S, Pat E and Sara M',
+    'Requested by: Pat E',
+  ]
+  const moved = { startsAt: at('2026-11-07T16:00:00.000Z'), endsAt: at('2026-11-07T19:00:00.000Z') }
 
-  it('tells the servants someone else put on it, not the one who did', () => {
-    const notices = reservationNotices(null, base, me, NOW)
-    expect(notices.map((n) => n.servantId)).toEqual(['sv-a', 'sv-b'])
-    expect(notices[0]).toEqual({
-      servantId: 'sv-a',
-      title: 'Black Van reserved for you',
-      body: 'Pat put you on the Black Van for Youth Meeting: Sat, Nov 7 · 9:00 AM – 12:00 PM.',
+  // 2026-11-04, the user: "make sure he gets notifications on this and emails of the details".
+  it('sends a new request to the approvers, on the phone and by email, with every detail, and tells nobody else yet', () => {
+    expect(reservationNotices(null, waiting, told(me))).toEqual([
+      {
+        to: { servantId: 'sv-ap' },
+        title: 'Black Van request from Pat E',
+        body: 'Pat E asks for the Black Van, Sat, Nov 7 · 9:00 AM – 12:00 PM, for Youth Meeting: Taking the youth to the park.',
+        href: '/portal/reservations/res-1',
+        details: DETAILS,
+        email: 'always',
+      },
+    ])
+  })
+
+  it('sends it to the admin while no approver is named', () => {
+    expect(who(reservationNotices(null, waiting, told(me, { approvers: [{ accountId: 'acc-admin' }] })))).toEqual([['acc-admin', 'Black Van request from Pat E']])
+  })
+
+  it('tells the approvers again when a waiting request changes, but not when it is saved unchanged', () => {
+    const notices = reservationNotices(waiting, { ...waiting, ...moved }, told(me))
+    expect(who(notices)).toEqual([['sv-ap', 'Black Van request changed by Pat E']])
+    expect(notices[0]!.body).toBe('Pat E changed the request for the Black Van: Sat, Nov 7 · 10:00 AM – 1:00 PM, for Youth Meeting: Taking the youth to the park.')
+    expect(reservationNotices(waiting, { ...waiting }, told(me))).toEqual([])
+  })
+
+  // "the person who requests gets the notification and email back of the results".
+  it('tells the one who asked when it is approved, on the phone and by email, and the servants on it that the van is theirs', () => {
+    const notices = reservationNotices(waiting, approved, told(approver))
+    expect(who(notices)).toEqual([
+      ['acc-me', 'Black Van request approved'],
+      ['sv-a', 'Black Van reserved for you'],
+      ['sv-b', 'Black Van reserved for you'],
+    ])
+    expect(notices[0]).toMatchObject({
+      body: 'Abe A approved your request for the Black Van: Sat, Nov 7 · 9:00 AM – 12:00 PM, Youth Meeting.',
       href: '/portal/reservations/res-1',
+      email: 'always',
+      details: [...DETAILS, 'Approved by: Abe A, Nov 4, 3:15 PM'],
+    })
+    expect(notices[1]!.body).toBe('Pat E put you on the Black Van for Youth Meeting: Sat, Nov 7 · 9:00 AM – 12:00 PM. Approved by Abe A.')
+    expect(notices[1]).not.toHaveProperty('email')
+  })
+
+  it('tells the one who asked when it is rejected, with the approver’s words, and nobody else', () => {
+    const rejected: ReservationSnapshot = { ...waiting, status: 'REJECTED', decidedById: 'acc-ap', decidedByName: 'Abe A', decidedAt: at('2026-11-04T21:15:00.000Z'), decisionNote: 'The van is in the shop that week' }
+    const notices = reservationNotices(waiting, rejected, told(approver))
+    expect(who(notices)).toEqual([['acc-me', 'Black Van request not approved']])
+    expect(notices[0]).toMatchObject({
+      body: 'Abe A did not approve your request for the Black Van: Sat, Nov 7 · 9:00 AM – 12:00 PM, Youth Meeting. “The van is in the shop that week”',
+      email: 'always',
+      details: [...DETAILS, 'Rejected by: Abe A', 'Why: The van is in the shop that week'],
     })
   })
 
-  it('says what it is for when the service is Other', () => {
-    const notices = reservationNotices(null, { ...base, service: 'Other', note: 'Airport pickup' }, me, NOW)
-    expect(notices[0]!.body).toBe('Pat put you on the Black Van for Airport pickup: Sat, Nov 7 · 9:00 AM – 12:00 PM.')
+  it('when an approved one is rejected after all, tells the one who asked and the servants who had the van', () => {
+    const rejected: ReservationSnapshot = { ...approved, status: 'REJECTED', decisionNote: 'The van is in the shop' }
+    const notices = reservationNotices(approved, rejected, told(approver))
+    expect(who(notices)).toEqual([
+      ['acc-me', 'Black Van request not approved'],
+      ['sv-a', 'Black Van reservation not approved'],
+      ['sv-b', 'Black Van reservation not approved'],
+    ])
+    expect(notices[1]!.body).toBe('Abe A did not approve the Black Van for Youth Meeting: Sat, Nov 7 · 9:00 AM – 12:00 PM. “The van is in the shop”')
   })
 
-  it('tells who was added, who was taken off, and who stayed when the time moved', () => {
-    const after = { ...base, startsAt: at('2026-11-07T16:00:00.000Z'), endsAt: at('2026-11-07T19:00:00.000Z'), servantIds: ['sv-me', 'sv-a', 'sv-c'] }
-    const notices = reservationNotices(base, after, me, NOW)
-    expect(notices.map((n) => [n.servantId, n.title])).toEqual([
+  it('approves an approver’s own request at once, and tells only the servants on it', () => {
+    const own = { ...approved, requester: { accountId: 'acc-ap', servantId: 'sv-ap', name: 'Abe A' } }
+    const notices = reservationNotices(null, own, told(approver))
+    expect(who(notices)).toEqual([
+      ['sv-me', 'Black Van reserved for you'],
+      ['sv-a', 'Black Van reserved for you'],
+      ['sv-b', 'Black Van reserved for you'],
+    ])
+    expect(notices[0]!.body).toBe('Abe A put you on the Black Van for Youth Meeting: Sat, Nov 7 · 9:00 AM – 12:00 PM.')
+  })
+
+  it('says what it is for when the service is Other', () => {
+    const own = { ...approved, service: 'Other', reason: 'Airport pickup', requester: { accountId: 'acc-ap', servantId: 'sv-ap', name: 'Abe A' } }
+    expect(reservationNotices(null, own, told(approver))[0]!.body).toBe('Abe A put you on the Black Van for Airport pickup: Sat, Nov 7 · 9:00 AM – 12:00 PM.')
+  })
+
+  it('sends an approved one back to the approvers when its time changes, and tells the servants on it', () => {
+    const notices = reservationNotices(approved, { ...waiting, ...moved }, told(me))
+    expect(who(notices)).toEqual([
+      ['sv-ap', 'Black Van request changed by Pat E'],
+      ['sv-a', 'A reservation of yours changed'],
+      ['sv-b', 'A reservation of yours changed'],
+    ])
+    expect(notices[1]!.body).toBe('Pat E changed the Black Van for Youth Meeting, so it waits for approval again: Sat, Nov 7 · 10:00 AM – 1:00 PM.')
+  })
+
+  it('while it stays approved, tells who was added, who was taken off, and who stayed when the time moved', () => {
+    const after = { ...approved, ...moved, servantIds: ['sv-me', 'sv-a', 'sv-c'] }
+    const notices = reservationNotices(approved, after, told(approver))
+    expect(who(notices)).toEqual([
       ['sv-c', 'Black Van reserved for you'],
       ['sv-b', 'Taken off the Black Van'],
+      ['sv-me', 'A reservation of yours changed'],
       ['sv-a', 'A reservation of yours changed'],
     ])
-    expect(notices[1]!.body).toBe('Pat took you off the Black Van for Youth Meeting: Sat, Nov 7 · 9:00 AM – 12:00 PM.')
+    expect(notices[0]!.body).toBe('Abe A put you on the Black Van for Youth Meeting: Sat, Nov 7 · 10:00 AM – 1:00 PM.')
+    expect(notices[1]!.body).toBe('Abe A took you off the Black Van for Youth Meeting: Sat, Nov 7 · 9:00 AM – 12:00 PM.')
     expect(notices[1]!.href).toBe('/portal/reservations?month=2026-11')
-    expect(notices[2]!.body).toBe('Pat changed it: the Black Van for Youth Meeting, Sat, Nov 7 · 10:00 AM – 1:00 PM.')
+    expect(notices[2]!.body).toBe('Abe A changed it: the Black Van for Youth Meeting, Sat, Nov 7 · 10:00 AM – 1:00 PM.')
   })
 
-  it('tells nobody who stayed when only the note changed', () => {
-    expect(reservationNotices(base, { ...base, note: 'Bring the cooler' }, me, NOW)).toEqual([])
+  it('tells the one who asked, when they are not on it, that someone else moved it', () => {
+    const forPastor = { ...approved, servantIds: ['sv-a'], servantNames: ['Mina S'], requester: { accountId: 'acc-pastor', servantId: null, name: 'Abouna' } }
+    expect(who(reservationNotices(forPastor, { ...forPastor, ...moved }, told(approver)))).toEqual([
+      ['sv-a', 'A reservation of yours changed'],
+      ['acc-pastor', 'A reservation of yours changed'],
+    ])
   })
 
-  it('tells the others when it is cancelled', () => {
-    const notices = reservationNotices(base, null, { servantId: null, name: 'Admin' }, NOW)
-    expect(notices.map((n) => n.servantId)).toEqual(['sv-me', 'sv-a', 'sv-b'])
-    expect(notices[0]!.title).toBe('Black Van reservation cancelled')
+  it('tells nobody who stayed when only the reason changed', () => {
+    expect(reservationNotices(approved, { ...approved, reason: 'Taking the youth to the lake' }, told(approver))).toEqual([])
+  })
+
+  it('tells the others when an approved one is cancelled', () => {
+    const notices = reservationNotices(approved, null, told(admin))
+    expect(who(notices)).toEqual([
+      ['sv-me', 'Black Van reservation cancelled'],
+      ['sv-a', 'Black Van reservation cancelled'],
+      ['sv-b', 'Black Van reservation cancelled'],
+    ])
     expect(notices[0]!.body).toBe('Admin cancelled the Black Van for Youth Meeting: Sat, Nov 7 · 9:00 AM – 12:00 PM.')
+  })
+
+  it('tells the approvers when a waiting request is withdrawn, and not the servants, who never heard of it', () => {
+    const notices = reservationNotices(waiting, null, told(me))
+    expect(who(notices)).toEqual([['sv-ap', 'Black Van request withdrawn']])
+    expect(notices[0]!.body).toBe('Pat E withdrew the request for the Black Van: Sat, Nov 7 · 9:00 AM – 12:00 PM.')
+    expect(notices[0]).not.toHaveProperty('email')
+  })
+
+  it('never tells the one who did it', () => {
+    expect(reservationNotices(null, waiting, told(admin, { approvers: [{ accountId: 'acc-admin' }] }))).toEqual([])
   })
 
   it('tells nobody about a reservation that is over', () => {
     const later = at('2026-11-08T00:00:00.000Z')
-    expect(reservationNotices(base, null, me, later)).toEqual([])
-    expect(reservationNotices(null, base, me, later)).toEqual([])
+    expect(reservationNotices(approved, null, told(me, { now: later }))).toEqual([])
+    expect(reservationNotices(null, waiting, told(me, { now: later }))).toEqual([])
+    expect(reservationNotices(waiting, approved, told(approver, { now: later }))).toEqual([])
   })
 })
 

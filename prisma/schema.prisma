@@ -265,6 +265,8 @@ model Account {
   agendaItemsDone      AgendaItem[]       @relation("AgendaItemDoneBy")
   // Vans this account reserved (2026-11-02).
   reservationsMade     Reservation[]      @relation("ReservationCreatedBy")
+  // Van requests this account approved or rejected (2026-11-04).
+  reservationsDecided  Reservation[]      @relation("ReservationDecidedBy")
 
   @@index([role])
 }
@@ -396,14 +398,16 @@ model Servant {
   // Contact notes written about a child in this servant's group (2026-10-19).
   groupCaseLogs FollowUpLog[] @relation("CaseLogGroup")
 
-  agendaLead   AgendaWeek[]     @relation("AgendaLead")
-  agendaBackup AgendaWeek[]     @relation("AgendaBackup")
-  agendaItems  AgendaItem[]     @relation("AgendaItemServant")
-  lessonsOwned Lesson[]         @relation("LessonAssignedTo")
+  agendaLead           AgendaWeek[]         @relation("AgendaLead")
+  agendaBackup         AgendaWeek[]         @relation("AgendaBackup")
+  agendaItems          AgendaItem[]         @relation("AgendaItemServant")
+  lessonsOwned         Lesson[]             @relation("LessonAssignedTo")
   // Parts given to this servant more than a week ahead, not yet announced (2026-11-01).
-  noticeHolds  DutyNoticeHold[]
+  noticeHolds          DutyNoticeHold[]
   // Reserved vans this servant is taking (2026-11-02).
-  reservations ReservationServant[]
+  reservations         ReservationServant[]
+  // Set when this servant approves van requests (2026-11-04).
+  approvesReservations ReservationApprover?
 }
 
 model ClassServant {
@@ -1080,27 +1084,54 @@ model ReservationItem {
   reservations Reservation[]
 }
 
+/// Where a van reservation stands (2026-11-04): "it needs to go through" an
+/// approver. Waiting and approved ones hold the van's time; one not approved
+/// does not.
+enum ReservationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 /// A van reserved for a while (2026-11-02): from when until when, for which
 /// service, and the servants taking it. Two reservations of one van never
 /// overlap; lib/portal/actions/reservations.ts checks that under a lock on the
 /// van's row. `service` is the label chosen ("Middle School", "Youth Meeting",
-/// "Other"), kept as written.
+/// "Other"), kept as written. Since 2026-11-04 each is a request an approver
+/// approves or rejects; `createdBy` is the one who asked.
 model Reservation {
-  id          String               @id @default(cuid())
-  itemId      String
-  item        ReservationItem      @relation(fields: [itemId], references: [id], onDelete: Restrict)
-  startsAt    DateTime
-  endsAt      DateTime
-  service     String
-  note        String?
-  createdById String?
-  createdBy   Account?             @relation("ReservationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  servants    ReservationServant[]
+  id           String               @id @default(cuid())
+  itemId       String
+  item         ReservationItem      @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  startsAt     DateTime
+  endsAt       DateTime
+  service      String
+  /// Where the van is going and what for. Needed on every save since
+  /// 2026-11-04; the column began as an optional note, so it keeps that name.
+  reason       String?              @map("note")
+  status       ReservationStatus    @default(PENDING)
+  /// Who approved or rejected it, and when; empty while it waits.
+  decidedById  String?
+  decidedBy    Account?             @relation("ReservationDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  /// Why it was rejected, in the approver's words.
+  decisionNote String?
+  createdById  String?
+  createdBy    Account?             @relation("ReservationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  servants     ReservationServant[]
 
   @@index([itemId, startsAt])
   @@index([startsAt])
+}
+
+/// Who approves van reservations (2026-11-04): the servants the admin names
+/// under Manage vans. Each is told of every request, on the phone and by email.
+model ReservationApprover {
+  servantId String   @id
+  servant   Servant  @relation(fields: [servantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }
 
 /// The servants taking a reserved van (2026-11-02).

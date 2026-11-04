@@ -5,7 +5,7 @@
 // tests/portal/reservations.test.ts.
 
 import { addDays, churchClock, churchDateTime, parseDateOnly } from './dates'
-import { STAGE_LABEL, formatShortDate, formatTimeOfDay } from './format'
+import { STAGE_LABEL, andList, formatDateTime, formatShortDate, formatTimeOfDay } from './format'
 import type { StageKey } from './permissions'
 
 /** The longest a van may be out at once, and how far ahead it may be reserved. */
@@ -34,10 +34,15 @@ export function colorOf(key: string): (typeof RESERVATION_COLORS)[ReservationCol
   return isReservationColor(key) ? RESERVATION_COLORS[key] : RESERVATION_COLORS.blue
 }
 
-/** The service a van goes out for when it is none of the listed ones; the note says what. */
+/** The service a van goes out for when it is none of the listed ones; the reason says what. */
 export const SERVICE_OTHER = 'Other'
 export const MAX_RESERVATION_SERVANTS = 12
-export const RESERVATION_NOTE_MAX = 300
+/**
+ * Every reservation says where the van is going and what for (2026-11-04, the
+ * user: "make reason required … a place, reason on what and for what").
+ */
+export const RESERVATION_REASON_MAX = 300
+export const REASON_NEEDED = 'Say where the van is going and what for.'
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -155,12 +160,12 @@ export function defaultService(classes: ReadonlyArray<{ stage: StageKey; name: s
   return labels.size === 1 ? Array.from(labels)[0]! : ''
 }
 
-/** What it is for, in a sentence: the service, or the note when the service is Other. */
-export function reservationPurpose(r: { service: string; note: string | null }): string {
+/** What it is for, in a sentence: the service, or the reason when the service is Other. */
+export function reservationPurpose(r: { service: string; reason: string | null }): string {
   if (r.service !== SERVICE_OTHER) return r.service
-  const note = r.note?.trim().replace(/\s+/g, ' ') ?? ''
-  if (!note) return SERVICE_OTHER
-  return note.length > 60 ? `${note.slice(0, 59)}…` : note
+  const reason = r.reason?.trim().replace(/\s+/g, ' ') ?? ''
+  if (!reason) return SERVICE_OTHER
+  return reason.length > 60 ? `${reason.slice(0, 59)}…` : reason
 }
 
 interface Changer {
@@ -196,91 +201,309 @@ export function canReserve(role: string): boolean {
   return role === 'SERVANT' || role === 'ADMIN' || role === 'PASTOR'
 }
 
+// ── Approval (2026-11-04) ──────────────────────────────────────────────────
+// The user: "It also needs approval, it needs to go through" one servant, who
+// "gets notifications on this and emails of the details" and can "accept it or
+// reject it"; "the person who requests gets the notification and email back of
+// the results", and an accepted one "shows on the calendar with who requests,
+// approved, when, and what for".
+
+export type ReservationStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+/** A request waiting for its answer and an approved one keep the van's time; one not approved does not. */
+export const HOLDING_STATUSES: ReservationStatus[] = ['PENDING', 'APPROVED']
+export const DECISION_NOTE_MAX = 300
+
+/** Approves or rejects van requests: a servant the admin named, and the admin, who has them alone while nobody is named. */
+export function mayDecideReservation(user: { role: string; servantId?: string | null }, approverServantIds: readonly string[]): boolean {
+  return user.role === 'ADMIN' || (!!user.servantId && approverServantIds.includes(user.servantId))
+}
+
+interface Asked {
+  itemId: string
+  startsAt: Date
+  endsAt: Date
+  service: string
+  reason: string | null
+}
+
+/** Whether a change needs approving again: another van, time, service or reason. Who is taking it does not. */
+export function needsNewApproval(before: Asked, after: Asked): boolean {
+  return (
+    before.itemId !== after.itemId ||
+    before.startsAt.getTime() !== after.startsAt.getTime() ||
+    before.endsAt.getTime() !== after.endsAt.getTime() ||
+    before.service !== after.service ||
+    (before.reason ?? '').trim() !== (after.reason ?? '').trim()
+  )
+}
+
+/**
+ * Where a reservation stands once it is saved, and its approval: stamped now
+ * by the one saving it, kept as it was, or cleared. Someone who may approve
+ * gets theirs approved at once, and leaves someone else's request to the
+ * Approve and Reject buttons; anyone else waits for an answer, unless an
+ * approved one changed only in who is taking it.
+ */
+export function statusAfterSave(
+  before: { status: ReservationStatus; createdById: string | null } | null,
+  needsApproval: boolean,
+  actor: { accountId: string; decides: boolean },
+): { status: ReservationStatus; stamp: 'now' | 'keep' | 'clear' } {
+  if (!before) return actor.decides ? { status: 'APPROVED', stamp: 'now' } : { status: 'PENDING', stamp: 'clear' }
+  if (actor.decides) {
+    if (before.status === 'APPROVED') return { status: 'APPROVED', stamp: needsApproval ? 'now' : 'keep' }
+    if (before.createdById === actor.accountId) return { status: 'APPROVED', stamp: 'now' }
+    return { status: before.status, stamp: 'keep' }
+  }
+  if (before.status === 'APPROVED' && !needsApproval) return { status: 'APPROVED', stamp: 'keep' }
+  return { status: 'PENDING', stamp: 'clear' }
+}
+
+/** Where it stands, in a few words. A request nobody answered before its time is "Not answered". */
+export function reservationStatusLabel(status: ReservationStatus, endsAt: Date, now: Date): string {
+  if (status === 'APPROVED') return 'Approved'
+  if (status === 'REJECTED') return 'Not approved'
+  return endsAt <= now ? 'Not answered' : 'Waiting for approval'
+}
+
 export interface ReservationSnapshot {
   id: string
   itemName: string
   startsAt: Date
   endsAt: Date
   service: string
-  note: string | null
+  reason: string | null
+  status: ReservationStatus
   servantIds: readonly string[]
+  /** The servants on it by name, for the email. */
+  servantNames: readonly string[]
+  /** Who asked: their account, their servant record when they have one, and their name. */
+  requester: { accountId: string; servantId: string | null; name: string } | null
+  decidedById: string | null
+  decidedByName: string | null
+  decidedAt: Date | null
+  decisionNote: string | null
 }
 
+/** Who a notice is for: a servant, or an account with no servant record (the admin, the pastor). */
+export type ReservationRecipient = { servantId: string } | { accountId: string }
+
 export interface ReservationNotice {
-  servantId: string
+  to: ReservationRecipient
   title: string
   body: string
   href: string
+  /** Lines for the email alone: the van, the time, the reason, the people. */
+  details?: string[]
+  /** Emailed even when a phone was reached: a request, and its answer. */
+  email?: 'always'
+}
+
+export interface ReservationNoticeContext {
+  actor: { accountId: string; servantId: string | null; name: string }
+  /** Told of every request: the approvers, or the admin while none is named. */
+  approvers: readonly ReservationRecipient[]
+  now: Date
 }
 
 function monthHref(r: Span): string {
   return `/portal/reservations?month=${churchClock(r.startsAt).date.slice(0, 7)}`
 }
 
+/** "Youth Meeting: Taking the youth to the park"; the reason alone for Other. */
+function forWhat(r: { service: string; reason: string | null }): string {
+  const reason = (r.reason ?? '').trim().replace(/\s+/g, ' ')
+  if (!reason) return r.service
+  return r.service === SERVICE_OTHER ? reason : `${r.service}: ${reason}`
+}
+
+/** The lines an email gives a reservation's details in. */
+export function reservationDetails(r: ReservationSnapshot): string[] {
+  const lines = [`Van: ${r.itemName}`, `When: ${formatReservationTime(r)}`, `For: ${r.service}`]
+  const reason = r.reason?.trim()
+  if (reason) lines.push(`Reason: ${reason}`)
+  lines.push(`Servants: ${r.servantNames.length > 0 ? andList(r.servantNames) : 'nobody yet'}`)
+  if (r.requester) lines.push(`Requested by: ${r.requester.name}`)
+  if (r.status === 'APPROVED' && r.decidedByName) lines.push(`Approved by: ${r.decidedByName}${r.decidedAt ? `, ${formatDateTime(r.decidedAt)}` : ''}`)
+  if (r.status === 'REJECTED') {
+    if (r.decidedByName) lines.push(`Rejected by: ${r.decidedByName}`)
+    const note = r.decisionNote?.trim()
+    if (note) lines.push(`Why: ${note}`)
+  }
+  return lines
+}
+
+/** Any change at all a request's approver would want to see again, the servants included. */
+function changedAtAll(a: ReservationSnapshot, b: ReservationSnapshot): boolean {
+  const servants = (r: ReservationSnapshot) => [...r.servantIds].sort().join()
+  return (
+    a.itemName !== b.itemName ||
+    a.startsAt.getTime() !== b.startsAt.getTime() ||
+    a.endsAt.getTime() !== b.endsAt.getTime() ||
+    a.service !== b.service ||
+    (a.reason ?? '').trim() !== (b.reason ?? '').trim() ||
+    servants(a) !== servants(b)
+  )
+}
+
 /**
- * What to tell the servants on a reservation that someone else made, changed
- * or cancelled: who was put on it, who was taken off, and who stayed while its
- * van or time or service moved. The one who did it is not told, and nobody is
- * told about a reservation that is over.
+ * Who to tell what when a reservation is asked for, changed, answered or
+ * cancelled. The approvers hear of each request, on the phone and by email
+ * with every detail, and of one withdrawn. The one who asked hears the answer
+ * the same way. The servants on it hear only of an approved reservation: when
+ * it becomes theirs, when they are added or taken off, when it moves, and when
+ * it stops being theirs. The one who did it is never told, and nobody is told
+ * about a reservation that is over.
  */
-export function reservationNotices(
-  before: ReservationSnapshot | null,
-  after: ReservationSnapshot | null,
-  actor: { servantId: string | null; name: string },
-  now: Date,
-): ReservationNotice[] {
+export function reservationNotices(before: ReservationSnapshot | null, after: ReservationSnapshot | null, ctx: ReservationNoticeContext): ReservationNotice[] {
+  const { actor, now } = ctx
   const notices: ReservationNotice[] = []
-  const others = (ids: readonly string[]) => ids.filter((id) => id !== actor.servantId)
-  if (!after) {
-    if (!before || before.endsAt <= now) return notices
-    for (const servantId of others(before.servantIds)) {
-      notices.push({
-        servantId,
-        title: `${before.itemName} reservation cancelled`,
-        body: `${actor.name} cancelled the ${before.itemName} for ${reservationPurpose(before)}: ${formatReservationTime(before)}.`,
+  const isActor = (to: ReservationRecipient) => ('servantId' in to ? to.servantId === actor.servantId : to.accountId === actor.accountId)
+  const send = (to: ReservationRecipient, n: Omit<ReservationNotice, 'to'>) => {
+    if (!isActor(to)) notices.push({ to, ...n })
+  }
+  const live = (r: ReservationSnapshot | null): r is ReservationSnapshot => !!r && r.endsAt > now
+  const page = (r: ReservationSnapshot) => `/portal/reservations/${r.id}`
+  /** The servants on it, and the one who asked when they are not one of them. */
+  const people = (r: ReservationSnapshot): ReservationRecipient[] => {
+    const list: ReservationRecipient[] = r.servantIds.map((servantId) => ({ servantId }))
+    if (r.requester && !(r.requester.servantId && r.servantIds.includes(r.requester.servantId))) list.push({ accountId: r.requester.accountId })
+    return list
+  }
+
+  // The approvers: a request to answer, or one withdrawn.
+  if (live(after) && after.status === 'PENDING' && (!before || before.status !== 'PENDING' || changedAtAll(before, after))) {
+    const fresh = !before || before.status === 'REJECTED'
+    const asker = after.requester?.name ?? actor.name
+    for (const to of ctx.approvers) {
+      send(to, {
+        title: fresh ? `${after.itemName} request from ${asker}` : `${after.itemName} request changed by ${actor.name}`,
+        body: fresh
+          ? `${asker} asks for the ${after.itemName}, ${formatReservationTime(after)}, for ${forWhat(after)}.`
+          : `${actor.name} changed the request for the ${after.itemName}: ${formatReservationTime(after)}, for ${forWhat(after)}.`,
+        href: page(after),
+        details: reservationDetails(after),
+        email: 'always',
+      })
+    }
+  }
+  if (!after && live(before) && before.status === 'PENDING') {
+    for (const to of ctx.approvers) {
+      send(to, {
+        title: `${before.itemName} request withdrawn`,
+        body: `${actor.name} withdrew the request for the ${before.itemName}: ${formatReservationTime(before)}.`,
         href: monthHref(before),
       })
     }
-    return notices
   }
 
-  const had = new Set(before?.servantIds ?? [])
-  const has = new Set(after.servantIds)
-  if (after.endsAt > now) {
-    for (const servantId of others(after.servantIds.filter((id) => !had.has(id)))) {
-      notices.push({
-        servantId,
-        title: `${after.itemName} reserved for you`,
-        body: `${actor.name} put you on the ${after.itemName} for ${reservationPurpose(after)}: ${formatReservationTime(after)}.`,
-        href: `/portal/reservations/${after.id}`,
-      })
-    }
+  // The one who asked: the answer.
+  if (before && live(after) && after.requester && before.status !== after.status && after.status !== 'PENDING') {
+    const yes = after.status === 'APPROVED'
+    const note = after.decisionNote?.trim()
+    send(
+      { accountId: after.requester.accountId },
+      {
+        title: `${after.itemName} request ${yes ? 'approved' : 'not approved'}`,
+        body: `${actor.name} ${yes ? 'approved' : 'did not approve'} your request for the ${after.itemName}: ${formatReservationTime(after)}, ${reservationPurpose(after)}.${!yes && note ? ` “${note}”` : ''}`,
+        href: page(after),
+        details: reservationDetails(after),
+        email: 'always',
+      },
+    )
   }
-  if (!before) return notices
 
-  if (before.endsAt > now) {
-    for (const servantId of others(before.servantIds.filter((id) => !has.has(id)))) {
-      notices.push({
-        servantId,
-        title: `Taken off the ${before.itemName}`,
-        body: `${actor.name} took you off the ${before.itemName} for ${reservationPurpose(before)}: ${formatReservationTime(before)}.`,
-        href: monthHref(before),
-      })
+  // The servants on it, about an approved reservation only.
+  const wasOn = live(before) && before.status === 'APPROVED'
+  const isOn = live(after) && after.status === 'APPROVED'
+  if (isOn && !wasOn) {
+    // The one who asked is the one who did it, or was just told the answer.
+    const asker = after.requester?.servantId ?? null
+    const by = after.requester?.name ?? actor.name
+    const approvedBy = after.decidedByName && after.decidedById !== after.requester?.accountId ? ` Approved by ${after.decidedByName}.` : ''
+    for (const servantId of after.servantIds) {
+      if (servantId === asker) continue
+      send(
+        { servantId },
+        {
+          title: `${after.itemName} reserved for you`,
+          body: `${by} put you on the ${after.itemName} for ${reservationPurpose(after)}: ${formatReservationTime(after)}.${approvedBy}`,
+          href: page(after),
+        },
+      )
     }
   }
-  const moved =
-    before.itemName !== after.itemName ||
-    before.startsAt.getTime() !== after.startsAt.getTime() ||
-    before.endsAt.getTime() !== after.endsAt.getTime() ||
-    before.service !== after.service
-  if (moved && after.endsAt > now) {
-    for (const servantId of others(after.servantIds.filter((id) => had.has(id)))) {
-      notices.push({
-        servantId,
-        title: 'A reservation of yours changed',
-        body: `${actor.name} changed it: the ${after.itemName} for ${reservationPurpose(after)}, ${formatReservationTime(after)}.`,
-        href: `/portal/reservations/${after.id}`,
-      })
+  if (wasOn && isOn) {
+    const had = new Set(before.servantIds)
+    const has = new Set(after.servantIds)
+    for (const servantId of after.servantIds.filter((id) => !had.has(id))) {
+      send(
+        { servantId },
+        {
+          title: `${after.itemName} reserved for you`,
+          body: `${actor.name} put you on the ${after.itemName} for ${reservationPurpose(after)}: ${formatReservationTime(after)}.`,
+          href: page(after),
+        },
+      )
+    }
+    for (const servantId of before.servantIds.filter((id) => !has.has(id))) {
+      send(
+        { servantId },
+        {
+          title: `Taken off the ${before.itemName}`,
+          body: `${actor.name} took you off the ${before.itemName} for ${reservationPurpose(before)}: ${formatReservationTime(before)}.`,
+          href: monthHref(before),
+        },
+      )
+    }
+    const moved =
+      before.itemName !== after.itemName ||
+      before.startsAt.getTime() !== after.startsAt.getTime() ||
+      before.endsAt.getTime() !== after.endsAt.getTime() ||
+      before.service !== after.service
+    if (moved) {
+      const stayed = people(after).filter((to) => !('servantId' in to) || had.has(to.servantId))
+      for (const to of stayed) {
+        send(to, {
+          title: 'A reservation of yours changed',
+          body: `${actor.name} changed it: the ${after.itemName} for ${reservationPurpose(after)}, ${formatReservationTime(after)}.`,
+          href: page(after),
+        })
+      }
+    }
+  }
+  if (wasOn && !isOn) {
+    if (!after) {
+      for (const to of people(before)) {
+        send(to, {
+          title: `${before.itemName} reservation cancelled`,
+          body: `${actor.name} cancelled the ${before.itemName} for ${reservationPurpose(before)}: ${formatReservationTime(before)}.`,
+          href: monthHref(before),
+        })
+      }
+    } else if (after.status === 'PENDING') {
+      for (const to of people(before)) {
+        send(to, {
+          title: 'A reservation of yours changed',
+          body: `${actor.name} changed the ${after.itemName} for ${reservationPurpose(after)}, so it waits for approval again: ${formatReservationTime(after)}.`,
+          href: page(after),
+        })
+      }
+    } else if (after.status === 'REJECTED') {
+      const asker = before.requester?.servantId ?? null
+      const note = after.decisionNote?.trim()
+      for (const servantId of before.servantIds) {
+        if (servantId === asker) continue
+        send(
+          { servantId },
+          {
+            title: `${before.itemName} reservation not approved`,
+            body: `${actor.name} did not approve the ${after.itemName} for ${reservationPurpose(after)}: ${formatReservationTime(after)}.${note ? ` “${note}”` : ''}`,
+            href: page(after),
+          },
+        )
+      }
     }
   }
   return notices

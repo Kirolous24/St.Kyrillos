@@ -119,7 +119,7 @@ const ROUTES = {
       '/portal/agenda/calendar', '/portal/agenda/calendar?class=5th-6th-girls&month=2027-05',
       '/portal/agenda/calendar?class=kg&span=semester&term=2027-spring', '/portal/agenda/calendar?month=nope',
       // Van reservations (2026-11-02); a bad month falls back to this one, a past day to none.
-      '/portal/reservations', '/portal/reservations?month=2027-05', '/portal/reservations?month=nope',
+      '/portal/reservations', '/portal/reservations?month=2027-05', '/portal/reservations?month=nope', '/portal/reservations?decided=nope123',
       '/portal/reservations/new', '/portal/reservations/new?item=black-van&date=2026-01-01', '/portal/reservations/manage',
     ],
     gone: [],

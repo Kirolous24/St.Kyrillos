@@ -1,5 +1,6 @@
-import { Bus } from 'lucide-react'
-import { colorOf } from '@/lib/portal/reservations'
+import { Bus, Clock3 } from 'lucide-react'
+import { Badge } from '@/components/portal/ui'
+import { colorOf, reservationStatusLabel, type ReservationStatus } from '@/lib/portal/reservations'
 import { cn } from '@/lib/utils'
 
 // The pieces every reservation screen draws a van with (2026-11-02). Plain
@@ -17,18 +18,45 @@ export function VanSwatch({ color, className }: { color: string; className?: str
   )
 }
 
-/** The van's name in its own colors, with anything else that belongs beside it. */
-export function VanChip({ name, color, children, className }: { name: string; color: string; children?: React.ReactNode; className?: string }) {
+/**
+ * The van's name in its own colors, with anything else that belongs beside it.
+ * A request still waiting for approval (2026-11-04) is drawn hollow, with a
+ * dashed edge and a clock.
+ */
+export function VanChip({
+  name,
+  color,
+  waiting = false,
+  clock = true,
+  children,
+  className,
+}: {
+  name: string
+  color: string
+  waiting?: boolean
+  /** False where there is no room for it: a calendar square, where the dashed edge says enough. */
+  clock?: boolean
+  children?: React.ReactNode
+  className?: string
+}) {
   const c = colorOf(color)
+  const style = waiting
+    ? { backgroundColor: '#FFFFFF', color: c.bg === '#FFFFFF' ? c.fg : c.bg, borderColor: c.border, borderStyle: 'dashed' as const }
+    : { backgroundColor: c.bg, color: c.fg, borderColor: c.border }
   return (
-    <span
-      className={cn('inline-flex max-w-full items-center gap-1 rounded-[8px] border px-2 py-0.5 text-[11.5px] font-bold', className)}
-      style={{ backgroundColor: c.bg, color: c.fg, borderColor: c.border }}
-    >
+    <span className={cn('inline-flex max-w-full items-center gap-1 rounded-[8px] border px-2 py-0.5 text-[11.5px] font-bold', className)} style={style}>
+      {waiting && clock && <Clock3 className="h-3 w-3 shrink-0" aria-hidden />}
       <span className="truncate">{name}</span>
+      {waiting && <span className="sr-only">, waiting for approval</span>}
       {children}
     </span>
   )
+}
+
+/** Where a reservation stands (2026-11-04): waiting, approved, not approved, or never answered. */
+export function StatusBadge({ status, endsAt, now }: { status: ReservationStatus; endsAt: Date; now: Date }) {
+  const tone = status === 'APPROVED' ? 'good' : status === 'REJECTED' ? 'bad' : endsAt <= now ? 'neutral' : 'warn'
+  return <Badge tone={tone}>{reservationStatusLabel(status, endsAt, now)}</Badge>
 }
 
 /**

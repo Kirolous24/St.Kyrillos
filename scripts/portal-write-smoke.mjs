@@ -157,6 +157,8 @@ async function cleanup() {
   }
   // A cancelled reservation's lines no longer match an id here; they name the van.
   await prisma.portalAuditLog.deleteMany({ where: { entity: { in: ['reservation', 'reservationItem'] }, detail: { contains: `${TAG} Van` } } }).catch(() => {})
+  // Naming the test driver to approve van requests, and taking them off (2026-11-04); the row itself goes with their account.
+  await prisma.portalAuditLog.deleteMany({ where: { entity: 'reservationApprover', detail: { startsWith: `${TAG} Driver` } } }).catch(() => {})
   return accounts.length + students.length + posts.length + classes.length + vans.length
 }
 
@@ -450,21 +452,46 @@ try {
     await page.locator('#displayName').fill(driver)
     await toggleClass(c1.name)
     await save('Create account', async () => (await prisma.account.count({ where: { displayName: driver } })) > 0)
+    // 2026-11-04 — the admin names who approves van requests: the test driver, for a moment.
+    const approving = () => prisma.reservationApprover.count({ where: { servant: { account: { displayName: driver } } } })
+    const settle = async (want) => {
+      const deadline = Date.now() + 30000
+      // eslint-disable-next-line no-await-in-loop
+      while (Date.now() < deadline) { if ((await approving()) === want) return true; await page.waitForTimeout(500) }
+      return false
+    }
+    await go('/portal/reservations/manage')
+    await page.getByLabel('Add someone who approves van requests').fill(`${TAG} Driv`)
+    await page.locator('[data-testid="approver-matches"]').getByRole('button', { name: driver }).click()
+    check('the admin names someone who approves van requests', await settle(1))
+    await page.getByRole('button', { name: `Stop ${driver} approving van requests` }).click()
+    check('and takes them off again', await settle(0))
     const day = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)
-    const fill = async () => {
+    const reason = `${TAG} trip to the park and back`
+    const fill = async (why = reason) => {
       await go(`/portal/reservations/new?item=${van?.id}&date=${day}`)
       await page.locator('#res-from-new').fill('09:00')
       await page.locator('#res-until-new').fill('11:00')
       await page.getByLabel('Add a servant').fill(`${TAG} Driv`)
       await page.locator('[data-testid="servant-matches"]').getByRole('button', { name: driver }).click()
       await page.locator('#res-service-new').selectOption('High School')
+      await page.locator('#res-reason-new').fill(why)
     }
+    const count = () => prisma.reservation.count({ where: { itemId: van?.id ?? '-' } })
+    // 2026-11-04 — every reservation says where the van is going and what for.
+    await fill('')
+    check('the form asks for the reason', await page.locator('#res-reason-new').evaluate((el) => el.validity.valueMissing))
+    await page.locator('#res-reason-new').fill('   ')
+    await page.getByRole('button', { name: 'Reserve', exact: true }).click()
+    const asked = await page.getByText('Say where the van is going and what for.').waitFor({ timeout: 30000 }).then(() => true, () => false)
+    check('and the server refuses a blank one', asked && (await count()) === 0)
     await fill()
     await page.getByRole('button', { name: 'Reserve', exact: true }).click()
     const reserved = await page.waitForURL(/saved=/, { timeout: 30000 }).then(() => true, () => false)
-    const count = () => prisma.reservation.count({ where: { itemId: van?.id ?? '-' } })
     check('a reservation is saved', reserved && (await count()) === 1)
+    check('the admin’s needs no approval', (await prisma.reservation.count({ where: { itemId: van?.id ?? '-', status: 'APPROVED' } })) === 1)
     check('its driver is on it', (await prisma.reservationServant.count({ where: { servant: { account: { displayName: driver } } } })) === 1)
+    check('the calendar shows its reason', (await page.locator('[data-testid="day-list"]').getByText(reason).count()) === 1)
     await fill()
     check('the same time is flagged before sending', (await page.locator('[data-testid="clash"]').count()) === 1)
     // Past the form's warning, straight to the server.
@@ -474,6 +501,7 @@ try {
     check('and the server refuses it, saying who has it', refused && (await count()) === 1)
     const mine = await prisma.reservation.findFirst({ where: { itemId: van?.id ?? '-' }, select: { id: true } })
     await go(`/portal/reservations/${mine?.id}`)
+    check('its page shows the reason', (await page.locator('[data-testid="reservation-reason"]').textContent())?.trim() === reason)
     await page.locator('[data-testid="cancel-reservation"]').click()
     await page.locator('[data-testid="cancel-reservation-yes"]').click()
     const cancelled = await page.waitForURL(/cancelled=1/, { timeout: 30000 }).then(() => true, () => false)

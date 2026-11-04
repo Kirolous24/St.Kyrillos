@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { PortalUser } from '../permissions'
-import { defaultService, serviceOptions } from '../reservations'
+import { HOLDING_STATUSES, defaultService, serviceOptions, type ReservationStatus } from '../reservations'
 
 // What the van reservation pages read (2026-11-02). Every reservation is open
 // to every servant: the point is to see who has which van when.
@@ -12,11 +12,15 @@ const ROW_SELECT = {
   startsAt: true,
   endsAt: true,
   service: true,
-  note: true,
+  reason: true,
+  status: true,
+  decidedAt: true,
+  decisionNote: true,
   createdById: true,
   createdAt: true,
   item: { select: { name: true, color: true } },
   createdBy: { select: { displayName: true } },
+  decidedBy: { select: { displayName: true } },
   servants: { select: { servant: { select: { id: true, account: { select: { displayName: true } } } } } },
 } satisfies Prisma.ReservationSelect
 
@@ -28,7 +32,13 @@ export interface ReservationRow {
   startsAt: Date
   endsAt: Date
   service: string
-  note: string | null
+  /** Where it is going and what for; none on a reservation made before 2026-11-04. */
+  reason: string | null
+  status: ReservationStatus
+  /** Who approved or rejected it, and when; none while it waits, or when it was made before approvals. */
+  decidedByName: string | null
+  decidedAt: Date | null
+  decisionNote: string | null
   createdById: string | null
   createdByName: string | null
   createdAt: Date
@@ -44,7 +54,11 @@ function toRow(r: Prisma.ReservationGetPayload<{ select: typeof ROW_SELECT }>): 
     startsAt: r.startsAt,
     endsAt: r.endsAt,
     service: r.service,
-    note: r.note,
+    reason: r.reason,
+    status: r.status,
+    decidedByName: r.decidedBy?.displayName ?? null,
+    decidedAt: r.decidedAt,
+    decisionNote: r.decisionNote,
     createdById: r.createdById,
     createdByName: r.createdBy?.displayName ?? null,
     createdAt: r.createdAt,
@@ -54,17 +68,21 @@ function toRow(r: Prisma.ReservationGetPayload<{ select: typeof ROW_SELECT }>): 
   }
 }
 
-/** Every reservation out at any moment from `from` to `to`, earliest first. */
-export async function reservationsBetween(from: Date, to: Date): Promise<ReservationRow[]> {
+/**
+ * Every reservation out at any moment from `from` to `to`, earliest first:
+ * the approved ones and the requests waiting for an answer, unless asked for
+ * others. One not approved holds nothing, so it is left out.
+ */
+export async function reservationsBetween(from: Date, to: Date, statuses: readonly ReservationStatus[] = HOLDING_STATUSES): Promise<ReservationRow[]> {
   const rows = await prisma.reservation.findMany({
-    where: { startsAt: { lt: to }, endsAt: { gt: from } },
+    where: { startsAt: { lt: to }, endsAt: { gt: from }, status: { in: [...statuses] } },
     orderBy: { startsAt: 'asc' },
     select: ROW_SELECT,
   })
   return rows.map(toRow)
 }
 
-/** The reservations someone made or is on that are not over yet, soonest first. */
+/** The reservations someone made or is on that are not over yet, soonest first, whatever their answer. */
 export async function upcomingReservationsOf(user: Pick<PortalUser, 'accountId' | 'servantId'>, now: Date): Promise<ReservationRow[]> {
   const rows = await prisma.reservation.findMany({
     where: {
@@ -126,4 +144,28 @@ export async function reservationServiceOptions(): Promise<string[]> {
 export async function defaultServiceFor(user: Pick<PortalUser, 'classIds' | 'stageOversight'>): Promise<string> {
   const classes = user.classIds.length > 0 ? await prisma.schoolClass.findMany({ where: { id: { in: user.classIds } }, select: { stage: true, name: true } }) : []
   return defaultService(classes, user.stageOversight)
+}
+
+/** The requests waiting for an answer that are not over yet, soonest first (2026-11-04). */
+export async function waitingReservations(now: Date): Promise<ReservationRow[]> {
+  const rows = await prisma.reservation.findMany({
+    where: { status: 'PENDING', endsAt: { gt: now } },
+    orderBy: { startsAt: 'asc' },
+    take: 50,
+    select: ROW_SELECT,
+  })
+  return rows.map(toRow)
+}
+
+/** The servants who approve van requests, by name (2026-11-04). Those who left no longer count. */
+export async function reservationApprovers(): Promise<Array<{ servantId: string; name: string }>> {
+  const rows = await prisma.reservationApprover.findMany({
+    where: { servant: { account: { isActive: true } } },
+    select: { servantId: true, servant: { select: { account: { select: { displayName: true } } } } },
+  })
+  return rows.map((r) => ({ servantId: r.servantId, name: r.servant.account.displayName })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function reservationApproverIds(): Promise<string[]> {
+  return (await reservationApprovers()).map((a) => a.servantId)
 }
