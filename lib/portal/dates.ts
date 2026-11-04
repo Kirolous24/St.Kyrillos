@@ -97,6 +97,39 @@ export function churchDayStart(dateStr: string): Date {
   return new Date(utcMidnight.getTime() - churchOffsetMs(guess))
 }
 
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+/**
+ * The instant a day and an "HH:MM" time on the church's clock stand for, or
+ * null when either cannot be read. Van reservations (2026-11-02) are typed
+ * this way and stored as instants.
+ */
+export function churchDateTime(dateStr: string, time: string): Date | null {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? parseDateOnly(dateStr) : null
+  const hm = TIME_RE.exec(time)
+  if (!date || !hm) return null
+  const wall = toUTCDate(date).getTime() + (Number(hm[1]) * 60 + Number(hm[2])) * 60_000
+  const guess = new Date(wall - churchOffsetMs(new Date(wall)))
+  // Re-read the offset at the candidate instant so a DST changeover lands right.
+  return new Date(wall - churchOffsetMs(guess))
+}
+
+/** The day and the "HH:MM" time an instant shows on the church's clock. */
+export function churchClock(at: Date): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CHURCH_TIMEZONE,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(at)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  const hour = Number(get('hour')) % 24 // some ICU builds render midnight as "24"
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${pad(hour)}:${get('minute')}` }
+}
+
 export function churchToday(now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: CHURCH_TIMEZONE,

@@ -98,7 +98,7 @@ const ROUTES = {
     '/portal/reports/weekly', '/portal/reports/weekly?class=all&weeks=4', '/portal/reports/weekly?from=2026-09-01&to=2026-09-30',
   ],
   admin: {
-    notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123', '/portal/exams/nope123'],
+    notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123', '/portal/exams/nope123', '/portal/reservations/nope123'],
     ok: [
       '/portal/classes', '/portal/admin/students', '/portal/admin/servants', '/portal/admin/classes',
       '/portal/admin/sessions', '/portal/admin/audit', '/portal/admin/data', '/portal/follow-ups',
@@ -118,6 +118,9 @@ const ROUTES = {
       // The Schedule's calendar and rotation (2026-11-01); a bad month falls back to this one.
       '/portal/agenda/calendar', '/portal/agenda/calendar?class=5th-6th-girls&month=2027-05',
       '/portal/agenda/calendar?class=kg&span=semester&term=2027-spring', '/portal/agenda/calendar?month=nope',
+      // Van reservations (2026-11-02); a bad month falls back to this one, a past day to none.
+      '/portal/reservations', '/portal/reservations?month=2027-05', '/portal/reservations?month=nope',
+      '/portal/reservations/new', '/portal/reservations/new?item=black-van&date=2026-01-01', '/portal/reservations/manage',
     ],
     gone: [],
   },
@@ -126,6 +129,8 @@ const ROUTES = {
       '/portal/classes', '/portal/follow-ups', '/portal/lessons', '/portal/exams', '/portal/announcements',
       '/portal/reports', '/portal/reports?tab=church', '/portal/reports?view=all', '/portal/readings', '/portal/my-group',
       '/portal/classes/kg/message',
+      // Van reservations (2026-11-02): the pastor may reserve too.
+      '/portal/reservations', '/portal/reservations/new',
     ],
     // /portal/admin/audit is deliberately open to the pastor as well as the admin
     // (see app/portal/(app)/admin/audit/page.tsx), so it is not listed here.
@@ -143,7 +148,7 @@ const ROUTES = {
       '/portal/unassigned',
     ],
     // The pastor reads every class and takes no register, and sets no photos (2026-10-25).
-    notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123', '/portal/classes/kg/attendance', '/portal/classes/kg/photos'],
+    notFound: ['/portal/classes/does-not-exist', '/portal/students/nope123', '/portal/classes/kg/attendance', '/portal/classes/kg/photos', '/portal/reservations/manage'],
   },
   servant: {
     ok: [
@@ -153,6 +158,8 @@ const ROUTES = {
       // My Assignments as a calendar, and the class calendar (2026-11-01).
       '/portal/assignments?view=calendar', '/portal/assignments?view=calendar&span=semester',
       '/portal/assignments?view=calendar&month=2027-05', '/portal/agenda/calendar', '/portal/agenda/calendar?span=semester',
+      // Van reservations (2026-11-02).
+      '/portal/reservations', '/portal/reservations?month=2026-12', '/portal/reservations/new', '/portal/reservations/new?item=white-van',
     ],
     gone: ['/portal/admin/data', '/portal/admin/servants', '/portal/admin/servants/logins', '/portal/admin/students', '/portal/admin/audit', '/portal/admin/sessions'],
     notFound: [
@@ -167,6 +174,9 @@ const ROUTES = {
       '/portal/students/nope123',
       '/portal/exams/nope123',
       '/portal/follow-ups/nope123',
+      // The admin's list of vans, and a reservation that is not there (2026-11-02).
+      '/portal/reservations/manage',
+      '/portal/reservations/nope123',
     ],
   },
   student: {
@@ -180,6 +190,8 @@ const ROUTES = {
       '/portal/my-group?tab=class', '/portal/my-group?tab=log',
       '/portal/reports/weekly', '/portal/classes/kg/message',
       '/portal/classes/kg/photos', '/portal/classes/kg/attendance',
+      // Van reservations are for servants (2026-11-02).
+      '/portal/reservations', '/portal/reservations/new', '/portal/reservations/manage',
     ],
   },
 }

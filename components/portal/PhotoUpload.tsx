@@ -18,9 +18,11 @@ interface Props {
   /** Optional server action that clears the stored photo. */
   removeAction?: () => Promise<ActionResult>
   saveLabel?: string
+  /** Round for a person; wide for a picture of a thing, such as a van (2026-11-02). */
+  shape?: 'round' | 'wide'
 }
 
-export function PhotoUpload({ current, name, action, removeAction, saveLabel = 'Save photo' }: Props) {
+export function PhotoUpload({ current, name, action, removeAction, saveLabel = 'Save photo', shape = 'round' }: Props) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -76,10 +78,21 @@ export function PhotoUpload({ current, name, action, removeAction, saveLabel = '
 
   return (
     <div className="flex flex-col items-center gap-5 text-center">
-      {/* Large circular preview — the prototype's photo modal, centred. */}
-      <span className="grid h-28 w-28 place-items-center rounded-full bg-brand-wash p-1 ring-1 ring-brand-gold/40">
-        <Avatar name={name} photo={shown} size="xl" />
-      </span>
+      {shape === 'wide' ? (
+        <span className="grid h-28 w-44 place-items-center overflow-hidden rounded-[14px] bg-white ring-1 ring-brand-gold/40">
+          {shown ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={shown} alt={name} className="h-full w-full object-contain" />
+          ) : (
+            <Camera className="h-8 w-8 text-parch-400" aria-hidden />
+          )}
+        </span>
+      ) : (
+        /* Large circular preview — the prototype's photo modal, centred. */
+        <span className="grid h-28 w-28 place-items-center rounded-full bg-brand-wash p-1 ring-1 ring-brand-gold/40">
+          <Avatar name={name} photo={shown} size="xl" />
+        </span>
+      )}
 
       <div className="flex flex-col items-center gap-2">
         <label className={cn(buttonClass('gold'), 'min-h-[40px] cursor-pointer')}>

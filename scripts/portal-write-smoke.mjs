@@ -147,7 +147,17 @@ async function cleanup() {
     await prisma.portalAuditLog.deleteMany({ where: { entityId: c.id } }).catch(() => {})
     await prisma.schoolClass.delete({ where: { id: c.id } }).catch(() => {})
   }
-  return accounts.length + students.length + posts.length + classes.length
+  // The reservations check makes its own van; its reservations go with it.
+  const vans = await prisma.reservationItem.findMany({ where: { name: { startsWith: TAG } }, select: { id: true, reservations: { select: { id: true } } } })
+  for (const v of vans) {
+    const ids = v.reservations.map((r) => r.id)
+    await prisma.reservation.deleteMany({ where: { id: { in: ids } } }).catch(() => {})
+    await prisma.portalAuditLog.deleteMany({ where: { entityId: { in: [v.id, ...ids] } } }).catch(() => {})
+    await prisma.reservationItem.delete({ where: { id: v.id } }).catch(() => {})
+  }
+  // A cancelled reservation's lines no longer match an id here; they name the van.
+  await prisma.portalAuditLog.deleteMany({ where: { entity: { in: ['reservation', 'reservationItem'] }, detail: { contains: `${TAG} Van` } } }).catch(() => {})
+  return accounts.length + students.length + posts.length + classes.length + vans.length
 }
 
 /* ── scenarios ──────────────────────────────────────────────────────────── */
@@ -416,6 +426,58 @@ try {
     const said = await phone.locator('[role="status"]', { hasText: name }).waitFor({ timeout: 15000 }).then(() => true, () => false)
     check('and the page says it was added', said)
     await phone.context().close()
+  }
+
+  // 2026-11-02 — van reservations: "To organize using them". One van, one
+  // time: the second person is refused by the server, not only warned by the
+  // form. Its own van and a test driver, so no real servant is told anything.
+  console.log('\nreservations: one van, one time')
+  {
+    const vanName = `${TAG} Van`
+    await go('/portal/reservations/manage')
+    await page.locator('#van-name-new').fill(vanName)
+    await page.getByRole('button', { name: 'Add the van' }).click()
+    const van = await (async () => {
+      const deadline = Date.now() + 30000
+      // eslint-disable-next-line no-await-in-loop
+      while (Date.now() < deadline) { const v = await prisma.reservationItem.findFirst({ where: { name: vanName } }); if (v) return v; await page.waitForTimeout(500) }
+      return null
+    })()
+    check('the admin adds a van', !!van)
+    // A driver of its own, added through the admin's form (the servants check's one is deleted by now).
+    const driver = `${TAG} Driver`
+    await go('/portal/admin/servants/new')
+    await page.locator('#displayName').fill(driver)
+    await toggleClass(c1.name)
+    await save('Create account', async () => (await prisma.account.count({ where: { displayName: driver } })) > 0)
+    const day = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)
+    const fill = async () => {
+      await go(`/portal/reservations/new?item=${van?.id}&date=${day}`)
+      await page.locator('#res-from-new').fill('09:00')
+      await page.locator('#res-until-new').fill('11:00')
+      await page.getByLabel('Add a servant').fill(`${TAG} Driv`)
+      await page.locator('[data-testid="servant-matches"]').getByRole('button', { name: driver }).click()
+      await page.locator('#res-service-new').selectOption('High School')
+    }
+    await fill()
+    await page.getByRole('button', { name: 'Reserve', exact: true }).click()
+    const reserved = await page.waitForURL(/saved=/, { timeout: 30000 }).then(() => true, () => false)
+    const count = () => prisma.reservation.count({ where: { itemId: van?.id ?? '-' } })
+    check('a reservation is saved', reserved && (await count()) === 1)
+    check('its driver is on it', (await prisma.reservationServant.count({ where: { servant: { account: { displayName: driver } } } })) === 1)
+    await fill()
+    check('the same time is flagged before sending', (await page.locator('[data-testid="clash"]').count()) === 1)
+    // Past the form's warning, straight to the server.
+    await page.getByRole('button', { name: 'Reserve', exact: true }).evaluate((b) => { b.disabled = false })
+    await page.getByRole('button', { name: 'Reserve', exact: true }).click()
+    const refused = await page.getByText(`The ${vanName} is already reserved then`).waitFor({ timeout: 30000 }).then(() => true, () => false)
+    check('and the server refuses it, saying who has it', refused && (await count()) === 1)
+    const mine = await prisma.reservation.findFirst({ where: { itemId: van?.id ?? '-' }, select: { id: true } })
+    await go(`/portal/reservations/${mine?.id}`)
+    await page.locator('[data-testid="cancel-reservation"]').click()
+    await page.locator('[data-testid="cancel-reservation-yes"]').click()
+    const cancelled = await page.waitForURL(/cancelled=1/, { timeout: 30000 }).then(() => true, () => false)
+    check('it is cancelled', cancelled && (await count()) === 0)
   }
 
   check('no 5xx responses during writes', serverErrors.length === 0, serverErrors.join(', '))

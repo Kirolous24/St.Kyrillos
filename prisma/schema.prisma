@@ -263,6 +263,8 @@ model Account {
   notices              Notice[]
   // Schedule parts this account marked done (2026-10-19).
   agendaItemsDone      AgendaItem[]       @relation("AgendaItemDoneBy")
+  // Vans this account reserved (2026-11-02).
+  reservationsMade     Reservation[]      @relation("ReservationCreatedBy")
 
   @@index([role])
 }
@@ -400,6 +402,8 @@ model Servant {
   lessonsOwned Lesson[]         @relation("LessonAssignedTo")
   // Parts given to this servant more than a week ahead, not yet announced (2026-11-01).
   noticeHolds  DutyNoticeHold[]
+  // Reserved vans this servant is taking (2026-11-02).
+  reservations ReservationServant[]
 }
 
 model ClassServant {
@@ -1057,6 +1061,57 @@ model DutyNoticeHold {
 
   @@id([slot, servantId])
   @@index([due])
+}
+
+/// Something servants reserve (2026-11-02): the church's vans, to begin with.
+/// The admin keeps the list. One that is retired can no longer be reserved and
+/// keeps its past reservations; `color` is a key of RESERVATION_COLORS
+/// (lib/portal/reservations.ts), how the calendar tells them apart.
+model ReservationItem {
+  id           String        @id @default(cuid())
+  name         String
+  details      String?
+  color        String        @default("blue")
+  photo        String? // small data-URL picture
+  sortOrder    Int           @default(0)
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  reservations Reservation[]
+}
+
+/// A van reserved for a while (2026-11-02): from when until when, for which
+/// service, and the servants taking it. Two reservations of one van never
+/// overlap; lib/portal/actions/reservations.ts checks that under a lock on the
+/// van's row. `service` is the label chosen ("Middle School", "Youth Meeting",
+/// "Other"), kept as written.
+model Reservation {
+  id          String               @id @default(cuid())
+  itemId      String
+  item        ReservationItem      @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  startsAt    DateTime
+  endsAt      DateTime
+  service     String
+  note        String?
+  createdById String?
+  createdBy   Account?             @relation("ReservationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  servants    ReservationServant[]
+
+  @@index([itemId, startsAt])
+  @@index([startsAt])
+}
+
+/// The servants taking a reserved van (2026-11-02).
+model ReservationServant {
+  reservationId String
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  servantId     String
+  servant       Servant     @relation(fields: [servantId], references: [id], onDelete: Cascade)
+
+  @@id([reservationId, servantId])
+  @@index([servantId])
 }
 
 // Portal-wide key/value settings (church contact card, end-of-year bookkeeping,

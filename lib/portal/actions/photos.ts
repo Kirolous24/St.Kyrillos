@@ -116,3 +116,35 @@ export async function removeClassPhoto(classId: string): Promise<ActionResult> {
     return undefined
   })
 }
+
+/** A van's picture (2026-11-02), for the Reservations page. The admin's, like the list of vans. */
+async function reservationItemForAdmin(itemId: string) {
+  const user = await requirePortalUser()
+  if (user.role !== 'ADMIN') throw new PortalError('Only the Sunday School admin can change the vans.')
+  const item = await prisma.reservationItem.findUnique({ where: { id: z.string().min(1).parse(itemId) }, select: { id: true, name: true } })
+  if (!item) throw new PortalError('That van is no longer there.')
+  return { user, item }
+}
+
+export async function setReservationItemPhoto(itemId: string, dataUrl: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const { user, item } = await reservationItemForAdmin(itemId)
+    const photo = validatePhoto(dataUrl)
+    await prisma.reservationItem.update({ where: { id: item.id }, data: { photo } })
+    await audit(user, 'photo.setReservationItem', 'reservationItem', item.id, `Updated the picture of the ${item.name}`)
+    revalidatePath('/portal/reservations')
+    revalidatePath('/portal/reservations/manage')
+    return undefined
+  })
+}
+
+export async function removeReservationItemPhoto(itemId: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const { user, item } = await reservationItemForAdmin(itemId)
+    await prisma.reservationItem.update({ where: { id: item.id }, data: { photo: null } })
+    await audit(user, 'photo.removeReservationItem', 'reservationItem', item.id, `Removed the picture of the ${item.name}`)
+    revalidatePath('/portal/reservations')
+    revalidatePath('/portal/reservations/manage')
+    return undefined
+  })
+}

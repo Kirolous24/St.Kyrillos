@@ -10,6 +10,8 @@ import {
   churchDayStart,
   weekdayName,
   sundayOnOrBefore,
+  churchDateTime,
+  churchClock,
 } from '@/lib/portal/dates'
 
 describe('parseDateOnly', () => {
@@ -161,5 +163,47 @@ describe('sundayOnOrBefore', () => {
     // back a day on a server west of Greenwich and answer the wrong Sunday.
     expect(sundayOnOrBefore('2026-03-01')).toBe('2026-03-01')
     expect(sundayOnOrBefore('2026-01-01')).toBe('2025-12-28')
+  })
+})
+
+// Van reservations (2026-11-02) are typed as a day and a time on the church's
+// clock, and stored as instants.
+describe('churchDateTime', () => {
+  it('reads a winter time as Central Standard Time', () => {
+    expect(churchDateTime('2026-11-07', '09:00')?.toISOString()).toBe('2026-11-07T15:00:00.000Z')
+  })
+  it('reads a summer time as Central Daylight Time', () => {
+    expect(churchDateTime('2026-07-04', '09:00')?.toISOString()).toBe('2026-07-04T14:00:00.000Z')
+  })
+  it('lands right on both sides of the spring change', () => {
+    expect(churchDateTime('2027-03-13', '12:00')?.toISOString()).toBe('2027-03-13T18:00:00.000Z')
+    expect(churchDateTime('2027-03-14', '12:00')?.toISOString()).toBe('2027-03-14T17:00:00.000Z')
+  })
+  it('reads midnight and a minute before the next', () => {
+    expect(churchDateTime('2026-11-07', '00:00')?.toISOString()).toBe('2026-11-07T06:00:00.000Z')
+    expect(churchDateTime('2026-11-07', '23:59')?.toISOString()).toBe('2026-11-08T05:59:00.000Z')
+  })
+  it('refuses a day or a time it cannot read', () => {
+    expect(churchDateTime('2026-02-30', '09:00')).toBeNull()
+    expect(churchDateTime('2026-11-07', '24:00')).toBeNull()
+    expect(churchDateTime('2026-11-07', '9am')).toBeNull()
+    expect(churchDateTime('', '09:00')).toBeNull()
+  })
+})
+
+describe('churchClock', () => {
+  it('gives the day and the time on the church clock', () => {
+    expect(churchClock(new Date('2026-11-07T15:00:00.000Z'))).toEqual({ date: '2026-11-07', time: '09:00' })
+  })
+  it('keeps a late evening on its own day, though UTC has moved on', () => {
+    expect(churchClock(new Date('2026-11-08T05:30:00.000Z'))).toEqual({ date: '2026-11-07', time: '23:30' })
+  })
+  it('shows midnight as 00:00', () => {
+    expect(churchClock(new Date('2026-11-07T06:00:00.000Z'))).toEqual({ date: '2026-11-07', time: '00:00' })
+  })
+  it('reads back what churchDateTime made', () => {
+    for (const [d, t] of [['2026-07-04', '18:45'], ['2027-03-14', '08:15'], ['2026-12-31', '23:59']] as const) {
+      expect(churchClock(churchDateTime(d, t)!)).toEqual({ date: d, time: t })
+    }
   })
 })

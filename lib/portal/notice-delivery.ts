@@ -18,7 +18,7 @@ import { pushConfigured, sendPush } from './web-push'
  * Nothing here may undo the save that caused it, so it never rejects.
  */
 
-export type NoticeKind = 'assigned' | 'unassigned' | 'reminder' | 'test' | 'groups'
+export type NoticeKind = 'assigned' | 'unassigned' | 'reminder' | 'test' | 'groups' | 'reservation'
 
 export interface OutgoingNotice extends NoticeText {
   servantId: string

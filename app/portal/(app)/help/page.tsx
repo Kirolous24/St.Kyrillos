@@ -1,6 +1,6 @@
 import Link from '@/components/portal/Link'
 import { notFound } from 'next/navigation'
-import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen, HeartHandshake, ClipboardList, ClipboardCheck, UsersRound, CalendarRange } from 'lucide-react'
+import { LifeBuoy, Upload, PencilLine, Sparkles, Contact, QrCode, BookOpen, HeartHandshake, ClipboardList, ClipboardCheck, UsersRound, CalendarRange, Bus } from 'lucide-react'
 import { requirePortalUser } from '@/lib/portal/session'
 import { PageHeader, Card, IconTile } from '@/components/portal/ui'
 
@@ -223,6 +223,16 @@ export default async function HelpPage() {
           under <b className={S}>Also post to</b>. Each class gets its own copy, with its own results. You can post to
           every class you serve (for the 5th &amp; 6th and 7th &amp; 8th Coordinators and Assistant Coordinators, that
           includes the other class of their pair); a Stage coordinator to their stage; the admin to any class.
+        </Topic>
+
+        {/* 2026-11-02 — van reservations. */}
+        <Topic icon={<Bus className={ICON} />} tone="#1F2937" title="Reserve a van" href="/portal/reservations">
+          Open <b className={S}>Reservations</b> and press <b className={S}>Reserve a van</b> (or tap a free day on the
+          calendar). Pick the van, the day, <b className={S}>From</b> and <b className={S}>Until</b> (tick the box if it
+          comes back on a later day), the servants taking it, and what it is for. A van cannot be reserved twice for the
+          same time: you are shown who already has it. The calendar shows who has each van, day by day, and each van says
+          whether it is out right now. Whoever made a reservation, the servants on it and the admin can change or cancel
+          it, and the servants put on it by someone else are told.{isAdmin && <> The admin keeps the list of vans, their colors and pictures, under <b className={S}>Manage vans</b>.</>}
         </Topic>
 
         <Topic icon={<BookOpen className={ICON} />} tone="#6F1D1B" title="Find the curriculum" href="/portal/curriculum">

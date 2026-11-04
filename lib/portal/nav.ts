@@ -10,6 +10,8 @@ const SETTINGS: NavItem = { href: '/portal/settings', label: 'My PIN', icon: 'se
 /** Staff find their notifications there too (2026-10-19), so it is more than a PIN. */
 const MY_SETTINGS: NavItem = { ...SETTINGS, label: 'My Settings' }
 const HELP: NavItem = { href: '/portal/help', label: 'Help & Guide', icon: 'help', section: 'Account' }
+/** Van reservations (2026-11-02): every servant reserves the vans and sees who has which when. */
+const RESERVATIONS: NavItem = { href: '/portal/reservations', label: 'Reservations', icon: 'reservations', section: 'Servant Ministry' }
 
 /**
  * The stage overview only exists for servants who actually oversee one, and it
@@ -223,6 +225,7 @@ function fellowshipNav(user: PortalUser): NavItem[] {
     { href: '/portal/my-attendance', label: 'My Attendance', icon: 'attendance', section: 'Servant Ministry' },
     { href: '/portal/servant-attendance', label: 'Servants Attendance', icon: 'attendance', section: 'Servant Ministry' },
     { href: '/portal/assignments', label: 'My Assignments', icon: 'lessons', section: 'Servant Ministry' },
+    RESERVATIONS,
     { href: '/portal/readings', label: 'Daily Readings', icon: 'readings', section: 'Faith' },
     { href: '/portal/hymns', label: 'Hymns', icon: 'hymns', section: 'Faith' },
     { ...PROFILE, section: 'Support' },
@@ -265,6 +268,7 @@ export function navForUser(user: PortalUser): NavItem[] {
         { href: '/portal/my-attendance', label: 'My Attendance', icon: 'attendance', section: 'Attendance' },
         { href: '/portal/announcements', label: 'Announcements', icon: 'announcements', section: 'Community' },
         { href: '/portal/events', label: 'Events', icon: 'events', section: 'Community' },
+        { ...RESERVATIONS, section: 'Community' },
         { href: '/portal/feed', label: 'Class Posts', icon: 'feed', section: 'Community' },
         { href: '/portal/readings', label: 'Daily Readings', icon: 'readings', section: 'Community' },
         { href: '/portal/leaderboard', label: 'Leaderboard', icon: 'leaderboard', section: 'Community' },
@@ -312,6 +316,7 @@ export function navForUser(user: PortalUser): NavItem[] {
         // F0280 — every other role could reach the readings; the two who read
         // at the altar could not.
         { href: '/portal/readings', label: 'Daily Readings', icon: 'readings', section: 'Community' },
+        { ...RESERVATIONS, section: 'Community' },
         PROFILE,
         MY_SETTINGS,
         HELP,
@@ -373,6 +378,7 @@ export function navForUser(user: PortalUser): NavItem[] {
         { href: '/portal/my-attendance', label: 'My Attendance', icon: 'attendance', section: 'Servant Ministry' },
         { href: '/portal/servant-attendance', label: 'Servants Attendance', icon: 'attendance', section: 'Servant Ministry' },
         { href: '/portal/assignments', label: 'My Assignments', icon: 'lessons', section: 'Servant Ministry' },
+        RESERVATIONS,
         { href: '/portal/curriculum', label: 'Curriculum', icon: 'curriculum', section: 'Teaching' },
         { href: '/portal/hymns', label: 'Hymns', icon: 'hymns', section: 'Teaching' },
         { href: '/portal/readings', label: 'Daily Readings', icon: 'readings', section: 'Teaching' },
