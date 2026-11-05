@@ -6,7 +6,7 @@ import {
   reservationById,
   reservationItems,
   reservationServantChoices,
-  reservationServiceOptions,
+  reservationServiceGroups,
   reservationsBetween,
 } from '@/lib/portal/data/reservations'
 import { churchClock, churchToday } from '@/lib/portal/dates'
@@ -19,6 +19,7 @@ import {
   mayCancelReservation,
   mayDecideReservation,
   mayEditReservation,
+  serviceValues,
 } from '@/lib/portal/reservations'
 import { Badge, Card, PageHeader } from '@/components/portal/ui'
 import { ReservationForm } from '../ReservationForm'
@@ -53,7 +54,7 @@ export default async function ReservationPage({ params }: { params: { id: string
   const [allItems, servants, services, upcoming, approvers] = await Promise.all([
     reservationItems(true),
     canEdit ? reservationServantChoices() : Promise.resolve([]),
-    canEdit ? reservationServiceOptions() : Promise.resolve([]),
+    canEdit ? reservationServiceGroups() : Promise.resolve([]),
     canEdit ? reservationsBetween(now, new Date(now.getTime() + (BOOK_AHEAD_DAYS + MAX_RESERVATION_DAYS) * DAY_MS)) : Promise.resolve([]),
     reservationApprovers(),
   ])
@@ -148,7 +149,8 @@ export default async function ReservationPage({ params }: { params: { id: string
           <ReservationForm
             items={formItems}
             servants={servants}
-            services={services.includes(r.service) ? services : [...services, r.service]}
+            services={services}
+            keptService={serviceValues(services).includes(r.service) ? undefined : r.service}
             taken={takenSlots(upcoming)}
             today={today}
             submitLabel={r.status === 'REJECTED' && !decides ? 'Ask again' : 'Save changes'}

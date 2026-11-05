@@ -36,7 +36,14 @@ const world = vi.hoisted(() => ({
   servantOf: new Map<string, string>(),
   approvers: [] as string[],
   admins: [] as string[],
-  meetings: ['Men’s Meeting', 'Women’s Meeting', 'Youth Meeting'],
+  /** The classes list: classes, and the meetings (2026-11-04: services are "classes, stages and fellowships"). */
+  classes: [
+    { stage: 'ELEMENTARY', name: 'KG' },
+    { stage: 'MIDDLE_SCHOOL', name: '5th & 6th Boys' },
+    { stage: 'FELLOWSHIP', name: 'Men’s Meeting' },
+    { stage: 'FELLOWSHIP', name: 'Women’s Meeting' },
+    { stage: 'FELLOWSHIP', name: 'Youth Meeting' },
+  ],
   locks: [] as string[],
   audits: [] as string[],
   delivered: [] as Array<{ servantId?: string; accountId?: string; kind: string; title: string; body: string; dedupeKey: string; email?: boolean | 'always'; details?: string[] }>,
@@ -209,7 +216,7 @@ vi.mock('@/lib/prisma', () => {
         },
       },
       schoolClass: {
-        findMany: async () => world.meetings.map((name) => ({ name })),
+        findMany: async () => world.classes,
       },
     },
   }
@@ -384,6 +391,14 @@ describe('saveReservation', () => {
     expect(await saveReservation({ ...morning, service: 'Picnic' })).toEqual({ ok: false, error: 'Pick what the van is for.' })
     expect((await saveReservation({ ...morning, service: 'Other', reason: 'Airport pickup' })).ok).toBe(true)
     expect((await saveReservation({ ...morning, itemId: 'white-van', service: 'Men’s Meeting' })).ok).toBe(true)
+  })
+
+  it('is for a class, a whole stage, or a meeting', async () => {
+    expect((await saveReservation({ ...morning, service: '5th & 6th Boys' })).ok).toBe(true)
+    expect((await saveReservation({ ...morning, itemId: 'white-van', service: 'Middle School' })).ok).toBe(true)
+    expect((await saveReservation({ ...morning, from: '13:00', until: '15:00', service: 'Youth Meeting' })).ok).toBe(true)
+    expect(world.reservations.map((r) => r.service)).toEqual(['5th & 6th Boys', 'Middle School', 'Youth Meeting'])
+    expect(await saveReservation({ ...morning, from: '16:00', until: '17:00', service: '9th Grade' })).toEqual({ ok: false, error: 'Pick what the van is for.' })
   })
 
   // 2026-11-04, the user: "make reason required … a place, reason on what and for what".

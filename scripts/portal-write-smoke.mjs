@@ -480,6 +480,19 @@ try {
     const count = () => prisma.reservation.count({ where: { itemId: van?.id ?? '-' } })
     // 2026-11-04 — every reservation says where the van is going and what for.
     await fill('')
+    // …and is for a class, a whole stage, or a meeting: "classes, stages and fellowships".
+    const groups = await page.locator('#res-service-new optgroup').evaluateAll((els) => els.map((g) => ({ label: g.label, options: Array.from(g.querySelectorAll('option')).map((o) => o.textContent) })))
+    const middle = groups.find((g) => g.label === 'Middle School')
+    const offered = groups.flatMap((g) => g.options)
+    const active = await prisma.schoolClass.findMany({ where: { isActive: true }, select: { name: true, stage: true } })
+    check(
+      'the Service list has each stage, its classes, and the meetings',
+      ['Elementary', 'Middle School', 'High School'].every((l) => groups.some((g) => g.label === l)) &&
+        middle?.options[0] === 'Middle School (all classes)' &&
+        active.some((c) => c.stage !== 'FELLOWSHIP' && offered.includes(c.name)) &&
+        active.filter((c) => c.stage === 'FELLOWSHIP').every((c) => groups.find((g) => g.label === 'Fellowship meetings')?.options.includes(c.name)),
+      JSON.stringify(groups.map((g) => g.label)),
+    )
     check('the form asks for the reason', await page.locator('#res-reason-new').evaluate((el) => el.validity.valueMissing))
     await page.locator('#res-reason-new').fill('   ')
     await page.getByRole('button', { name: 'Reserve', exact: true }).click()

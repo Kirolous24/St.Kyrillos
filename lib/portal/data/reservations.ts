@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { PortalUser } from '../permissions'
-import { HOLDING_STATUSES, defaultService, serviceOptions, type ReservationStatus } from '../reservations'
+import { HOLDING_STATUSES, defaultService, serviceGroups, serviceOptions, type ReservationStatus, type ServiceGroup } from '../reservations'
 
 // What the van reservation pages read (2026-11-02). Every reservation is open
 // to every servant: the point is to see who has which van when.
@@ -130,14 +130,23 @@ export async function reservationServantChoices(): Promise<Array<{ id: string; n
   return servants.map((s) => ({ id: s.id, name: s.account.displayName })).sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** The services a van goes out for, with this church's meetings by name. */
-export async function reservationServiceOptions(): Promise<string[]> {
-  const meetings = await prisma.schoolClass.findMany({
-    where: { stage: 'FELLOWSHIP', isActive: true },
+/** This church's classes and meetings, in the classes list's order, for what a van goes out for. */
+async function serviceClasses() {
+  return prisma.schoolClass.findMany({
+    where: { isActive: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { name: true },
+    select: { stage: true, name: true },
   })
-  return serviceOptions(meetings.map((m) => m.name))
+}
+
+/** What a van goes out for, grouped for the form: each stage, its classes, the meetings (2026-11-04). */
+export async function reservationServiceGroups(): Promise<ServiceGroup[]> {
+  return serviceGroups(await serviceClasses())
+}
+
+/** Every service a reservation may be for, Other included. */
+export async function reservationServiceOptions(): Promise<string[]> {
+  return serviceOptions(await serviceClasses())
 }
 
 /** The service this person most likely reserves for. */

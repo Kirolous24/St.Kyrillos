@@ -6,12 +6,12 @@ import {
   reservationApprovers,
   reservationItems,
   reservationServantChoices,
-  reservationServiceOptions,
+  reservationServiceGroups,
   reservationsBetween,
 } from '@/lib/portal/data/reservations'
 import { churchToday, parseDateOnly } from '@/lib/portal/dates'
 import { andList } from '@/lib/portal/format'
-import { BOOK_AHEAD_DAYS, MAX_RESERVATION_DAYS, canReserve, mayDecideReservation } from '@/lib/portal/reservations'
+import { BOOK_AHEAD_DAYS, MAX_RESERVATION_DAYS, canReserve, mayDecideReservation, serviceValues } from '@/lib/portal/reservations'
 import { Card, EmptyState, PageHeader } from '@/components/portal/ui'
 import { ReservationForm } from '../ReservationForm'
 import { takenSlots } from '../taken'
@@ -30,7 +30,7 @@ export default async function NewReservationPage({ searchParams = {} }: { search
   const [items, servants, services, service, upcoming, approvers] = await Promise.all([
     reservationItems(),
     reservationServantChoices(),
-    reservationServiceOptions(),
+    reservationServiceGroups(),
     defaultServiceFor(user),
     reservationsBetween(now, new Date(now.getTime() + (BOOK_AHEAD_DAYS + MAX_RESERVATION_DAYS) * DAY_MS)),
     reservationApprovers(),
@@ -68,7 +68,7 @@ export default async function NewReservationPage({ searchParams = {} }: { search
               until: '',
               untilDate: '',
               servantIds: user.servantId ? [user.servantId] : [],
-              service: services.includes(service) ? service : '',
+              service: serviceValues(services).includes(service) ? service : '',
               reason: '',
             }}
           />

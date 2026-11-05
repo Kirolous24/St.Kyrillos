@@ -148,16 +148,55 @@ export function reservationsByDay<T extends Span>(list: readonly T[], start: str
   return days
 }
 
-/** The services a van goes out for: the three Sunday School stages, each meeting, and Other. */
-export function serviceOptions(meetingNames: readonly string[]): string[] {
-  return [STAGE_LABEL.ELEMENTARY, STAGE_LABEL.MIDDLE_SCHOOL, STAGE_LABEL.HIGH_SCHOOL, ...meetingNames, SERVICE_OTHER]
+export interface ServiceGroup {
+  label: string
+  options: Array<{ value: string; text: string }>
 }
 
-/** The service someone most likely reserves for: the one stage or meeting they serve, else none. */
+const SCHOOL_STAGES = ['ELEMENTARY', 'MIDDLE_SCHOOL', 'HIGH_SCHOOL'] as const
+
+/**
+ * What a van goes out for (2026-11-04, the user: "classes, stages and
+ * fellowships"): each Sunday School stage as a whole, then its classes in the
+ * classes list's order, then the Fellowship meetings. Every stage is offered
+ * though it has no classes yet. A class named like its stage is the stage.
+ * Other comes after all of these, on its own.
+ */
+export function serviceGroups(classes: ReadonlyArray<{ stage: StageKey; name: string }>): ServiceGroup[] {
+  const seen = new Set<string>([SERVICE_OTHER])
+  const offer = (value: string, text = value) => {
+    if (seen.has(value)) return []
+    seen.add(value)
+    return [{ value, text }]
+  }
+  const groups: ServiceGroup[] = SCHOOL_STAGES.map((stage) => ({
+    label: STAGE_LABEL[stage],
+    options: [...offer(STAGE_LABEL[stage], `${STAGE_LABEL[stage]} (all classes)`), ...classes.filter((c) => c.stage === stage).flatMap((c) => offer(c.name))],
+  }))
+  const meetings = classes.filter((c) => c.stage === 'FELLOWSHIP').flatMap((c) => offer(c.name))
+  if (meetings.length > 0) groups.push({ label: 'Fellowship meetings', options: meetings })
+  return groups
+}
+
+/** Every service a reservation may be for: whatever the groups offer, then Other. */
+export function serviceValues(groups: readonly ServiceGroup[]): string[] {
+  return [...groups.flatMap((g) => g.options.map((o) => o.value)), SERVICE_OTHER]
+}
+
+export function serviceOptions(classes: ReadonlyArray<{ stage: StageKey; name: string }>): string[] {
+  return serviceValues(serviceGroups(classes))
+}
+
+/**
+ * The service someone most likely reserves for: the one class or meeting they
+ * serve, or the one stage their classes (or their oversight) are in; else none.
+ */
 export function defaultService(classes: ReadonlyArray<{ stage: StageKey; name: string }>, oversight: StageKey | null): string {
-  const labels = new Set(classes.map((c) => (c.stage === 'FELLOWSHIP' ? c.name : STAGE_LABEL[c.stage])))
-  if (oversight && oversight !== 'FELLOWSHIP') labels.add(STAGE_LABEL[oversight])
-  return labels.size === 1 ? Array.from(labels)[0]! : ''
+  if (classes.length === 1) return classes[0]!.name
+  const stages = new Set(classes.map((c) => c.stage))
+  if (oversight && oversight !== 'FELLOWSHIP') stages.add(oversight)
+  const [only] = Array.from(stages)
+  return stages.size === 1 && only !== 'FELLOWSHIP' ? STAGE_LABEL[only!] : ''
 }
 
 /** What it is for, in a sentence: the service, or the reason when the service is Other. */

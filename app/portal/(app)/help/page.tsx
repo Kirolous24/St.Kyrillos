@@ -229,7 +229,8 @@ export default async function HelpPage() {
         <Topic icon={<Bus className={ICON} />} tone="#1F2937" title="Reserve a van" href="/portal/reservations">
           Open <b className={S}>Reservations</b> and press <b className={S}>Reserve a van</b> (or tap a free day on the
           calendar). Pick the van, the day, <b className={S}>From</b> and <b className={S}>Until</b> (tick the box if it
-          comes back on a later day), the servants taking it and the service, and write the <b className={S}>Reason</b>:
+          comes back on a later day), the servants taking it and the <b className={S}>Service</b> (a class, a whole stage or a
+          Fellowship meeting), and write the <b className={S}>Reason</b>:
           where the van is going and what for, then press <b className={S}>Send for approval</b>. The one who approves van
           requests is told on the phone and by email, and approves or rejects it; you are told the answer the same way.
           While it waits, the van is held for you and the calendar shows it hollow. A van cannot be reserved twice for the

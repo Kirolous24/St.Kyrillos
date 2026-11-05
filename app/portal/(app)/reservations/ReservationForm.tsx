@@ -9,10 +9,12 @@ import { weekdayName } from '@/lib/portal/dates'
 import {
   MAX_RESERVATION_SERVANTS,
   RESERVATION_REASON_MAX,
+  SERVICE_OTHER,
   formatReservationTime,
   overlaps,
   readReservationTimes,
   reservationDays,
+  type ServiceGroup,
 } from '@/lib/portal/reservations'
 import { cn } from '@/lib/utils'
 import { VanPicture } from './parts'
@@ -59,6 +61,7 @@ export function ReservationForm({
   items,
   servants,
   services,
+  keptService,
   taken,
   initial,
   today,
@@ -67,7 +70,10 @@ export function ReservationForm({
 }: {
   items: FormItem[]
   servants: Array<{ id: string; name: string }>
-  services: string[]
+  /** Each stage, its classes, and the meetings (2026-11-04); Other is added here. */
+  services: ServiceGroup[]
+  /** What a reservation was made for when that is no longer on the list (a class renamed since). */
+  keptService?: string
   taken: TakenSlot[]
   initial: ReservationFormValues
   today: string
@@ -283,11 +289,17 @@ export function ReservationForm({
           <option value="" disabled>
             Pick one
           </option>
-          {services.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
+          {services.map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {g.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.text}
+                </option>
+              ))}
+            </optgroup>
           ))}
+          {keptService && <option value={keptService}>{keptService}</option>}
+          <option value={SERVICE_OTHER}>{SERVICE_OTHER}</option>
         </select>
       </Field>
 

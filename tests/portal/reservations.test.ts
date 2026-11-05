@@ -18,6 +18,7 @@ import {
   reservationPurpose,
   reservationStatusLabel,
   reservationsByDay,
+  serviceGroups,
   serviceOptions,
   statusAfterSave,
   type ReservationNotice,
@@ -25,6 +26,7 @@ import {
   type ReservationSnapshot,
   type ReservationStatus,
 } from '@/lib/portal/reservations'
+import type { StageKey } from '@/lib/portal/permissions'
 
 /**
  * Van reservations (2026-11-02), from a servant's request: "Can we do something
@@ -139,16 +141,72 @@ describe('reservationsByDay', () => {
   })
 })
 
-describe('serviceOptions', () => {
-  it('is the three Sunday School stages, each meeting, then Other', () => {
-    expect(serviceOptions(['Men’s Meeting', 'Women’s Meeting', 'Youth Meeting'])).toEqual([
-      'Elementary', 'Middle School', 'High School', 'Men’s Meeting', 'Women’s Meeting', 'Youth Meeting', 'Other',
+// 2026-11-04, the user: "for the service it should pick from the classes list", then "classes, stages and fellowships".
+describe('serviceGroups', () => {
+  const classes: Array<{ stage: StageKey; name: string }> = [
+    { stage: 'ELEMENTARY', name: 'KG' },
+    { stage: 'ELEMENTARY', name: '1st Grade' },
+    { stage: 'MIDDLE_SCHOOL', name: '5th & 6th Boys' },
+    { stage: 'FELLOWSHIP', name: 'Men’s Meeting' },
+    { stage: 'HIGH_SCHOOL', name: 'High School' },
+    { stage: 'FELLOWSHIP', name: 'Youth Meeting' },
+  ]
+  it('is each stage as a whole, then its classes in the classes list’s order, then the Fellowship meetings', () => {
+    expect(serviceGroups(classes)).toEqual([
+      {
+        label: 'Elementary',
+        options: [
+          { value: 'Elementary', text: 'Elementary (all classes)' },
+          { value: 'KG', text: 'KG' },
+          { value: '1st Grade', text: '1st Grade' },
+        ],
+      },
+      {
+        label: 'Middle School',
+        options: [
+          { value: 'Middle School', text: 'Middle School (all classes)' },
+          { value: '5th & 6th Boys', text: '5th & 6th Boys' },
+        ],
+      },
+      // A class named like its stage is the stage.
+      { label: 'High School', options: [{ value: 'High School', text: 'High School (all classes)' }] },
+      {
+        label: 'Fellowship meetings',
+        options: [
+          { value: 'Men’s Meeting', text: 'Men’s Meeting' },
+          { value: 'Youth Meeting', text: 'Youth Meeting' },
+        ],
+      },
     ])
+  })
+  it('offers every stage though it has no classes yet, and no Fellowship group without meetings', () => {
+    expect(serviceGroups([]).map((g) => [g.label, g.options.map((o) => o.value)])).toEqual([
+      ['Elementary', ['Elementary']],
+      ['Middle School', ['Middle School']],
+      ['High School', ['High School']],
+    ])
+  })
+  it('never offers a class named Other twice', () => {
+    expect(serviceOptions([{ stage: 'ELEMENTARY', name: 'Other' }])).toEqual(['Elementary', 'Middle School', 'High School', 'Other'])
+  })
+})
+
+describe('serviceOptions', () => {
+  it('is everything the groups offer, then Other', () => {
+    expect(
+      serviceOptions([
+        { stage: 'MIDDLE_SCHOOL', name: '5th & 6th Boys' },
+        { stage: 'FELLOWSHIP', name: 'Youth Meeting' },
+      ]),
+    ).toEqual(['Elementary', 'Middle School', '5th & 6th Boys', 'High School', 'Youth Meeting', 'Other'])
   })
 })
 
 describe('defaultService', () => {
-  it('is the stage of the classes someone serves', () => {
+  it('is the one class someone serves', () => {
+    expect(defaultService([{ stage: 'MIDDLE_SCHOOL', name: '5th & 6th Boys' }], null)).toBe('5th & 6th Boys')
+  })
+  it('is the stage of the classes someone serves, when they serve several in it', () => {
     expect(defaultService([{ stage: 'MIDDLE_SCHOOL', name: '5th & 6th Boys' }, { stage: 'MIDDLE_SCHOOL', name: '7th & 8th Boys' }], null)).toBe('Middle School')
   })
   it('is the meeting of someone who serves one', () => {
